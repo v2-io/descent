@@ -1,0 +1,139 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Debug script for descent - dumps tokens, AST, or IR
+#
+# Usage:
+#   bin/debug examples/minimal.desc          # Default: dump IR
+#   bin/debug --tokens examples/minimal.desc # Dump tokens
+#   bin/debug --ast examples/minimal.desc    # Dump AST
+#   bin/debug --ir examples/minimal.desc     # Dump IR (default)
+#   bin/debug --all examples/minimal.desc    # Dump all stages
+
+$LOAD_PATH.unshift File.expand_path('../lib', __dir__)
+require 'descent'
+
+def dump_tokens(tokens)
+  puts '=== TOKENS ==='
+  tokens.each_with_index do |t, i|
+    puts format('%3d: L%-3d %-12s id=%-20s rest=%s',
+                i, t.lineno, t.tag.inspect, t.id.inspect, t.rest.inspect)
+  end
+  puts
+end
+
+def dump_ast(ast)
+  puts '=== AST ==='
+  puts "Parser: #{ast.name.inspect}"
+  puts "Entry:  #{ast.entry_point.inspect}"
+  puts
+  puts 'Types:'
+  ast.types.each do |t|
+    puts "  #{t.name}: #{t.kind}"
+  end
+  puts
+  puts 'Functions:'
+  ast.functions.each do |f|
+    puts "  #{f.name}#{f.return_type ? ":#{f.return_type}" : ''} #{f.params.map { |p| ":#{p}" }.join(' ')}"
+    f.states.each do |s|
+      puts "    state[:#{s.name}]"
+      s.cases.each do |c|
+        chars_desc = c.chars.nil? ? 'default' : "c[#{c.chars}]"
+        puts "      #{chars_desc}#{c.substate ? " .#{c.substate}" : ''}"
+        c.commands.each do |cmd|
+          puts "        #{cmd.type}: #{cmd.value.inspect}"
+        end
+      end
+    end
+  end
+  puts
+end
+
+def dump_ir(ir)
+  puts '=== IR ==='
+  puts "Parser: #{ir.name.inspect}"
+  puts "Entry:  #{ir.entry_point.inspect}"
+  puts
+  puts 'Types:'
+  ir.types.each do |t|
+    flags = []
+    flags << 'emits_start' if t.emits_start
+    flags << 'emits_end' if t.emits_end
+    puts "  #{t.name}: #{t.kind} #{flags.join(', ')}"
+  end
+  puts
+  puts 'Functions:'
+  ir.functions.each do |f|
+    puts "  #{f.name}#{f.return_type ? ":#{f.return_type}" : ''} #{f.params.map { |p| ":#{p}" }.join(' ')}"
+    puts "    emits_events: #{f.emits_events}"
+    puts "    locals: #{f.locals.inspect}" unless f.locals.empty?
+    f.states.each do |s|
+      scan_info = s.scannable? ? " SCAN(#{s.scan_chars.map(&:inspect).join(', ')})" : ''
+      puts "    state[:#{s.name}]#{scan_info}"
+      s.cases.each do |c|
+        chars_desc = if c.conditional?
+                       "if[#{c.condition}]"
+                     elsif c.default?
+                       'default'
+                     elsif c.special_class
+                       c.special_class.to_s.upcase
+                     elsif c.chars
+                       "c[#{c.chars.map { |ch| ch == "\n" ? '\\n' : ch }.join}]"
+                     else
+                       'c[???]'
+                     end
+        puts "      #{chars_desc}#{c.substate ? " .#{c.substate}" : ''}"
+        c.commands.each do |cmd|
+          puts "        #{cmd.type}: #{cmd.args.inspect}"
+        end
+      end
+    end
+  end
+  puts
+end
+
+# Parse arguments
+mode = :ir
+file = nil
+
+ARGV.each do |arg|
+  case arg
+  when '--tokens' then mode = :tokens
+  when '--ast'    then mode = :ast
+  when '--ir'     then mode = :ir
+  when '--all'    then mode = :all
+  when /^-/
+    warn "Unknown option: #{arg}"
+    exit 1
+  else
+    file = arg
+  end
+end
+
+unless file
+  warn 'Usage: bin/debug [--tokens|--ast|--ir|--all] <file.desc>'
+  exit 1
+end
+
+unless File.exist?(file)
+  warn "File not found: #{file}"
+  exit 1
+end
+
+input  = File.read(file)
+tokens = Descent::Lexer.new(input).tokenize
+
+if mode == :tokens || mode == :all
+  dump_tokens(tokens)
+end
+
+if mode == :ast || mode == :ir || mode == :all
+  ast = Descent::Parser.new(tokens).parse
+  dump_ast(ast) if mode == :ast || mode == :all
+end
+
+if mode == :ir || mode == :all
+  ast ||= Descent::Parser.new(tokens).parse
+  ir = Descent::IRBuilder.new(ast).build
+  dump_ir(ir)
+end

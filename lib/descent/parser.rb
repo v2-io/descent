@@ -95,11 +95,21 @@ module Descent
       cases       = []
       eof_handler = nil
 
+      # Keywords that should NOT be treated as character classes
+      keywords = %w[return err emit mark term]
+
       while (t = current) && !%w[function type state].include?(t.tag)
         case t.tag
         when 'c'       then cases << parse_case(t.id)
         when 'default' then cases << parse_case(nil)
         when 'eof'     then eof_handler = parse_eof_handler
+        when 'if'      then cases << parse_if_case
+        when /^[a-z_]+$/
+          if keywords.include?(t.tag)
+            advance # Skip - these are commands, not cases
+          else
+            cases << parse_case(t.tag.upcase) # Character class: letter, label_cont, etc.
+          end
         else
           advance
         end
@@ -136,6 +146,28 @@ module Descent
       )
     end
 
+    def parse_if_case
+      token     = current
+      lineno    = token.lineno
+      condition = token.id
+      advance
+
+      commands = []
+      # Case starters - anything that would start a new case or end the state
+      case_starters = %w[function type state c default eof if letter label_cont]
+
+      while (t = current) && !case_starters.include?(t.tag)
+        if t.tag == '.'
+          advance # Skip substate marker
+        else
+          commands << parse_command(t)
+          advance
+        end
+      end
+
+      AST::Case.new(condition:, commands:, lineno:)
+    end
+
     def parse_eof_handler
       token  = current
       lineno = token.lineno
@@ -169,10 +201,14 @@ module Descent
       when ''
         # Inline command in rest
         parse_inline_command(rest)
+      when '->'       then token.id.empty? ? [:advance, nil] : [:advance_to, token.id]
       when '>>'       then [:transition, rest.strip]
       when 'return'   then [:return, rest.strip]
       when 'err'      then [:error, rest.strip]
+      when 'mark'     then [:mark, nil]
+      when 'term'     then [:term, nil]
       when /^emit\(/i then [:emit, tag[/emit\(([^)]+)\)/i, 1]]
+      when %r{^/\w}   then [:call, tag[1..] + (rest.empty? ? '' : "(#{rest})")]
       else
         [:raw, "#{tag} #{rest}".strip]
       end

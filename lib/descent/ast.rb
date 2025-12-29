@@ -26,11 +26,12 @@ module Descent
       def initialize(name:, cases: [], eof_handler: nil, inline_commands: [], lineno: 0) = super
     end
 
-    # Case within a state: |c[chars] or |default
-    Case = Data.define(:chars, :substate, :commands, :lineno) do
-      def initialize(chars: nil, substate: nil, commands: [], lineno: 0) = super
+    # Case within a state: |c[chars], |default, or |if[condition]
+    Case = Data.define(:chars, :condition, :substate, :commands, :lineno) do
+      def initialize(chars: nil, condition: nil, substate: nil, commands: [], lineno: 0) = super
 
-      def default? = chars.nil?
+      def default?     = chars.nil? && condition.nil?
+      def conditional? = !condition.nil?
     end
 
     # EOF handler

@@ -82,6 +82,7 @@ module Descent
       IR::Case.new(
         chars:,
         special_class:,
+        condition:     kase.condition,
         substate:      kase.substate,
         commands:
       )
@@ -90,12 +91,27 @@ module Descent
     def build_command(cmd)
       args = case cmd.type
              when :assign, :add_assign, :sub_assign then cmd.value.is_a?(Hash) ? cmd.value : {}
-             when :emit, :call, :call_method, :advance_to, :scan, :transition, :error then { value: cmd.value }
+             when :advance_to, :scan then { value: process_escapes(cmd.value) }
+             when :emit, :call, :call_method, :transition, :error then { value: cmd.value }
              else
                {}
              end
 
       IR::Command.new(type: cmd.type, args:)
+    end
+
+    # Process character escapes in a string
+    def process_escapes(str)
+      return str if str.nil?
+
+      str.gsub('<L>', '[')
+         .gsub('<R>', ']')
+         .gsub('<LB>', '{')
+         .gsub('<RB>', '}')
+         .gsub('<P>', '|')
+         .gsub('<BS>', '\\')
+         .gsub('\\n', "\n")
+         .gsub('\\t', "\t")
     end
 
     # Parse character specification into literal chars or special class
@@ -106,17 +122,7 @@ module Descent
       return [nil, chars_str.downcase.to_sym] if chars_str.match?(/^[A-Z_]+$/)
 
       # Parse literal characters with escapes
-      processed = chars_str
-                  .gsub('<L>', '[')
-                  .gsub('<R>', ']')
-                  .gsub('<LB>', '{')
-                  .gsub('<RB>', '}')
-                  .gsub('<P>', '|')
-                  .gsub('<BS>', '\\')
-                  .gsub('\\n', "\n")
-                  .gsub('\\t', "\t")
-
-      [processed.chars, nil]
+      [process_escapes(chars_str).chars, nil]
     end
 
     # Infer SCAN optimization: if a state has a self-looping default case,

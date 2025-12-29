@@ -3,6 +3,46 @@
 require 'liquid'
 
 module Descent
+  # Custom Liquid filters for code generation.
+  module LiquidFilters
+    # Convert a character to Rust byte literal format.
+    # Examples: "\n" -> "b'\\n'", "|" -> "b'|'", " " -> "b' '"
+    def escape_rust_char(char)
+      return 'b\'?\'' if char.nil?
+
+      escaped = case char
+                when "\n" then '\\n'
+                when "\t" then '\\t'
+                when "\r" then '\\r'
+                when '\\' then '\\\\'
+                when "'" then "\\'"
+                else char
+                end
+      "b'#{escaped}'"
+    end
+
+    # Convert snake_case or lowercase to PascalCase.
+    # Examples: "identity" -> "Identity", "after_name" -> "AfterName"
+    def pascalcase(str)
+      return '' if str.nil?
+
+      str.to_s.split(/[_\s-]/).map(&:capitalize).join
+    end
+  end
+
+  # Custom file system for Liquid partials.
+  class TemplateFileSystem
+    def initialize(base_path) = @base_path = base_path
+
+    def read_template_file(template_path)
+      # Liquid looks for partials with underscore prefix
+      full_path = File.join(@base_path, "_#{template_path}.liquid")
+      raise Liquid::FileSystemError, "No such template: #{full_path}" unless File.exist?(full_path)
+
+      File.read(full_path)
+    end
+  end
+
   # Renders IR to target language code using Liquid templates.
   #
   # All target-specific logic lives in templates, not here.
@@ -17,15 +57,22 @@ module Descent
     end
 
     def generate
-      template_path = File.join(TEMPLATE_DIR, @target.to_s, 'parser.liquid')
+      template_dir  = File.join(TEMPLATE_DIR, @target.to_s)
+      template_path = File.join(template_dir, 'parser.liquid')
 
       raise Error, "No template for target: #{@target} (looked in #{template_path})" unless File.exist?(template_path)
+
+      # Register custom filters
+      Liquid::Template.register_filter(LiquidFilters)
+
+      # Set up file system for partials
+      Liquid::Template.file_system = TemplateFileSystem.new(template_dir)
 
       template = Liquid::Template.parse(File.read(template_path))
 
       template.render(
         build_context,
-        strict_variables: true,
+        strict_variables: false, # Partials may not have all variables
         strict_filters:   true
       )
     end
@@ -76,11 +123,13 @@ module Descent
 
     def case_to_hash(kase)
       {
-        'chars'         => kase.chars,
-        'special_class' => kase.special_class&.to_s,
-        'substate'      => kase.substate,
-        'commands'      => kase.commands.map { |c| command_to_hash(c) },
-        'is_default'    => kase.default?
+        'chars'          => kase.chars,
+        'special_class'  => kase.special_class&.to_s,
+        'condition'      => kase.condition,
+        'is_conditional' => kase.conditional?,
+        'substate'       => kase.substate,
+        'commands'       => kase.commands.map { |c| command_to_hash(c) },
+        'is_default'     => kase.default?
       }
     end
 

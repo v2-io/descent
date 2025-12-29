@@ -42,12 +42,14 @@ module Descent
     end
 
     # Case with resolved actions
-    Case = Data.define(:chars, :special_class, :substate, :commands) do
+    Case = Data.define(:chars, :special_class, :condition, :substate, :commands) do
       # chars: Array of literal chars to match, or nil for default
       # special_class: Symbol like :letter, :label_cont for special matchers
-      def initialize(chars: nil, special_class: nil, substate: nil, commands: []) = super
+      # condition: String condition for if-cases, or nil
+      def initialize(chars: nil, special_class: nil, condition: nil, substate: nil, commands: []) = super
 
-      def default? = chars.nil? && special_class.nil?
+      def default?     = chars.nil? && special_class.nil? && condition.nil?
+      def conditional? = !condition.nil?
     end
 
     # Resolved command

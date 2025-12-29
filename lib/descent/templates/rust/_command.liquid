@@ -1,0 +1,111 @@
+{% comment %}
+  Command partial - generates Rust code for a single IR::Command
+
+  Variables in scope:
+  - cmd: the command hash {type, args}
+  - func: the function hash
+  - return_type_info: the function's return type info (or nil)
+  - states: array of states (for multi-state functions)
+{% endcomment %}
+
+{% case cmd.type %}
+
+{% when "advance" %}
+                    self.advance();
+
+{% when "advance_to" %}
+{% comment %} Explicit advance-to: ->[chars] uses memchr to scan forward {% endcomment %}
+{% assign target_chars = cmd.args.value | split: "" %}
+{% assign char_count = target_chars | size %}
+{% if char_count == 1 %}
+                    self.scan_to1({{ target_chars[0] | escape_rust_char }});
+{% elsif char_count == 2 %}
+                    self.scan_to2({{ target_chars[0] | escape_rust_char }}, {{ target_chars[1] | escape_rust_char }});
+{% elsif char_count == 3 %}
+                    self.scan_to3({{ target_chars[0] | escape_rust_char }}, {{ target_chars[1] | escape_rust_char }}, {{ target_chars[2] | escape_rust_char }});
+{% else %}
+                    // advance_to with {{ char_count }} chars - use memchr iter
+                    if let Some(idx) = memchr::memchr_iter({% for c in target_chars %}{{ c | escape_rust_char }}{% unless forloop.last %}, {% endunless %}{% endfor %}, &self.input[self.pos..]).next() {
+                        for &b in &self.input[self.pos..self.pos + idx] {
+                            if b == b'\n' { self.line += 1; self.column = 1; } else { self.column += 1; }
+                        }
+                        self.pos += idx;
+                    } else {
+                        for &b in &self.input[self.pos..] {
+                            if b == b'\n' { self.line += 1; self.column = 1; } else { self.column += 1; }
+                        }
+                        self.pos = self.input.len();
+                    }
+{% endif %}
+
+{% when "mark" %}
+                    self.mark();
+
+{% when "term" %}
+                    {% comment %} TERM alone just marks the end - emit happens on return {% endcomment %}
+
+{% when "return" %}
+{% comment %} Emit appropriate event based on return type, then return {% endcomment %}
+{% if return_type_info.kind == "content" %}
+                    on_event(Event::{{ func.return_type }} { content: self.term(), span: self.span_from_mark() });
+{% elsif return_type_info.kind == "bracket" %}
+                    on_event(Event::{{ func.return_type }}End { span: self.span() });
+{% endif %}
+                    return;
+
+{% when "transition" %}
+{% if cmd.args.value == "" or cmd.args.value == nil %}
+                    {% comment %} Self-loop - continue {% endcomment %}
+                    continue;
+{% else %}
+                    state = State::{{ cmd.args.value | remove: ":" | pascalcase }};
+                    continue;
+{% endif %}
+
+{% when "call" %}
+{% comment %} Function call - extract function name and args {% endcomment %}
+{% assign call_value = cmd.args.value %}
+{% if call_value contains "(" %}
+{% assign call_name = call_value | split: "(" | first %}
+{% assign call_args = call_value | split: "(" | last | remove: ")" %}
+                    self.parse_{{ call_name }}({{ call_args }}, on_event);
+{% else %}
+                    self.parse_{{ call_value }}(on_event);
+{% endif %}
+
+{% when "assign" %}
+{% if cmd.args.var and cmd.args.expr %}
+{% if cmd.args.expr == "COL" %}
+                    {{ cmd.args.var }} = self.col();
+{% else %}
+                    {{ cmd.args.var }} = {{ cmd.args.expr }};
+{% endif %}
+{% endif %}
+
+{% when "add_assign" %}
+{% if cmd.args.var and cmd.args.expr %}
+                    {{ cmd.args.var }} += {{ cmd.args.expr }};
+{% endif %}
+
+{% when "sub_assign" %}
+{% if cmd.args.var and cmd.args.expr %}
+                    {{ cmd.args.var }} -= {{ cmd.args.expr }};
+{% endif %}
+
+{% when "emit" %}
+{% comment %} Explicit emit - used for mid-function emissions {% endcomment %}
+{% assign emit_type = cmd.args.value %}
+                    on_event(Event::{{ emit_type }} { content: self.term(), span: self.span_from_mark() });
+
+{% when "error" %}
+{% assign error_code = cmd.args.value | pascalcase %}
+                    on_event(Event::Error { code: ParseErrorCode::{{ error_code }}, span: self.span() });
+
+{% when "conditional" %}
+{% comment %} Conditionals are handled at a higher level - this shouldn't be reached {% endcomment %}
+                    // TODO: conditional handling
+
+{% else %}
+                    // Unknown command: {{ cmd.type }}
+
+{% endcase %}
