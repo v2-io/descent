@@ -19,16 +19,14 @@ module Descent
 
       while (token = current)
         case token.tag
-        when "parser"
+        when 'parser'
           name = token.rest.strip.downcase
           advance
-        when "entry-point"
+        when 'entry-point'
           entry_point = token.rest.strip
           advance
-        when "type"
-          types << parse_type
-        when "function"
-          functions << parse_function
+        when 'type'     then types << parse_type
+        when 'function' then functions << parse_function
         else
           advance # Skip unknown top-level tokens
         end
@@ -46,7 +44,8 @@ module Descent
     def parse_type
       token = current
       name  = token.id
-      kind  = token.rest.strip.upcase.to_sym
+      # Take first word only (e.g., "BRACKET" from "BRACKET ; comment")
+      kind  = token.rest.split.first&.upcase&.to_sym || :UNKNOWN
       advance
 
       AST::TypeDecl.new(name:, kind:, lineno: token.lineno)
@@ -54,7 +53,7 @@ module Descent
 
     def parse_function
       token       = current
-      name, rtype = token.id.split(":")
+      name, rtype = token.id.split(':')
       params      = parse_params(token.rest)
       lineno      = token.lineno
       advance
@@ -64,18 +63,16 @@ module Descent
 
       while (t = current) && !%w[function type].include?(t.tag)
         case t.tag
-        when "state"
-          states << parse_state
-        when "eof"
-          eof_handler = parse_eof_handler
+        when 'state' then states << parse_state
+        when 'eof'   then eof_handler = parse_eof_handler
         else
           advance # Skip inline commands at function level for now
         end
       end
 
       AST::Function.new(
-        name:         name.gsub("-", "_"),
-        return_type:  rtype,
+        name:        name.gsub('-', '_'),
+        return_type: rtype,
         params:,
         states:,
         eof_handler:,
@@ -91,7 +88,7 @@ module Descent
 
     def parse_state
       token    = current
-      name     = token.id.gsub("-", "_").delete(":")
+      name     = token.id.gsub('-', '_').delete(':')
       lineno   = token.lineno
       advance
 
@@ -100,12 +97,9 @@ module Descent
 
       while (t = current) && !%w[function type state].include?(t.tag)
         case t.tag
-        when "c"
-          cases << parse_case(t.id)
-        when "default"
-          cases << parse_case(nil)
-        when "eof"
-          eof_handler = parse_eof_handler
+        when 'c'       then cases << parse_case(t.id)
+        when 'default' then cases << parse_case(nil)
+        when 'eof'     then eof_handler = parse_eof_handler
         else
           advance
         end
@@ -124,11 +118,10 @@ module Descent
 
       while (t = current) && !%w[function type state c default eof].include?(t.tag)
         case t.tag
-        when "."
+        when '.'
           substate = t.rest.strip
           advance
-        when "if"
-          commands << parse_conditional
+        when 'if' then commands << parse_conditional
         else
           commands << parse_command(t)
           advance
@@ -151,7 +144,7 @@ module Descent
       commands = []
 
       while (t = current) && !%w[function type state c default eof].include?(t.tag)
-        if t.tag == "."
+        if t.tag == '.'
           advance # Skip substate marker
         else
           commands << parse_command(t)
@@ -173,17 +166,13 @@ module Descent
       rest = token.rest
 
       case tag
-      when ""
+      when ''
         # Inline command in rest
         parse_inline_command(rest)
-      when ">>"
-        [:transition, rest.strip]
-      when "return"
-        [:return, rest.strip]
-      when "err"
-        [:error, rest.strip]
-      when /^emit\(/i
-        [:emit, tag[/emit\(([^)]+)\)/i, 1]]
+      when '>>'       then [:transition, rest.strip]
+      when 'return'   then [:return, rest.strip]
+      when 'err'      then [:error, rest.strip]
+      when /^emit\(/i then [:emit, tag[/emit\(([^)]+)\)/i, 1]]
       else
         [:raw, "#{tag} #{rest}".strip]
       end
@@ -202,7 +191,7 @@ module Descent
       when /^emit\(([^)]+)\)/i    then [:emit, ::Regexp.last_match(1)]
       when /^CALL:(\w+)/i         then [:call_method, ::Regexp.last_match(1)]
       when /^SCAN\(([^)]+)\)/i    then [:scan, ::Regexp.last_match(1)]
-      when /^\/(\w+)/             then [:call, ::Regexp.last_match(1)]
+      when %r{^/(\w+)} then [:call, ::Regexp.last_match(1)]
       when /^(\w+)\s*\+=\s*(.+)$/ then [:add_assign, { var: ::Regexp.last_match(1), val: ::Regexp.last_match(2) }]
       when /^(\w+)\s*-=\s*(.+)$/  then [:sub_assign, { var: ::Regexp.last_match(1), val: ::Regexp.last_match(2) }]
       when /^(\w+)\s*=\s*(.+)$/   then [:assign, { var: ::Regexp.last_match(1), val: ::Regexp.last_match(2) }]
@@ -224,21 +213,21 @@ module Descent
         break unless t
 
         case t.tag
-        when "elsif"
+        when 'elsif'
           clauses << AST::Clause.new(condition: current_condition, commands: current_commands)
           current_condition = t.id
           current_commands  = []
           advance
-        when "else"
+        when 'else'
           clauses << AST::Clause.new(condition: current_condition, commands: current_commands)
           current_condition = nil
           current_commands  = []
           advance
-        when "endif"
+        when 'endif'
           clauses << AST::Clause.new(condition: current_condition, commands: current_commands)
           advance
           break
-        when *%w[function type state c default eof]
+        when 'function', 'type', 'state', 'c', 'default', 'eof'
           # Implicit endif
           clauses << AST::Clause.new(condition: current_condition, commands: current_commands)
           break

@@ -10,9 +10,7 @@ module Descent
   # - Collect local variable declarations
   # - Validate consistency
   class IRBuilder
-    def initialize(ast)
-      @ast = ast
-    end
+    def initialize(ast) = @ast = ast
 
     def build
       types     = build_types(@ast.types)
@@ -37,7 +35,8 @@ module Descent
           name:        t.name,
           kind:        t.kind.downcase.to_sym,
           emits_start:,
-          emits_end:
+          emits_end:,
+          lineno:      t.lineno
         )
       end
     end
@@ -56,21 +55,23 @@ module Descent
         locals:,
         states:,
         eof_handler:  func.eof_handler,
-        emits_events:
+        emits_events:,
+        lineno:       func.lineno
       )
     end
 
     def build_state(state)
-      cases          = state.cases.map { |c| build_case(c) }
-      scan_chars     = infer_scan_chars(state, cases)
+      cases           = state.cases.map { |c| build_case(c) }
+      scan_chars      = infer_scan_chars(state, cases)
       is_self_looping = cases.any? { |c| c.default? && has_self_transition?(c) }
 
       IR::State.new(
-        name:         state.name,
+        name:            state.name,
         cases:,
-        eof_handler:  state.eof_handler,
+        eof_handler:     state.eof_handler,
         scan_chars:,
-        is_self_looping:
+        is_self_looping:,
+        lineno:          state.lineno
       )
     end
 
@@ -81,17 +82,15 @@ module Descent
       IR::Case.new(
         chars:,
         special_class:,
-        substate:     kase.substate,
+        substate:      kase.substate,
         commands:
       )
     end
 
     def build_command(cmd)
       args = case cmd.type
-             when :assign, :add_assign, :sub_assign
-               cmd.value.is_a?(Hash) ? cmd.value : {}
-             when :emit, :call, :call_method, :advance_to, :scan, :transition, :error
-               { value: cmd.value }
+             when :assign, :add_assign, :sub_assign then cmd.value.is_a?(Hash) ? cmd.value : {}
+             when :emit, :call, :call_method, :advance_to, :scan, :transition, :error then { value: cmd.value }
              else
                {}
              end
@@ -104,36 +103,34 @@ module Descent
       return [nil, nil] if chars_str.nil?
 
       # Check for special named classes (all uppercase)
-      if chars_str.match?(/^[A-Z_]+$/)
-        return [nil, chars_str.downcase.to_sym]
-      end
+      return [nil, chars_str.downcase.to_sym] if chars_str.match?(/^[A-Z_]+$/)
 
       # Parse literal characters with escapes
       processed = chars_str
-        .gsub("<L>", "[")
-        .gsub("<R>", "]")
-        .gsub("<LB>", "{")
-        .gsub("<RB>", "}")
-        .gsub("<P>", "|")
-        .gsub("<BS>", "\\")
-        .gsub("\\n", "\n")
-        .gsub("\\t", "\t")
+                  .gsub('<L>', '[')
+                  .gsub('<R>', ']')
+                  .gsub('<LB>', '{')
+                  .gsub('<RB>', '}')
+                  .gsub('<P>', '|')
+                  .gsub('<BS>', '\\')
+                  .gsub('\\n', "\n")
+                  .gsub('\\t', "\t")
 
       [processed.chars, nil]
     end
 
     # Infer SCAN optimization: if a state has a self-looping default case,
     # the explicit character cases become SCAN targets
-    def infer_scan_chars(state, cases)
+    def infer_scan_chars(_state, cases)
       default_case = cases.find(&:default?)
       return nil unless default_case
       return nil unless has_self_transition?(default_case)
 
       # Collect all explicit characters from non-default cases
       explicit_chars = cases
-        .reject(&:default?)
-        .flat_map { |c| c.chars || [] }
-        .uniq
+                       .reject(&:default?)
+                       .flat_map { |c| c.chars || [] }
+                       .uniq
 
       return nil if explicit_chars.empty?
       return nil if explicit_chars.size > 4 # memchr only supports up to 4
@@ -145,7 +142,7 @@ module Descent
       kase.commands.any? do |cmd|
         next false unless cmd.type == :transition
 
-        val = cmd.args[:value] || cmd.args["value"]
+        val = cmd.args[:value] || cmd.args['value']
         val.nil? || val.empty?
       end
     end

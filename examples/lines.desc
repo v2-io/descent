@@ -1,0 +1,24 @@
+; Line-based parser - emits Text events for each line
+;
+; Demonstrates:
+; - SCAN optimization (inferred from self-looping default)
+; - Multiple states
+; - Newline handling
+
+|parser lines
+
+|type[Text] CONTENT
+
+|entry-point /document
+
+|function[document]
+  |eof                       |return
+  |state[:main]
+    |eof                     |return
+    |c[\n]      |.blank      | ->               |>>
+    |default    |.start      | MARK             |>> :line
+
+  |state[:line]
+    |eof                     | emit(Text)       |return
+    |c[\n]      |.eol        | emit(Text) | ->  |>> :main
+    |default    |.collect    | ->               |>>

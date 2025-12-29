@@ -1,0 +1,82 @@
+; Simple element parser - pipe-prefixed elements with text content
+;
+; Demonstrates:
+; - BRACKET types (emit Start/End)
+; - CONTENT types (emit on return)
+; - Recursive element calls
+; - Column-based nesting
+; - Function parameters
+
+|parser elements
+
+|type[Element] BRACKET
+|type[Text]    CONTENT
+|type[Name]    CONTENT
+
+|entry-point /document
+
+; Document: sequence of lines, dispatch on pipe
+|function[document]
+  |eof                            |return
+  |state[:line]
+    |eof                          |return
+    |c[\n]         |.blank        | ->                    |>>
+    |c[ \t]        |.indent       | ->                    |>>
+    |c[<P>]        |.pipe         | ->                    |>> :element
+    |default       |.text         | MARK                  |>> :text
+
+  |state[:element]
+    |eof                          |return
+    |default                      | /element(0)          |>> :line
+
+  |state[:text]
+    |eof                          | emit(Text)           |return
+    |c[\n]         |.eol          | emit(Text) | ->      |>> :line
+    |default       |.collect      | ->                   |>>
+
+; Element: name followed by optional content and children
+|function[element:Element] :elem_col
+  |eof                            | emit(ElementEnd)     |return
+  |state[:name]
+    |eof                          | emit(ElementEnd)     |return
+    |c[a-zA-Z_]    |.start        | MARK                 |>> :name_cont
+    |default       |.anon         |                      |>> :post_name
+
+  |state[:name_cont]
+    |eof                          | emit(Name) | emit(ElementEnd) |return
+    |c[a-zA-Z0-9_-]|.cont         | ->                   |>>
+    |default       |.done         | emit(Name)           |>> :post_name
+
+  |state[:post_name]
+    |eof                          | emit(ElementEnd)     |return
+    |c[\n]         |.eol          | ->                   |>> :children
+    |c[ \t]        |.space        | ->                   |>> :content
+    |default       |.text         | MARK                 |>> :inline
+
+  |state[:inline]
+    |eof                          | emit(Text) | emit(ElementEnd) |return
+    |c[\n]         |.eol          | emit(Text) | ->      |>> :children
+    |default       |.collect      | ->                   |>>
+
+  |state[:content]
+    |eof                          | emit(ElementEnd)     |return
+    |c[\n]         |.eol          | ->                   |>> :children
+    |c[ \t]        |.space        | ->                   |>>
+    |default       |.text         | MARK                 |>> :inline
+
+  |state[:children]
+    |eof                          | emit(ElementEnd)     |return
+    |c[\n]         |.blank        | ->                   |>>
+    |c[ \t]        |.indent       | ->                   |>> :check_indent
+    |default       |.dedent       | emit(ElementEnd)     |return
+
+  |state[:check_indent]
+    |eof                          | emit(ElementEnd)     |return
+    |if[COL <= elem_col]          | emit(ElementEnd)     |return
+    |c[<P>]        |.child        | -> | /element(COL)   |>> :children
+    |default       |.text         | MARK                 |>> :child_text
+
+  |state[:child_text]
+    |eof                          | emit(Text) | emit(ElementEnd) |return
+    |c[\n]         |.eol          | emit(Text) | ->      |>> :children
+    |default       |.collect      | ->                   |>>

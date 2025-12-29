@@ -1,32 +1,32 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-require "descent"
-require "optparse"
+require 'descent'
+require 'optparse'
 
 options = { target: :rust }
 
 parser = OptionParser.new do |opts|
-  opts.banner = "Usage: descent [options] INPUT_FILE"
+  opts.banner = 'Usage: descent [options] INPUT_FILE'
 
-  opts.on("-t", "--target TARGET", %i[rust c], "Target language (rust, c)") do |t|
+  opts.on('-t', '--target TARGET', %i[rust c], 'Target language (rust, c)') do |t|
     options[:target] = t
   end
 
-  opts.on("-o", "--output FILE", "Output file (default: stdout)") do |f|
+  opts.on('-o', '--output FILE', 'Output file (default: stdout)') do |f|
     options[:output] = f
   end
 
-  opts.on("--trace", "Enable trace output in generated parser") do
+  opts.on('--trace', 'Enable trace output in generated parser') do
     options[:trace] = true
   end
 
-  opts.on("-h", "--help", "Show this help") do
+  opts.on('-h', '--help', 'Show this help') do
     puts opts
     exit
   end
 
-  opts.on("-v", "--version", "Show version") do
+  opts.on('-v', '--version', 'Show version') do
     puts "descent #{Descent::VERSION}"
     exit
   end

@@ -8,67 +8,49 @@ module Descent
   module AST
     # Top-level machine definition
     Machine = Data.define(:name, :entry_point, :types, :functions) do
-      def initialize(name:, entry_point: nil, types: [], functions: [])
-        super
-      end
+      def initialize(name:, entry_point: nil, types: [], functions: []) = super
     end
 
     # Type declaration: |type[Name] KIND
     TypeDecl = Data.define(:name, :kind, :lineno) do
-      def initialize(name:, kind:, lineno: 0)
-        super
-      end
+      def initialize(name:, kind:, lineno: 0) = super
     end
 
     # Function definition
     Function = Data.define(:name, :return_type, :params, :states, :eof_handler, :lineno) do
-      def initialize(name:, return_type: nil, params: [], states: [], eof_handler: nil, lineno: 0)
-        super
-      end
+      def initialize(name:, return_type: nil, params: [], states: [], eof_handler: nil, lineno: 0) = super
     end
 
     # State within a function
     State = Data.define(:name, :cases, :eof_handler, :inline_commands, :lineno) do
-      def initialize(name:, cases: [], eof_handler: nil, inline_commands: [], lineno: 0)
-        super
-      end
+      def initialize(name:, cases: [], eof_handler: nil, inline_commands: [], lineno: 0) = super
     end
 
     # Case within a state: |c[chars] or |default
     Case = Data.define(:chars, :substate, :commands, :lineno) do
-      def initialize(chars: nil, substate: nil, commands: [], lineno: 0)
-        super
-      end
+      def initialize(chars: nil, substate: nil, commands: [], lineno: 0) = super
 
       def default? = chars.nil?
     end
 
     # EOF handler
     EOFHandler = Data.define(:commands, :lineno) do
-      def initialize(commands: [], lineno: 0)
-        super
-      end
+      def initialize(commands: [], lineno: 0) = super
     end
 
     # Command/action within a case
     Command = Data.define(:type, :value, :lineno) do
-      def initialize(type:, value: nil, lineno: 0)
-        super
-      end
+      def initialize(type:, value: nil, lineno: 0) = super
     end
 
     # Conditional: |if[cond] ... |endif
     Conditional = Data.define(:clauses, :lineno) do
-      def initialize(clauses: [], lineno: 0)
-        super
-      end
+      def initialize(clauses: [], lineno: 0) = super
     end
 
     # A clause within a conditional
     Clause = Data.define(:condition, :commands) do
-      def initialize(condition: nil, commands: [])
-        super
-      end
+      def initialize(condition: nil, commands: []) = super
     end
   end
 end

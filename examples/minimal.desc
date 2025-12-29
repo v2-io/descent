@@ -1,0 +1,15 @@
+; Minimal parser - just collects all input as text
+;
+; This is the simplest possible .desc file that produces working output.
+
+|parser minimal
+
+|type[Text] CONTENT
+
+|entry-point /document
+
+|function[document]
+  |eof                       |return
+  |state[:main]
+    |eof                     | emit(Text) |return
+    |default    |.collect    | MARK | ->  |>>
