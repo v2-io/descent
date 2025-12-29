@@ -1,11 +1,17 @@
 ; Simple element parser - pipe-prefixed elements with text content
 ;
 ; Demonstrates:
-; - BRACKET types (emit Start/End)
-; - CONTENT types (emit on return)
+; - BRACKET types (emit Start/End automatically)
+; - CONTENT types (emit on return automatically)
 ; - Recursive element calls
 ; - Column-based nesting
 ; - Function parameters
+;
+; Type-driven emit: no explicit emit() needed for return type emissions
+; - element -> Element (BRACKET) means generator emits ElementStart on entry,
+;   ElementEnd on return
+; - text -> Text (CONTENT) means generator emits Text with accumulated content
+;   on return
 
 |parser elements
 
@@ -16,6 +22,7 @@
 |entry-point /document
 
 ; Document: sequence of lines, dispatch on pipe
+; Returns void (no type), so no automatic emit
 |function[document]
   |eof                            |return
   |state[:line]
@@ -30,53 +37,59 @@
     |default                      | /element(0)          |>> :line
 
   |state[:text]
-    |eof                          | emit(Text)           |return
-    |c[\n]         |.eol          | emit(Text) | ->      |>> :line
+    ; Text is CONTENT type - return automatically emits Text with MARK..pos
+    |eof                          |return
+    |c[\n]         |.eol          | -> |return
     |default       |.collect      | ->                   |>>
 
 ; Element: name followed by optional content and children
+; Returns Element (BRACKET) - generator emits ElementStart on entry,
+; ElementEnd on any return
 |function[element:Element] :elem_col
-  |eof                            | emit(ElementEnd)     |return
+  |eof                            |return
   |state[:name]
-    |eof                          | emit(ElementEnd)     |return
+    |eof                          |return
     |c[a-zA-Z_]    |.start        | MARK                 |>> :name_cont
     |default       |.anon         |                      |>> :post_name
 
   |state[:name_cont]
-    |eof                          | emit(Name) | emit(ElementEnd) |return
+    ; Name is CONTENT - we need to emit it mid-function since element
+    ; has a different return type
+    |eof                          | emit(Name) |return
     |c[a-zA-Z0-9_-]|.cont         | ->                   |>>
     |default       |.done         | emit(Name)           |>> :post_name
 
   |state[:post_name]
-    |eof                          | emit(ElementEnd)     |return
+    |eof                          |return
     |c[\n]         |.eol          | ->                   |>> :children
     |c[ \t]        |.space        | ->                   |>> :content
     |default       |.text         | MARK                 |>> :inline
 
   |state[:inline]
-    |eof                          | emit(Text) | emit(ElementEnd) |return
+    ; Emitting Text mid-function (element returns Element, not Text)
+    |eof                          | emit(Text) |return
     |c[\n]         |.eol          | emit(Text) | ->      |>> :children
     |default       |.collect      | ->                   |>>
 
   |state[:content]
-    |eof                          | emit(ElementEnd)     |return
+    |eof                          |return
     |c[\n]         |.eol          | ->                   |>> :children
     |c[ \t]        |.space        | ->                   |>>
     |default       |.text         | MARK                 |>> :inline
 
   |state[:children]
-    |eof                          | emit(ElementEnd)     |return
+    |eof                          |return
     |c[\n]         |.blank        | ->                   |>>
     |c[ \t]        |.indent       | ->                   |>> :check_indent
-    |default       |.dedent       | emit(ElementEnd)     |return
+    |default       |.dedent       |return
 
   |state[:check_indent]
-    |eof                          | emit(ElementEnd)     |return
-    |if[COL <= elem_col]          | emit(ElementEnd)     |return
+    |eof                          |return
+    |if[COL <= elem_col]          |return
     |c[<P>]        |.child        | -> | /element(COL)   |>> :children
     |default       |.text         | MARK                 |>> :child_text
 
   |state[:child_text]
-    |eof                          | emit(Text) | emit(ElementEnd) |return
+    |eof                          | emit(Text) |return
     |c[\n]         |.eol          | emit(Text) | ->      |>> :children
     |default       |.collect      | ->                   |>>
