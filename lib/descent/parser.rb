@@ -196,6 +196,7 @@ module Descent
       case cmd
       when /^MARK\b/i             then [:mark, nil]
       when /^TERM\b/i             then [:term, nil]
+      when /^return\b\s*(.*)$/i   then [:return, ::Regexp.last_match(1).strip]
       when /^->\s*$/              then [:advance, nil]
       when /^->\s*\[([^\]]+)\]$/  then [:advance_to, ::Regexp.last_match(1)]
       when /^emit\(([^)]+)\)/i    then [:emit, ::Regexp.last_match(1)]

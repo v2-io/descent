@@ -143,7 +143,10 @@ module Descent
 
     def has_self_transition?(kase)
       kase.commands.any? do |cmd|
-        cmd.type == :transition && (cmd.value.nil? || cmd.value.empty?)
+        next false unless cmd.type == :transition
+
+        val = cmd.args[:value] || cmd.args["value"]
+        val.nil? || val.empty?
       end
     end
 
