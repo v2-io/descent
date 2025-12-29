@@ -374,6 +374,72 @@ Status vs the full spec in `libudon/generator/parser-gen.md`:
 
 ---
 
+## Future Enhancements
+
+### Inferred EXPECTS
+
+The `EXPECTS(x)` annotation can likely be **inferred** from state structure rather than
+requiring explicit declaration:
+
+**State-level inference:**
+- If a state has a self-looping default (or no default)
+- And exactly ONE character case that exits (return or transition out)
+- And that case matches a single delimiter character
+- Then → infer `EXPECTS(that_char)`
+
+**Example:**
+```
+|state[:main]
+  |c["]      | TERM | ->    |return    ; ← only exit
+  |c[\\]     | -> | ->      |>>        ; loops
+  |default   | ->           |>>        ; loops
+```
+Inferred: `EXPECTS(")`
+
+**Function-level inference:**
+- If all terminal paths require the same delimiter to exit → function EXPECTS that delimiter
+- Bonus: If function is called after seeing opener (e.g., `[`), can generate meaningful
+  error like "unclosed bracket" rather than just "expected ]"
+
+**Nested delimiters:**
+```
+|function[brace_comment] | depth = 1
+  |state[:main]
+    |c[{]    | depth += 1   |>>
+    |c[}]    | depth -= 1
+      |if[depth == 0]       |return   ; exit requires } when balanced
+    |default | ->           |>>
+```
+Inferred: `EXPECTS(})` - only way out is via `}` when depth reaches 0.
+
+### Static Analysis
+
+The IR provides enough structure for useful static analysis:
+
+**Infinite loop detection:**
+- States where all cases (including default) self-loop with no exit path
+- States that advance but never consume (missing `->` in loops)
+- Cycles with no return path reachable
+
+**Unreachable state detection:**
+- States with no incoming transitions
+- Cases that can never match (e.g., checking for char already consumed)
+- Dead code after unconditional returns
+
+**Type consistency:**
+- CONTENT functions that never MARK
+- BRACKET functions that return without proper nesting
+- Emitting wrong type (e.g., emitting Text from Name function)
+
+**Character class conflicts:**
+- Overlapping cases (e.g., `|c[a]` and `|LETTER` both match 'a')
+- Redundant cases shadowed by earlier matches
+
+These analyses would run in the IR builder or validator, producing warnings/errors
+before code generation.
+
+---
+
 ## Success Criteria
 
 1. **Separation of concerns:** No target-specific code outside templates
