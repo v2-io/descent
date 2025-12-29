@@ -236,3 +236,35 @@ The IR provides enough structure for useful static analysis:
 ### Bootstrap
 The `.desc` format is valid UDON. When libudon is mature, descent can use the
 UDON parser (that it generated!) to parse its own input format.
+
+## Performance Optimizations (from Codex review of libudon)
+
+These optimizations may apply to descent-generated parsers:
+
+### Zero-Copy Improvements
+- **Zero-copy feed for single-chunk usage**: Accept `Bytes`/`Arc<[u8]>` or borrow mode
+  to avoid `chunk.to_vec()` copies. The callback-based approach with `&'a [u8]` slices
+  already achieves this for single-chunk, but streaming multi-chunk needs care.
+
+### Allocation Reduction
+- **Pre-intern static strings**: For known keys like `"$id"`, `"$class"`, suffix keys,
+  and single-char literals, use static references rather than allocating per-event.
+  Could generate a static lookup table in the template.
+
+- **Eliminate String allocations in value parsing**: Use `lexical-core` or `fast_float`
+  for float/complex number parsing instead of String intermediates.
+
+### Unicode Handling
+- **Cheaper unicode label detection**: Current approach may use `from_utf8` on remainder
+  for every non-ASCII byte. Consider single-char decode (e.g., decode one codepoint,
+  check if XID_Start/XID_Continue) rather than validating entire remainder.
+
+### Indentation Handling
+- **SPEC-INDENTS for multi-chunk feeds**: When input is streamed in chunks, indentation
+  detection needs to handle chunk boundaries correctly. Document the invariants and
+  ensure generated parsers handle partial lines at chunk boundaries.
+
+### Not Applicable to Callback-Based
+- **MaybeUninit ring slots**: This optimization is for ring-buffer architectures.
+  The callback-based approach eliminates ring buffers entirely, so this doesn't apply.
+  (Callback approach is already 2-7x faster than ring-buffer alternatives.)
