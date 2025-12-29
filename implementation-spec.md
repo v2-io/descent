@@ -322,6 +322,58 @@ descent/
 
 ---
 
+## Feature Coverage
+
+Status vs the full spec in `libudon/generator/parser-gen.md`:
+
+### Fully Implemented
+
+| Feature | Notes |
+|---------|-------|
+| Type system | BRACKET/CONTENT/INTERNAL with correct semantics |
+| Basic functions | `\|function[name:Type] :params` |
+| States | `\|state[:name]` |
+| Character matching | `\|c[chars]`, `\|default` |
+| Character escapes | `\n`, `\t`, `<P>`, `<L>`, `<R>`, `<LB>`, `<RB>` |
+| Transitions | `\|>>`, `\|>> :state`, `\|return` |
+| Function calls | `\| /function`, `\| /function(args)` |
+| Variables | Assignment, `+=`, `-=` |
+| Single-line conditionals | `\|if[condition]` |
+| SCAN inference | Auto-detected from self-looping default |
+| Line numbers | Errors/warnings include line numbers |
+| Validator | Duplicate types, undefined refs, empty states |
+
+### Partially Implemented
+
+| Feature | Status |
+|---------|--------|
+| Character classes | `LETTER`, `LABEL_CONT` parsed as special_class, template needs handling |
+| Advance-to | `->[\n]` parsed, template needs to generate memchr |
+| MARK/TERM | Parsed, but auto-MARK for CONTENT not implemented |
+
+### Not Yet Implemented
+
+| Feature | Notes |
+|---------|-------|
+| EXPECTS annotation | `\| EXPECTS(])` for unclosed delimiter errors |
+| Inline literals | `TypeName(literal)`, `TypeName(USE_MARK)` |
+| Combined char classes | `\|c[LETTER'[.?!*+]` |
+| TERM adjustments | `TERM(-1)` |
+| PREPEND | `PREPEND(\|)` |
+| Return with value | `\|return value` for INTERNAL types |
+| Built-in /error | Should be recognized without function definition |
+| Rust template | Placeholder only - needs full implementation |
+| C template | Not started |
+
+### Deferred / Future
+
+| Feature | Notes |
+|---------|-------|
+| Bootstrap mode | Use UDON parser to parse .desc |
+| Async callbacks | Non-blocking backpressure |
+
+---
+
 ## Success Criteria
 
 1. **Separation of concerns:** No target-specific code outside templates
