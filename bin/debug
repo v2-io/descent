@@ -66,6 +66,8 @@ def dump_ir(ir)
   ir.functions.each do |f|
     puts "  #{f.name}#{f.return_type ? ":#{f.return_type}" : ''} #{f.params.map { |p| ":#{p}" }.join(' ')}"
     puts "    emits_events: #{f.emits_events}"
+    puts "    expects_char: #{f.expects_char.inspect}" if f.expects_char
+    puts "    emits_content_on_close: #{f.emits_content_on_close}" if f.emits_content_on_close
     puts "    locals: #{f.locals.inspect}" unless f.locals.empty?
     f.states.each do |s|
       scan_info = s.scannable? ? " SCAN(#{s.scan_chars.map(&:inspect).join(', ')})" : ''

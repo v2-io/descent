@@ -26,7 +26,11 @@ pub enum Event<'a> {
 pub enum ParseErrorCode {
     UnexpectedEof,
     UnexpectedChar,
-    // Add more as needed based on DSL errors
+{% for func in functions %}
+{% if func.expects_char %}
+    Unclosed{{ func.return_type }},
+{% endif %}
+{% endfor %}
 }
 
 /// Callback-based parser.
@@ -289,9 +293,12 @@ impl<'a> Parser<'a> {
                 {% endunless %}
                 {% endfor %}
                 None => {
-                    {% comment %} EOF - infer behavior based on return type {% endcomment %}
+                    {% comment %} EOF handling with EXPECTS inference {% endcomment %}
                     {% if return_type_info.kind == "content" %}
                     on_event(Event::{{ func.return_type }} { content: self.term(), span: self.span_from_mark() });
+                    {% endif %}
+                    {% if func.expects_char %}
+                    on_event(Event::Error { code: ParseErrorCode::Unclosed{{ func.return_type }}, span: self.span() });
                     {% elsif return_type_info.kind == "bracket" %}
                     on_event(Event::{{ func.return_type }}End { span: self.span() });
                     {% endif %}
@@ -303,6 +310,9 @@ impl<'a> Parser<'a> {
             if self.eof() {
                 {% if return_type_info.kind == "content" %}
                 on_event(Event::{{ func.return_type }} { content: self.term(), span: self.span_from_mark() });
+                {% endif %}
+                {% if func.expects_char %}
+                on_event(Event::Error { code: ParseErrorCode::Unclosed{{ func.return_type }}, span: self.span() });
                 {% elsif return_type_info.kind == "bracket" %}
                 on_event(Event::{{ func.return_type }}End { span: self.span() });
                 {% endif %}
@@ -366,9 +376,12 @@ impl<'a> Parser<'a> {
                         {% endunless %}
                         {% endfor %}
                         None => {
-                            {% comment %} EOF - infer behavior {% endcomment %}
+                            {% comment %} EOF handling with EXPECTS inference {% endcomment %}
                             {% if return_type_info.kind == "content" %}
                             on_event(Event::{{ func.return_type }} { content: self.term(), span: self.span_from_mark() });
+                            {% endif %}
+                            {% if func.expects_char %}
+                            on_event(Event::Error { code: ParseErrorCode::Unclosed{{ func.return_type }}, span: self.span() });
                             {% elsif return_type_info.kind == "bracket" %}
                             on_event(Event::{{ func.return_type }}End { span: self.span() });
                             {% endif %}
@@ -380,6 +393,9 @@ impl<'a> Parser<'a> {
                     if self.eof() {
                         {% if return_type_info.kind == "content" %}
                         on_event(Event::{{ func.return_type }} { content: self.term(), span: self.span_from_mark() });
+                        {% endif %}
+                        {% if func.expects_char %}
+                        on_event(Event::Error { code: ParseErrorCode::Unclosed{{ func.return_type }}, span: self.span() });
                         {% elsif return_type_info.kind == "bracket" %}
                         on_event(Event::{{ func.return_type }}End { span: self.span() });
                         {% endif %}

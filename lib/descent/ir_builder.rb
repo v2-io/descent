@@ -48,15 +48,20 @@ module Descent
       locals = infer_locals(func)
       states = func.states.map { |s| build_state(s) }
 
+      # Infer expected closing delimiter from return cases
+      expects_char, emits_content_on_close = infer_expects(states)
+
       IR::Function.new(
-        name:         func.name,
-        return_type:  func.return_type,
-        params:       func.params,
+        name:                   func.name,
+        return_type:            func.return_type,
+        params:                 func.params,
         locals:,
         states:,
-        eof_handler:  func.eof_handler,
+        eof_handler:            func.eof_handler,
         emits_events:,
-        lineno:       func.lineno
+        expects_char:,
+        emits_content_on_close:,
+        lineno:                 func.lineno
       )
     end
 
@@ -151,6 +156,49 @@ module Descent
         val = cmd.args[:value] || cmd.args['value']
         val.nil? || val.empty?
       end
+    end
+
+    # Infer expected closing delimiter from return cases.
+    # If ALL return cases match the same single character, that's the expected closer.
+    # Also check if TERM appears before return (emits_content_on_close).
+    def infer_expects(states)
+      return_cases = []
+
+      # Collect all cases that contain a return command
+      states.each do |state|
+        state.cases.each do |kase|
+          return_cases << kase if kase.commands.any? { |cmd| cmd.type == :return }
+        end
+      end
+
+      # No returns found - no expected closer
+      return [nil, false] if return_cases.empty?
+
+      # Check if all return cases match the same single character
+      # (ignore conditional cases for now - they still match on a char)
+      char_matches = return_cases.filter_map do |kase|
+        # Must have exactly one character match (not default, not char class)
+        next nil if kase.default?
+        next nil if kase.special_class
+        next nil if kase.chars.nil? || kase.chars.length != 1
+
+        kase.chars.first
+      end
+
+      # If not all return cases have single-char matches, no expected closer
+      return [nil, false] if char_matches.length != return_cases.length
+
+      # If not all the same character, no expected closer
+      return [nil, false] if char_matches.uniq.length != 1
+
+      expects_char = char_matches.first
+
+      # Check if any return case has TERM before return
+      emits_content = return_cases.any? do |kase|
+        kase.commands.any? { |cmd| cmd.type == :term }
+      end
+
+      [expects_char, emits_content]
     end
 
     # Infer local variables from assignments in function

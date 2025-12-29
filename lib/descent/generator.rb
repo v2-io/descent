@@ -100,13 +100,15 @@ module Descent
 
     def function_to_hash(func)
       {
-        'name'         => func.name,
-        'return_type'  => func.return_type,
-        'params'       => func.params,
-        'locals'       => func.locals.transform_keys(&:to_s),
-        'states'       => func.states.map { |s| state_to_hash(s) },
-        'eof_handler'  => func.eof_handler,
-        'emits_events' => func.emits_events
+        'name'                   => func.name,
+        'return_type'            => func.return_type,
+        'params'                 => func.params,
+        'locals'                 => func.locals.transform_keys(&:to_s),
+        'states'                 => func.states.map { |s| state_to_hash(s) },
+        'eof_handler'            => func.eof_handler,
+        'emits_events'           => func.emits_events,
+        'expects_char'           => func.expects_char,
+        'emits_content_on_close' => func.emits_content_on_close
       }
     end
 
