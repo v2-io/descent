@@ -1,0 +1,14 @@
+; Minimal parser specification for testing
+;
+; This is a valid UDON document that defines a trivial parser.
+
+|parser minimal
+
+|entry-point /document:main
+
+|type[Text] CONTENT
+
+|function[document]
+  |state[:main]
+    |eof        |           | return
+    |default    |.collect   | MARK | -> |>>

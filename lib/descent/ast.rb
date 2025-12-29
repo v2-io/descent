@@ -1,0 +1,74 @@
+# frozen_string_literal: true
+
+module Descent
+  # Abstract Syntax Tree nodes - pure data, no behavior.
+  #
+  # Uses Ruby 3.2+ Data class for immutable value objects.
+  # These represent the direct parse result before semantic analysis.
+  module AST
+    # Top-level machine definition
+    Machine = Data.define(:name, :entry_point, :types, :functions) do
+      def initialize(name:, entry_point: nil, types: [], functions: [])
+        super
+      end
+    end
+
+    # Type declaration: |type[Name] KIND
+    TypeDecl = Data.define(:name, :kind, :lineno) do
+      def initialize(name:, kind:, lineno: 0)
+        super
+      end
+    end
+
+    # Function definition
+    Function = Data.define(:name, :return_type, :params, :states, :eof_handler, :lineno) do
+      def initialize(name:, return_type: nil, params: [], states: [], eof_handler: nil, lineno: 0)
+        super
+      end
+    end
+
+    # State within a function
+    State = Data.define(:name, :cases, :eof_handler, :inline_commands, :lineno) do
+      def initialize(name:, cases: [], eof_handler: nil, inline_commands: [], lineno: 0)
+        super
+      end
+    end
+
+    # Case within a state: |c[chars] or |default
+    Case = Data.define(:chars, :substate, :commands, :lineno) do
+      def initialize(chars: nil, substate: nil, commands: [], lineno: 0)
+        super
+      end
+
+      def default? = chars.nil?
+    end
+
+    # EOF handler
+    EOFHandler = Data.define(:commands, :lineno) do
+      def initialize(commands: [], lineno: 0)
+        super
+      end
+    end
+
+    # Command/action within a case
+    Command = Data.define(:type, :value, :lineno) do
+      def initialize(type:, value: nil, lineno: 0)
+        super
+      end
+    end
+
+    # Conditional: |if[cond] ... |endif
+    Conditional = Data.define(:clauses, :lineno) do
+      def initialize(clauses: [], lineno: 0)
+        super
+      end
+    end
+
+    # A clause within a conditional
+    Clause = Data.define(:condition, :commands) do
+      def initialize(condition: nil, commands: [])
+        super
+      end
+    end
+  end
+end

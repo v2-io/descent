@@ -1,0 +1,61 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "descent"
+require "optparse"
+
+options = { target: :rust }
+
+parser = OptionParser.new do |opts|
+  opts.banner = "Usage: descent [options] INPUT_FILE"
+
+  opts.on("-t", "--target TARGET", %i[rust c], "Target language (rust, c)") do |t|
+    options[:target] = t
+  end
+
+  opts.on("-o", "--output FILE", "Output file (default: stdout)") do |f|
+    options[:output] = f
+  end
+
+  opts.on("--trace", "Enable trace output in generated parser") do
+    options[:trace] = true
+  end
+
+  opts.on("-h", "--help", "Show this help") do
+    puts opts
+    exit
+  end
+
+  opts.on("-v", "--version", "Show version") do
+    puts "descent #{Descent::VERSION}"
+    exit
+  end
+end
+
+parser.parse!
+
+if ARGV.empty?
+  puts parser
+  exit 1
+end
+
+input_file = ARGV[0]
+
+unless File.exist?(input_file)
+  warn "Error: File not found: #{input_file}"
+  exit 1
+end
+
+begin
+  output = Descent.generate(input_file, **options)
+
+  if options[:output]
+    File.write(options[:output], output)
+    warn "Wrote #{options[:output]}"
+  else
+    puts output
+  end
+rescue Descent::Error => e
+  warn "Error: #{e.message}"
+  exit 1
+end

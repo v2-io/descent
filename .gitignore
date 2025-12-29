@@ -1,0 +1,24 @@
+# Bundler
+/.bundle/
+/vendor/bundle/
+Gemfile.lock
+
+# Gem build artifacts
+*.gem
+/pkg/
+
+# Testing
+/coverage/
+/tmp/
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+
+# mise
+.mise.local.toml
