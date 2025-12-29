@@ -1,95 +1,72 @@
-; Simple element parser - pipe-prefixed elements with text content
+; Pipe-prefixed element parser
 ;
 ; Demonstrates:
-; - BRACKET types (emit Start/End automatically)
-; - CONTENT types (emit on return automatically)
-; - Recursive element calls
-; - Column-based nesting
-; - Function parameters
-;
-; Type-driven emit: no explicit emit() needed for return type emissions
-; - element -> Element (BRACKET) means generator emits ElementStart on entry,
-;   ElementEnd on return
-; - text -> Text (CONTENT) means generator emits Text with accumulated content
-;   on return
+; - BRACKET types: auto ElementStart on entry, ElementEnd on return
+; - CONTENT types: auto MARK on entry, emit on return
+; - Recursive element calls for nesting
+; - Column-based dedent detection
+; - Minimal explicit code - generator infers the rest
 
 |parser elements
 
 |type[Element] BRACKET
-|type[Text]    CONTENT
 |type[Name]    CONTENT
+|type[Text]    CONTENT
 
 |entry-point /document
 
-; Document: sequence of lines, dispatch on pipe
-; Returns void (no type), so no automatic emit
+; Document: dispatch on first non-whitespace
+; No return type = void, no auto emissions
 |function[document]
-  |eof                            |return
-  |state[:line]
-    |eof                          |return
-    |c[\n]         |.blank        | ->                    |>>
-    |c[ \t]        |.indent       | ->                    |>>
-    |c[<P>]        |.pipe         | ->                    |>> :element
-    |default       |.text         | MARK                  |>> :text
+  |state[:main]
+    |c[\n]      |.blank    | ->              |>>
+    |c[ \t]     |.ws       | ->              |>>
+    |c[<P>]     |.pipe     | -> | /element(0)|>>
+    |default    |.text     | /text(0)        |>>
 
-  |state[:element]
-    |eof                          |return
-    |default                      | /element(0)          |>> :line
+; Element: BRACKET type
+; - ElementStart emitted on entry (auto)
+; - ElementEnd emitted on return (auto)
+; - Recursive /element calls handle child nesting
+|function[element:Element] :col
+  |state[:identity]
+    |letter     |.name     | /name           |>> :after_name
+    |c[']       |.quoted   | -> | /name      |>> :after_name
+    |default    |.anon     |                 |>> :content
 
-  |state[:text]
-    ; Text is CONTENT type - return automatically emits Text with MARK..pos
-    |eof                          |return
-    |c[\n]         |.eol          | -> |return
-    |default       |.collect      | ->                   |>>
-
-; Element: name followed by optional content and children
-; Returns Element (BRACKET) - generator emits ElementStart on entry,
-; ElementEnd on any return
-|function[element:Element] :elem_col
-  |eof                            |return
-  |state[:name]
-    |eof                          |return
-    |c[a-zA-Z_]    |.start        | MARK                 |>> :name_cont
-    |default       |.anon         |                      |>> :post_name
-
-  |state[:name_cont]
-    ; Name is CONTENT - we need to emit it mid-function since element
-    ; has a different return type
-    |eof                          | emit(Name) |return
-    |c[a-zA-Z0-9_-]|.cont         | ->                   |>>
-    |default       |.done         | emit(Name)           |>> :post_name
-
-  |state[:post_name]
-    |eof                          |return
-    |c[\n]         |.eol          | ->                   |>> :children
-    |c[ \t]        |.space        | ->                   |>> :content
-    |default       |.text         | MARK                 |>> :inline
-
-  |state[:inline]
-    ; Emitting Text mid-function (element returns Element, not Text)
-    |eof                          | emit(Text) |return
-    |c[\n]         |.eol          | emit(Text) | ->      |>> :children
-    |default       |.collect      | ->                   |>>
+  |state[:after_name]
+    |c[\n]      |.eol      | ->              |>> :children
+    |c[ \t]     |.ws       | ->              |>> :content
+    |default    |.inline   | /text(col)      |>> :children
 
   |state[:content]
-    |eof                          |return
-    |c[\n]         |.eol          | ->                   |>> :children
-    |c[ \t]        |.space        | ->                   |>>
-    |default       |.text         | MARK                 |>> :inline
+    |c[\n]      |.eol      | ->              |>> :children
+    |c[ \t]     |.ws       | ->              |>>
+    |default    |.text     | /text(col)      |>> :children
 
   |state[:children]
-    |eof                          |return
-    |c[\n]         |.blank        | ->                   |>>
-    |c[ \t]        |.indent       | ->                   |>> :check_indent
-    |default       |.dedent       |return
+    |c[\n]      |.blank    | ->              |>>
+    |c[ \t]     |.ws       | ->              |>> :check
+    |default    |.dedent   |return
 
-  |state[:check_indent]
-    |eof                          |return
-    |if[COL <= elem_col]          |return
-    |c[<P>]        |.child        | -> | /element(COL)   |>> :children
-    |default       |.text         | MARK                 |>> :child_text
+  |state[:check]
+    |if[COL <= col]        |return
+    |c[<P>]     |.child    | -> | /element(COL) |>> :children
+    |default    |.text     | /text(COL)        |>> :children
 
-  |state[:child_text]
-    |eof                          | emit(Text) |return
-    |c[\n]         |.eol          | emit(Text) | ->      |>> :children
-    |default       |.collect      | ->                   |>>
+; Name: CONTENT type
+; - MARK at entry (auto)
+; - emit Name on return (auto)
+|function[name:Name]
+  |state[:main]
+    |label_cont |.cont     | ->              |>>
+    |default    |.done     |return
+
+; Text: CONTENT type
+; - MARK at entry (auto)
+; - emit Text on return (auto)
+; - SCAN inferred (\n case + self-loop default)
+|function[text:Text] :col
+  |state[:main]
+    |c[\n]      |.eol      |return
+    |default    |.collect  | ->              |>>

@@ -1,6 +1,9 @@
 ; Minimal parser - just collects all input as text
 ;
-; This is the simplest possible .desc file that produces working output.
+; CONTENT type means:
+; - MARK at function entry (automatic)
+; - emit(Text) on return (automatic)
+; - EOF: emit accumulated content and return (automatic)
 
 |parser minimal
 
@@ -8,8 +11,6 @@
 
 |entry-point /document
 
-|function[document]
-  |eof                       |return
+|function[document:Text]
   |state[:main]
-    |eof                     | emit(Text) |return
-    |default    |.collect    | MARK | ->  |>>
+    |default    |.collect   | ->  |>>
