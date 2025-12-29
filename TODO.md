@@ -1,19 +1,42 @@
 # descent TODO
 
-## CLI Implementation
-
-The gem needs a proper CLI (`descent`) with:
-
-- [ ] `descent generate <file.desc>` - Generate parser (default: Rust to stdout)
-- [ ] `descent generate --target rust|c <file.desc>` - Target language selection
-- [ ] `descent generate -o <output> <file.desc>` - Output to file
-- [ ] `descent generate --trace <file.desc>` - Enable trace output in generated parser
-- [ ] `descent debug <file.desc>` - Output IR for debugging (currently `bin/debug`)
-- [ ] `descent validate <file.desc>` - Validate without generating
-- [ ] `descent --help` - Help
-- [ ] `descent --version` - Version
+## CLI Implementation (using devex/core)
 
 Entry point: `exe/descent`
+Tools directory: `lib/descent/tools/`
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `descent generate <file>` | Generate parser from .desc file |
+| `descent debug <file>` | Output tokens/AST/IR for debugging |
+| `descent validate <file>` | Validate .desc file without generating |
+
+### Flags
+
+**generate:**
+- `-o, --output=FILE` - Output to file (default: stdout)
+- `-t, --target=TARGET` - Target language: rust, c (default: rust)
+- `--trace` - Enable trace output in generated parser
+
+**debug:**
+- `--tokens` - Show tokens only
+- `--ast` - Show AST only
+- `--ir` - Show IR only (default: all stages)
+
+**validate:**
+- (no special flags)
+
+### Implementation
+
+```
+exe/descent                    # CLI entry point using devex/core
+lib/descent/tools/
+  generate.rb                  # Generate parser command
+  debug.rb                     # Debug/inspect command
+  validate.rb                  # Validate command
+```
 
 ## Current Status
 
