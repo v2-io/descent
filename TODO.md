@@ -42,7 +42,7 @@ Entry point: `exe/descent`
 - [x] Conditional cases with commands (FIXED)
 - [x] `->[chars]` advance-to with escape processing (FIXED)
 
-## EXPECTS Inference (Next Priority)
+## EXPECTS Inference (IMPLEMENTED)
 
 The DSL does NOT have explicit `EXPECTS(x)` annotations. Instead, the expected closing
 delimiter is INFERRED from the structure of return cases.

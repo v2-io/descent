@@ -304,6 +304,7 @@ impl<'a> Parser<'a> {
                     {% endif %}
                     return;
                 }
+                _ => unreachable!("scan_to only returns target chars"),
             }
             {% else %}
             {% comment %} Non-scannable: check EOF first, then match {% endcomment %}
@@ -387,6 +388,7 @@ impl<'a> Parser<'a> {
                             {% endif %}
                             return;
                         }
+                        _ => unreachable!("scan_to only returns target chars"),
                     }
                     {% else %}
                     {% comment %} Non-scannable: check EOF first {% endcomment %}
