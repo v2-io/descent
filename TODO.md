@@ -53,17 +53,21 @@ lib/descent/tools/
 - [x] Type-driven emit: BRACKET emits Start/End, CONTENT emits on return
 - [x] EOF inference: basic type-based emit on EOF
 - [x] Debug script: `bin/debug` dumps tokens/AST/IR
+- [x] CLI: `descent generate/debug/validate` commands via devex/core
+- [x] Function parameters: `:col` params passed through, COL → self.col()
 
 ### Template Issues
-- [ ] Clean up excessive whitespace in generated code
-- [ ] Liquid deprecation warnings (use Environment instead of Template class methods)
-- [ ] Handle function parameters in state machine (e.g., `col` parameter)
+- [x] Clean up excessive whitespace in generated code (post-processing gsub)
+- [x] Liquid deprecation warnings (use Environment instead of Template class methods)
+- [x] Handle function parameters in state machine (e.g., `col` parameter)
+- [x] COL keyword transforms to `self.col()` in conditions and call args
 
 ### Parser/Lexer Issues
 - [x] `->` recognized as advance command (FIXED)
 - [x] Character classes like `letter`, `label_cont` (FIXED)
 - [x] Conditional cases with commands (FIXED)
 - [x] `->[chars]` advance-to with escape processing (FIXED)
+- [x] Function call arguments preserve case (COL vs col) (FIXED)
 
 ## EXPECTS Inference (IMPLEMENTED)
 

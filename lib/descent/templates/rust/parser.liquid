@@ -324,7 +324,7 @@ impl<'a> Parser<'a> {
                 {% if kase.is_default %}
                 _ => {
                 {% elsif kase.is_conditional %}
-                _ if {{ kase.condition }} => {
+                _ if {{ kase.condition | rust_expr }} => {
                 {% elsif kase.special_class %}
                 Some(b) if Self::is_{{ kase.special_class }}(b) => {
                 {% elsif kase.chars.size == 1 %}
@@ -362,7 +362,7 @@ impl<'a> Parser<'a> {
                         {% for kase in state.cases %}
                         {% unless kase.is_default %}
                         {% if kase.is_conditional %}
-                        _ if {{ kase.condition }} => {
+                        _ if {{ kase.condition | rust_expr }} => {
                         {% elsif kase.special_class %}
                         Some(b) if Self::is_{{ kase.special_class }}(b) => {
                         {% elsif kase.chars.size == 1 %}
@@ -408,7 +408,7 @@ impl<'a> Parser<'a> {
                         {% if kase.is_default %}
                         _ => {
                         {% elsif kase.is_conditional %}
-                        _ if {{ kase.condition }} => {
+                        _ if {{ kase.condition | rust_expr }} => {
                         {% elsif kase.special_class %}
                         Some(b) if Self::is_{{ kase.special_class }}(b) => {
                         {% elsif kase.chars.size == 1 %}

@@ -144,7 +144,7 @@ module Descent
                        .uniq
 
       return nil if explicit_chars.empty?
-      return nil if explicit_chars.size > 4 # memchr only supports up to 4
+      return nil if explicit_chars.size > 3 # memchr only supports up to 3 (memchr, memchr2, memchr3)
 
       explicit_chars
     end

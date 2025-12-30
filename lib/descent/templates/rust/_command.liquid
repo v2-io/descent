@@ -67,7 +67,7 @@
 {% assign call_value = cmd.args.value %}
 {% if call_value contains "(" %}
 {% assign call_name = call_value | split: "(" | first %}
-{% assign call_args = call_value | split: "(" | last | remove: ")" %}
+{% assign call_args = call_value | split: "(" | last | remove: ")" | rust_expr %}
                     self.parse_{{ call_name }}({{ call_args }}, on_event);
 {% else %}
                     self.parse_{{ call_value }}(on_event);
@@ -75,21 +75,17 @@
 
 {% when "assign" %}
 {% if cmd.args.var and cmd.args.expr %}
-{% if cmd.args.expr == "COL" %}
-                    {{ cmd.args.var }} = self.col();
-{% else %}
-                    {{ cmd.args.var }} = {{ cmd.args.expr }};
-{% endif %}
+                    {{ cmd.args.var }} = {{ cmd.args.expr | rust_expr }};
 {% endif %}
 
 {% when "add_assign" %}
 {% if cmd.args.var and cmd.args.expr %}
-                    {{ cmd.args.var }} += {{ cmd.args.expr }};
+                    {{ cmd.args.var }} += {{ cmd.args.expr | rust_expr }};
 {% endif %}
 
 {% when "sub_assign" %}
 {% if cmd.args.var and cmd.args.expr %}
-                    {{ cmd.args.var }} -= {{ cmd.args.expr }};
+                    {{ cmd.args.var }} -= {{ cmd.args.expr | rust_expr }};
 {% endif %}
 
 {% when "emit" %}

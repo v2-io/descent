@@ -63,9 +63,18 @@ module Descent
       # Handle multi-line parts by stripping comment from each line
       part = part.lines.map { |line| line.sub(/;.*/, '').rstrip }.join("\n").strip
 
-      # Extract tag - downcase unless it's an emit() which needs to preserve case
+      # Extract tag - downcase unless it's emit() or function call (preserve args case)
       raw_tag = part[/^(\.|[^ \[]+)/]&.strip || ''
-      tag     = raw_tag.match?(/^emit\(/i) ? raw_tag : raw_tag.downcase
+      tag = if raw_tag.match?(/^emit\(/i)
+              raw_tag
+            elsif raw_tag.match?(%r{^/\w+\(})
+              # Function call - preserve case of arguments inside parens
+              name = raw_tag[%r{^/(\w+)\(}, 1]
+              args = raw_tag[/\(([^)]*)\)/, 1]
+              "/#{name.downcase}(#{args})"
+            else
+              raw_tag.downcase
+            end
       id      = part[/\[([^\]]*)\]/, 1] || ''
       rest = part
              .sub(/^(\.|[^ \[]+)/, '')

@@ -28,6 +28,15 @@ module Descent
 
       str.to_s.split(/[_\s-]/).map(&:capitalize).join
     end
+
+    # Transform DSL expressions to Rust.
+    # - COL -> self.col()
+    # - Other transformations can be added here
+    def rust_expr(str)
+      return '' if str.nil?
+
+      str.to_s.gsub(/\bCOL\b/, 'self.col()')
+    end
   end
 
   # Custom file system for Liquid partials.
@@ -62,19 +71,22 @@ module Descent
 
       raise Error, "No template for target: #{@target} (looked in #{template_path})" unless File.exist?(template_path)
 
-      # Register custom filters
-      Liquid::Template.register_filter(LiquidFilters)
+      # Build Liquid environment with filters and file system
+      env = Liquid::Environment.build do |e|
+        e.register_filter(LiquidFilters)
+        e.file_system = TemplateFileSystem.new(template_dir)
+      end
 
-      # Set up file system for partials
-      Liquid::Template.file_system = TemplateFileSystem.new(template_dir)
+      template = Liquid::Template.parse(File.read(template_path), environment: env)
 
-      template = Liquid::Template.parse(File.read(template_path))
-
-      template.render(
+      result = template.render(
         build_context,
         strict_variables: false, # Partials may not have all variables
         strict_filters:   true
       )
+
+      # Post-process: collapse excessive whitespace (3+ newlines -> 2)
+      result.gsub(/\n{3,}/, "\n\n")
     end
 
     private
