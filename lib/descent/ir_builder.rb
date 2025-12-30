@@ -147,11 +147,13 @@ module Descent
     def parse_chars(chars_str)
       return [nil, nil] if chars_str.nil?
 
-      # Check for pure special named class (all uppercase with underscores)
-      return [nil, chars_str.downcase.to_sym] if chars_str.match?(/^[A-Z_]+$/)
+      # Check for pure special named class (SCREAMING_CASE: uppercase words separated by underscores)
+      # Examples: LETTER, LABEL_CONT, HEX_DIGIT
+      return [nil, chars_str.downcase.to_sym] if chars_str.match?(/^[A-Z]+(?:_[A-Z]+)*$/)
 
       # Check for combined: CLASS followed by literal chars (e.g., LETTER'[.?!)
-      if (match = chars_str.match(/^([A-Z_]+)(.+)$/))
+      # Class portion is SCREAMING_CASE, literals start with non-uppercase
+      if (match = chars_str.match(/^([A-Z]+(?:_[A-Z]+)*)(.+)$/))
         class_name = match[1].downcase.to_sym
         literal_chars = process_escapes(match[2]).chars
         return [literal_chars, class_name]
