@@ -49,7 +49,7 @@
     |c[#]       |.hash      | /heading         |>>
     |c[`]       |.tick      | /maybe_fence     |>>
     |c[>]       |.quote     | -> | /blockquote |>>
-    |c[-]       |.dash      | /dash_line       |>>
+    |c[-]       |.dash      | -> | /dash_line       |>>
     ; Note: * at line start goes to paragraph - list detection in :indented only
     ; This allows *emphasis* at start of paragraph
     |default    |.para      | /paragraph       |>>
