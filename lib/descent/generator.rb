@@ -31,11 +31,15 @@ module Descent
 
     # Transform DSL expressions to Rust.
     # - COL -> self.col()
-    # - Other transformations can be added here
+    # - PREV -> self.prev()
+    # - Character literals: ' ' -> b' '
     def rust_expr(str)
       return '' if str.nil?
 
-      str.to_s.gsub(/\bCOL\b/, 'self.col()')
+      str.to_s
+         .gsub(/\bCOL\b/, 'self.col()')
+         .gsub(/\bPREV\b/, 'self.prev()')
+         .gsub(/'(.)'/, "b'\\1'")  # Convert char literals to byte literals
     end
   end
 
@@ -151,6 +155,20 @@ module Descent
       }
     end
 
-    def command_to_hash(cmd) = { 'type' => cmd.type.to_s, 'args' => cmd.args.transform_keys(&:to_s) }
+    def command_to_hash(cmd)
+      args = cmd.args.transform_keys(&:to_s)
+
+      # Recursively convert nested commands in conditionals
+      if cmd.type == :conditional && args['clauses']
+        args['clauses'] = args['clauses'].map do |clause|
+          {
+            'condition' => clause['condition'],
+            'commands'  => clause['commands'].map { |c| command_to_hash(c) }
+          }
+        end
+      end
+
+      { 'type' => cmd.type.to_s, 'args' => args }
+    end
   end
 end

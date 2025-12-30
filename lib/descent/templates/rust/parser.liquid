@@ -117,6 +117,16 @@ impl<'a> Parser<'a> {
         self.column as i32
     }
 
+    /// Previous byte (0 at start of input).
+    #[inline(always)]
+    fn prev(&self) -> u8 {
+        if self.pos > 0 {
+            self.input[self.pos - 1]
+        } else {
+            0
+        }
+    }
+
     #[inline(always)]
     fn is_letter(b: u8) -> bool {
         b.is_ascii_alphabetic()

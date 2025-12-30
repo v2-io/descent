@@ -98,7 +98,14 @@ module Descent
       if cmd.is_a?(AST::Conditional)
         return IR::Command.new(
           type: :conditional,
-          args: { clauses: cmd.clauses&.map { |c| { condition: c.condition, commands: c.commands.map { |cc| build_command(cc) } } } }
+          args: {
+            clauses: cmd.clauses&.map do |c|
+              {
+                'condition' => c.condition,
+                'commands' => c.commands.map { |cc| build_command(cc) }
+              }
+            end
+          }
         )
       end
 

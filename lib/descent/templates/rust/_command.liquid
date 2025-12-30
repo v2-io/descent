@@ -98,8 +98,22 @@
                     on_event(Event::Error { code: ParseErrorCode::{{ error_code }}, span: self.span() });
 
 {% when "conditional" %}
-{% comment %} Conditionals are handled at a higher level - this shouldn't be reached {% endcomment %}
-                    // TODO: conditional handling
+{% comment %} Inline conditional: if/else chain {% endcomment %}
+{% for clause in cmd.args.clauses %}
+{% if forloop.first %}
+                    if {{ clause.condition | rust_expr }} {
+{% else %}
+{% if clause.condition %}
+                    } else if {{ clause.condition | rust_expr }} {
+{% else %}
+                    } else {
+{% endif %}
+{% endif %}
+{% for nested_cmd in clause.commands %}
+{% include 'command' cmd: nested_cmd, func: func, return_type_info: return_type_info, states: states %}
+{% endfor %}
+{% endfor %}
+                    }
 
 {% else %}
                     // Unknown command: {{ cmd.type }}
