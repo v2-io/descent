@@ -21,6 +21,32 @@ pub enum Event<'a> {
     Error { code: ParseErrorCode, span: Range<usize> },
 }
 
+impl<'a> Event<'a> {
+    /// Format event as a single line for test output.
+    pub fn format_line(&self) -> String {
+        match self {
+{% for type in types %}
+{% if type.kind == "bracket" %}
+            Event::{{ type.name }}Start { span } => {
+                format!("{{ type.name }}Start @ {}..{}", span.start, span.end)
+            }
+            Event::{{ type.name }}End { span } => {
+                format!("{{ type.name }}End @ {}..{}", span.start, span.end)
+            }
+{% elsif type.kind == "content" %}
+            Event::{{ type.name }} { content, span } => {
+                let s = std::str::from_utf8(content).unwrap_or("<invalid utf8>");
+                format!("{{ type.name }} {:?} @ {}..{}", s, span.start, span.end)
+            }
+{% endif %}
+{% endfor %}
+            Event::Error { code, span } => {
+                format!("Error {:?} @ {}..{}", code, span.start, span.end)
+            }
+        }
+    }
+}
+
 /// Error codes for parse errors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParseErrorCode {

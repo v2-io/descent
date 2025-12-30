@@ -220,16 +220,58 @@ pub enum ParseErrorCode {
 - MARK/TERM: parsed, auto-MARK for CONTENT works, explicit MARK/TERM in progress
 
 ### Not Yet Implemented
-- Combined char classes: `|c[LETTER'[.?!*+]`
-- TERM adjustments: `TERM(-1)`
-- PREPEND: `PREPEND(|)`
 - Return with value: `|return value`
 - Built-in /error
 - C template
 
 ### Recently Implemented
+- [x] Combined char classes: `|c[LETTER'[.?!*+]` - match class OR literal chars
+- [x] TERM adjustments: `TERM(-1)` - terminate slice before current position
+- [x] PREPEND: `PREPEND(|)` - emit literal as text event
 - [x] Inline literals: `TypeName`, `TypeName(literal)`, `TypeName(USE_MARK)`
 - [x] PREV variable: Previous byte for context-sensitive parsing
+
+## Testing Harness
+
+End-to-end testing for generated parsers requires two levels:
+
+### Level 1: Generator Correctness (Ruby-driven)
+- Does descent produce correct Rust code for various `.desc` inputs?
+- Basic "parse this input, get these events" verification
+
+### Level 2: Runtime Behavior (Rust-native tests)
+- Streaming semantics: `feed()` partial chunks, `finish()` for EOF
+- Backpressure: `buffer_full` flag, consumer reading to unblock
+- Buffer boundaries: token split across chunks
+- Performance: criterion benchmarks
+
+### Architecture
+
+```
+test/
+  fixtures/
+    minimal.desc / .input / .expected
+    lines.desc / ...
+  rust_harness/
+    Cargo.toml
+    src/
+      lib.rs              # Re-exports generated parser module
+      generated.rs        # Ruby writes generated parser here
+      main.rs             # CLI: stdin → JSON events to stdout
+    tests/
+      streaming.rs        # Backpressure, partial feed, EOF
+      boundaries.rs       # Tokens split across chunks
+    benches/
+      parse.rs            # Criterion benchmarks
+```
+
+### Ruby Tests
+1. Generate parser → write to `generated.rs`
+2. `cargo run < input.txt` → compare JSON to `.expected`
+
+### Rust Tests (via `cargo test` in harness)
+- Explicit tests for streaming edge cases
+- Tests the *template's runtime code*, not individual grammars
 
 ## Future Enhancements
 
@@ -243,6 +285,25 @@ The IR provides enough structure for useful static analysis:
 ### Bootstrap
 The `.desc` format is valid UDON. When libudon is mature, descent can use the
 UDON parser (that it generated!) to parse its own input format.
+
+## SCAN Optimization Limitations
+
+### memchr3 Limit
+
+SCAN optimization uses `memchr`, `memchr2`, or `memchr3` for SIMD-accelerated scanning.
+This limits scannable states to **at most 3 exit characters**.
+
+**Example issue:** The markdown parser's `text` function has 5 exit chars (`` ` ``, `*`, `_`, `~`, `\n`)
+which exceeds the limit, so it falls back to byte-by-byte scanning.
+
+**Potential solutions:**
+1. **Accept the tradeoff** - specialized inner text functions (`emph_text`, `strike_text`) still get SCAN
+2. **Support memchr for 4+ chars** - some crates like `memchr` support `memchr_iter` with arbitrary needles
+3. **Tiered scanning** - scan for most common delimiter first, then re-scan subset if not found
+4. **Combined character classes** - if multiple delimiters share similar handling, combine them
+
+**Current workaround in markdown.desc:** Each inline container has its own text function
+(`emph_text`, `emph_text_under`, `strike_text`) with only 3 exits, preserving SCAN where it matters most.
 
 ## Performance Optimizations (from Codex review of libudon)
 
