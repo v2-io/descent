@@ -15,7 +15,7 @@
 ; - Blockquotes (> with nesting)
 ; - Unordered lists (- or *, nested via indentation)
 ; - Horizontal rules (---, ***)
-; - Inline: code spans (`), emphasis (*), strong (**)
+; - Inline: code spans (`), emphasis (*/_), strong (**/__), strikethrough (~~)
 
 |parser markdown
 
@@ -28,8 +28,9 @@
 |type[ThematicBreak] BRACKET
 
 ; Inline containers - nesting handled via recursion
-|type[Emphasis]   BRACKET
-|type[Strong]     BRACKET
+|type[Emphasis]     BRACKET
+|type[Strong]       BRACKET
+|type[Strikethrough] BRACKET
 
 ; Content - MARK on entry, emit on return
 |type[Text]       CONTENT
@@ -49,7 +50,8 @@
     |c[`]       |.tick      | /maybe_fence     |>>
     |c[>]       |.quote     | -> | /blockquote |>>
     |c[-]       |.dash      | /dash_line       |>>
-    |c[*]       |.star      | /star_line       |>>
+    ; Note: * at line start goes to paragraph - list detection in :indented only
+    ; This allows *emphasis* at start of paragraph
     |default    |.para      | /paragraph       |>>
 
   ; After leading whitespace - check for list continuation
@@ -209,23 +211,23 @@
     |default    |.text      | /paragraph       |return
 
 ; Lines starting with star: list item or thematic break
+; Key: "* " (star space) = list, "*x" (star non-space) = paragraph with emphasis
 |function[star_line]
   |state[:first]
     |c[*]       |.star2     | ->               |>> :second
-    |c[ \t]     |.space     | -> | /list_item(0) |return
-    |c[\n]      |.eol       | -> | /list_item(0) |return
-    |default    |.text      | /paragraph       |return
+    |default    |.text      | /paragraph       |return    ; bare * at start - shouldn't happen
 
   |state[:second]
     |c[*]       |.star3     | ->               |>> :hr_check
-    |c[ \t]     |.space     | /paragraph       |return
-    |default    |.text      | /paragraph       |return
+    |c[ \t]     |.space     | -> | /list_item(0) |return   ; "* " = list item
+    |c[\n]      |.eol       | -> | /list_item(0) |return   ; "*\n" = empty list item
+    |default    |.text      | PREPEND(*) | /paragraph |return   ; "*x" = emphasis, restore *
 
   |state[:hr_check]
     |c[*]       |.more      | ->               |>>
     |c[ \t]     |.ws        | ->               |>>
     |c[\n]      |.hr        | -> | /thematic_break |return
-    |default    |.text      | /paragraph       |return
+    |default    |.text      | PREPEND(**) | /paragraph |return  ; "**x" = strong, restore **
 
 ; Thematic break (horizontal rule) - just marks position
 |function[thematic_break:ThematicBreak]
@@ -277,6 +279,8 @@
   |state[:main]
     |c[`]       |.code      | -> | /code_span   |>>
     |c[*]       |.star      | -> |>> :after_star
+    |c[_]       |.under     | -> |>> :after_under
+    |c[~]       |.tilde     | -> |>> :after_tilde
     |c[\n]      |.eol       |return
     |default    |.text      | /text            |>>
 
@@ -291,10 +295,33 @@
     |c[ \t\n]   |.not_left  | Text(**) |>> :main            ; ** + space = literal
     |default    |.strong    | /strong          |>> :main    ; left-flanking, open strong
 
+  ; Consumed one _, check for __ or left-flanking single _
+  |state[:after_under]
+    |c[_]       |.double    | -> |>> :after_two_unders
+    |c[ \t\n]   |.not_left  | Text(_) |>> :main             ; _ + space = literal
+    |default    |.emph      | /emphasis_under  |>> :main    ; left-flanking, open emphasis
+
+  ; Consumed __, check if left-flanking
+  |state[:after_two_unders]
+    |c[ \t\n]   |.not_left  | Text(__) |>> :main            ; __ + space = literal
+    |default    |.strong    | /strong_under    |>> :main    ; left-flanking, open strong
+
+  ; Consumed one ~, check for ~~
+  |state[:after_tilde]
+    |c[~]       |.double    | -> |>> :after_two_tildes
+    |default    |.literal   | Text(~) |>> :main             ; single ~ = literal
+
+  ; Consumed ~~, check if left-flanking
+  |state[:after_two_tildes]
+    |c[ \t\n]   |.not_left  | Text(~~) |>> :main            ; ~~ + space = literal
+    |default    |.strike    | /strikethrough   |>> :main    ; left-flanking, open strikethrough
+
 ; Inline code span: `code`
+; CONTENT type: auto-MARK on entry, emit on return
+; Must TERM before consuming closing ` to exclude it from content
 |function[code_span:Code]
   |state[:main]
-    |c[`]       |.end       | ->               |return
+    |c[`]       |.end       | TERM | ->        |return
     |c[\n]      |.eol       |return
     |default    |.char      | ->               |>>
 
@@ -380,6 +407,106 @@
     |default    |.nested    | /strong            |>> :content
 
 ; ============================================================
+; Emphasis with underscore: _content_ with recursive nesting
+; Same structure as * emphasis but uses _ delimiter
+; ============================================================
+
+|function[emphasis_under:Emphasis]
+  |state[:content]
+    |c[`]       |.code      | -> | /code_span   |>>
+    |c[_]       |.under     |>> :check_under
+    |c[\n]      |.eol       | ->               |return
+    |default    |.text      | /emph_text_under |>>
+
+  |state[:check_under]
+    |if[PREV == ' ']        | -> |>> :not_right_flanking
+    |if[PREV == '\t']       | -> |>> :not_right_flanking
+    |if[PREV == '\n']       | -> |>> :not_right_flanking
+    |if[PREV == 0]          | -> |>> :not_right_flanking
+    |c[_]       |.double    | -> |>> :right_flank_double
+    |default    |.close     | -> |return
+
+  |state[:right_flank_double]
+    |default    |.close     |return
+
+  |state[:not_right_flanking]
+    |c[_]       |.double    | -> |>> :not_rf_double
+    |c[ \t\n]   |.literal   | Text(_) |>> :content
+    |default    |.nested    | /emphasis_under    |>> :content
+
+  |state[:not_rf_double]
+    |c[ \t\n]   |.literal   | Text(__) |>> :content
+    |default    |.nested    | /strong_under      |>> :content
+
+; ============================================================
+; Strong with underscore: __content__ with recursive nesting
+; ============================================================
+
+|function[strong_under:Strong]
+  |state[:content]
+    |c[`]       |.code      | -> | /code_span   |>>
+    |c[_]       |.under     |>> :check_under
+    |c[\n]      |.eol       | ->               |return
+    |default    |.text      | /emph_text_under |>>
+
+  |state[:check_under]
+    |if[PREV == ' ']        | -> |>> :not_right_flanking
+    |if[PREV == '\t']       | -> |>> :not_right_flanking
+    |if[PREV == '\n']       | -> |>> :not_right_flanking
+    |if[PREV == 0]          | -> |>> :not_right_flanking
+    |c[_]       |.double    | -> |>> :right_flank_double
+    |default    |.single    | -> |>> :right_flank_single
+
+  |state[:right_flank_single]
+    |c[ \t\n]   |.literal   | Text(_) |>> :content
+    |default    |.nested    | /emphasis_under    |>> :content
+
+  |state[:right_flank_double]
+    |default    |.close     | -> |return
+
+  |state[:not_right_flanking]
+    |c[_]       |.double    | -> |>> :not_rf_double
+    |c[ \t\n]   |.literal   | Text(_) |>> :content
+    |default    |.nested    | /emphasis_under    |>> :content
+
+  |state[:not_rf_double]
+    |c[ \t\n]   |.literal   | Text(__) |>> :content
+    |default    |.nested    | /strong_under      |>> :content
+
+; ============================================================
+; Strikethrough: ~~content~~ (GFM extension)
+; ============================================================
+
+|function[strikethrough:Strikethrough]
+  |state[:content]
+    |c[`]       |.code      | -> | /code_span   |>>
+    |c[~]       |.tilde     |>> :check_tilde
+    |c[\n]      |.eol       | ->               |return
+    |default    |.text      | /strike_text     |>>
+
+  |state[:check_tilde]
+    |if[PREV == ' ']        | -> |>> :not_right_flanking
+    |if[PREV == '\t']       | -> |>> :not_right_flanking
+    |if[PREV == '\n']       | -> |>> :not_right_flanking
+    |if[PREV == 0]          | -> |>> :not_right_flanking
+    ; Right-flanking
+    |c[~]       |.double    | -> |>> :right_flank_double
+    |default    |.single    | Text(~) |>> :content           ; single ~ inside ~~ = literal
+
+  |state[:right_flank_double]
+    |default    |.close     | -> |return                     ; ~~ closes strikethrough
+
+  |state[:not_right_flanking]
+    ; ~ not right-flanking, check if left-flanking for nested strikethrough
+    |c[~]       |.double    | -> |>> :not_rf_double
+    |c[ \t\n]   |.literal   | Text(~) |>> :content
+    |default    |.nested    | /strikethrough   |>> :content  ; nested strikethrough
+
+  |state[:not_rf_double]
+    |c[ \t\n]   |.literal   | Text(~~) |>> :content
+    |default    |.nested    | /strikethrough   |>> :content
+
+; ============================================================
 ; Text collection - stops at significant chars
 ; ============================================================
 
@@ -388,14 +515,32 @@
   |state[:main]
     |c[`]       |.code      |return
     |c[*]       |.star      |return
+    |c[_]       |.under     |return
+    |c[~]       |.tilde     |return
     |c[\n]      |.eol       |return
     |default    |.char      | ->               |>>
 
-; Text inside emphasis/strong - same stops
+; Text inside */emphasis/strong - stops at * delimiter
 |function[emph_text:Text]
   |state[:main]
     |c[`]       |.code      |return
     |c[*]       |.star      |return
+    |c[\n]      |.eol       |return
+    |default    |.char      | ->               |>>
+
+; Text inside _emphasis/strong - stops at _ delimiter
+|function[emph_text_under:Text]
+  |state[:main]
+    |c[`]       |.code      |return
+    |c[_]       |.under     |return
+    |c[\n]      |.eol       |return
+    |default    |.char      | ->               |>>
+
+; Text inside ~~strikethrough~~ - stops at ~ delimiter
+|function[strike_text:Text]
+  |state[:main]
+    |c[`]       |.code      |return
+    |c[~]       |.tilde     |return
     |c[\n]      |.eol       |return
     |default    |.char      | ->               |>>
 
