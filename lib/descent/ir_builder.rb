@@ -138,12 +138,24 @@ module Descent
          .gsub('\\t', "\t")
     end
 
-    # Parse character specification into literal chars or special class
+    # Parse character specification into literal chars and/or special class
+    # Returns [chars_array, special_class_symbol]
+    # Examples:
+    #   "abc"           -> [["a", "b", "c"], nil]
+    #   "LETTER"        -> [nil, :letter]
+    #   "LETTER'[.?!"   -> [["'", "[", ".", "?", "!"], :letter]
     def parse_chars(chars_str)
       return [nil, nil] if chars_str.nil?
 
-      # Check for special named classes (all uppercase)
+      # Check for pure special named class (all uppercase with underscores)
       return [nil, chars_str.downcase.to_sym] if chars_str.match?(/^[A-Z_]+$/)
+
+      # Check for combined: CLASS followed by literal chars (e.g., LETTER'[.?!)
+      if (match = chars_str.match(/^([A-Z_]+)(.+)$/))
+        class_name = match[1].downcase.to_sym
+        literal_chars = process_escapes(match[2]).chars
+        return [literal_chars, class_name]
+      end
 
       # Parse literal characters with escapes
       [process_escapes(chars_str).chars, nil]
