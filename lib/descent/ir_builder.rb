@@ -117,6 +117,7 @@ module Descent
              when :inline_emit_literal then cmd.value.is_a?(Hash) ? cmd.value : {}
              when :term then { offset: cmd.value || 0 }
              when :prepend then { literal: process_escapes(cmd.value) }
+             when :return then parse_return_value(cmd.value)
              else
                {}
              end
@@ -161,6 +162,28 @@ module Descent
 
       # Parse literal characters with escapes
       [process_escapes(chars_str).chars, nil]
+    end
+
+    # Parse return value specification
+    # Returns hash with :emit_type, :emit_mode, :literal
+    # Examples:
+    #   nil or ""        -> {} (default behavior)
+    #   "TypeName"       -> { emit_type: "TypeName", emit_mode: :bare }
+    #   "TypeName(USE_MARK)" -> { emit_type: "TypeName", emit_mode: :mark }
+    #   "TypeName(lit)"  -> { emit_type: "TypeName", emit_mode: :literal, literal: "lit" }
+    def parse_return_value(value)
+      return {} if value.nil? || value.empty?
+
+      case value
+      when /^([A-Z]\w*)\(USE_MARK\)$/
+        { emit_type: ::Regexp.last_match(1), emit_mode: :mark }
+      when /^([A-Z]\w*)\(([^)]+)\)$/
+        { emit_type: ::Regexp.last_match(1), emit_mode: :literal, literal: process_escapes(::Regexp.last_match(2)) }
+      when /^([A-Z]\w*)$/
+        { emit_type: ::Regexp.last_match(1), emit_mode: :bare }
+      else
+        {} # Unknown format, use default
+      end
     end
 
     # Infer SCAN optimization: if a state has a simple self-looping default case

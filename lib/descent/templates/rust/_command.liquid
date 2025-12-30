@@ -51,7 +51,16 @@
 
 {% when "return" %}
 {% comment %} Emit appropriate event based on return type, then return {% endcomment %}
-{% if return_type_info.kind == "content" %}
+{% if cmd.args.emit_type %}
+{% comment %} Explicit return type specified {% endcomment %}
+{% if cmd.args.emit_mode == "mark" %}
+                    on_event(Event::{{ cmd.args.emit_type }} { content: self.term(), span: self.span_from_mark() });
+{% elsif cmd.args.emit_mode == "literal" %}
+                    on_event(Event::{{ cmd.args.emit_type }} { content: b"{{ cmd.args.literal }}", span: self.span() });
+{% else %}
+                    on_event(Event::{{ cmd.args.emit_type }} { span: self.span() });
+{% endif %}
+{% elsif return_type_info.kind == "content" %}
                     on_event(Event::{{ func.return_type }} { content: self.term(), span: self.span_from_mark() });
 {% elsif return_type_info.kind == "bracket" %}
                     on_event(Event::{{ func.return_type }}End { span: self.span() });
@@ -72,8 +81,18 @@
 {% assign call_value = cmd.args.value %}
 {% if call_value contains "(" %}
 {% assign call_name = call_value | split: "(" | first %}
-{% assign call_args = call_value | split: "(" | last | remove: ")" | rust_expr %}
-                    self.parse_{{ call_name }}({{ call_args }}, on_event);
+{% assign call_args = call_value | split: "(" | last | remove: ")" %}
+{% if call_name == "error" %}
+{% comment %} Built-in /error(ErrorCode) - emit error and return {% endcomment %}
+                    on_event(Event::Error { code: ParseErrorCode::{{ call_args }}, span: self.span() });
+                    return;
+{% else %}
+                    self.parse_{{ call_name }}({{ call_args | rust_expr }}, on_event);
+{% endif %}
+{% elsif call_value == "error" %}
+{% comment %} Built-in /error - emit UnexpectedChar and return {% endcomment %}
+                    on_event(Event::Error { code: ParseErrorCode::UnexpectedChar, span: self.span() });
+                    return;
 {% else %}
                     self.parse_{{ call_value }}(on_event);
 {% endif %}
