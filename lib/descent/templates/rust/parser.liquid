@@ -146,7 +146,9 @@ impl<'a> Parser<'a> {
 
     #[inline(always)]
     fn span_from_mark(&self) -> Range<usize> {
-        self.mark_pos..self.pos
+        // Use term_pos if set after mark, otherwise use current pos
+        let end = if self.term_pos > self.mark_pos { self.term_pos } else { self.pos };
+        self.mark_pos..end
     }
 
     #[inline(always)]
