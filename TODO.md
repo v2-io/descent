@@ -298,24 +298,29 @@ UDON parser (that it generated!) to parse its own input format.
 
 **Fixed:** `span_from_mark()` now uses the same logic as `term()` - respects `term_pos` when set.
 
-## SCAN Optimization Limitations
+## SCAN Optimization
 
-### memchr3 Limit
+### Chained memchr for 4-6 Chars - IMPLEMENTED
 
-SCAN optimization uses `memchr`, `memchr2`, or `memchr3` for SIMD-accelerated scanning.
-This limits scannable states to **at most 3 exit characters**.
+SCAN optimization now supports up to 6 exit characters via chained memchr calls:
 
-**Example issue:** The markdown parser's `text` function has 5 exit chars (`` ` ``, `*`, `_`, `~`, `\n`)
-which exceeds the limit, so it falls back to byte-by-byte scanning.
+| Chars | Implementation |
+|-------|----------------|
+| 1-3 | Single memchr/memchr2/memchr3 call |
+| 4 | memchr3 + memchr, take min |
+| 5 | memchr3 + memchr2, take min |
+| 6 | memchr3 + memchr3, take min |
 
-**Potential solutions:**
-1. **Accept the tradeoff** - specialized inner text functions (`emph_text`, `strike_text`) still get SCAN
-2. **Support memchr for 4+ chars** - some crates like `memchr` support `memchr_iter` with arbitrary needles
-3. **Tiered scanning** - scan for most common delimiter first, then re-scan subset if not found
-4. **Combined character classes** - if multiple delimiters share similar handling, combine them
+Two SIMD passes is still much faster than byte-by-byte for large text blocks.
 
-**Current workaround in markdown.desc:** Each inline container has its own text function
-(`emph_text`, `emph_text_under`, `strike_text`) with only 3 exits, preserving SCAN where it matters most.
+**Example:** The markdown parser's `text/main` now gets SCAN with 5 exit chars (`` ` ``, `*`, `_`, `~`, `\n`).
+
+### Beyond 6 Chars
+
+For states with >6 exit chars, SCAN is not applied. Options if needed:
+1. Restructure grammar to use fewer exit chars
+2. Use specialized text functions per container (current markdown.desc approach)
+3. Investigate aho-corasick for multi-pattern matching
 
 ## Performance Optimizations (from Codex review of libudon)
 
