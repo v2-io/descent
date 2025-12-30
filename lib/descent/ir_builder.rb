@@ -94,6 +94,14 @@ module Descent
     end
 
     def build_command(cmd)
+      # Handle AST::Conditional specially
+      if cmd.is_a?(AST::Conditional)
+        return IR::Command.new(
+          type: :conditional,
+          args: { clauses: cmd.clauses&.map { |c| { condition: c.condition, commands: c.commands.map { |cc| build_command(cc) } } } }
+        )
+      end
+
       args = case cmd.type
              when :assign, :add_assign, :sub_assign then cmd.value.is_a?(Hash) ? cmd.value : {}
              when :advance_to, :scan then { value: process_escapes(cmd.value) }
@@ -130,16 +138,18 @@ module Descent
       [process_escapes(chars_str).chars, nil]
     end
 
-    # Infer SCAN optimization: if a state has a self-looping default case,
-    # the explicit character cases become SCAN targets
+    # Infer SCAN optimization: if a state has a simple self-looping default case
+    # (only advance + transition, no side effects), the explicit character cases
+    # become SCAN targets.
     def infer_scan_chars(_state, cases)
       default_case = cases.find(&:default?)
       return nil unless default_case
-      return nil unless has_self_transition?(default_case)
+      return nil unless simple_self_loop?(default_case)
 
       # Collect all explicit characters from non-default cases
       explicit_chars = cases
                        .reject(&:default?)
+                       .reject(&:conditional?) # Skip conditional cases
                        .flat_map { |c| c.chars || [] }
                        .uniq
 
@@ -149,6 +159,28 @@ module Descent
       explicit_chars
     end
 
+    # Check if a case is a simple self-loop: only advance and/or transition (no calls, emits, etc.)
+    # This is the stricter check for SCAN optimization.
+    def simple_self_loop?(kase)
+      has_self_transition = false
+
+      kase.commands.each do |cmd|
+        case cmd.type
+        when :advance
+          # OK - just advancing
+        when :transition
+          val = cmd.args[:value] || cmd.args['value']
+          has_self_transition = true if val.nil? || val.empty?
+        else
+          # Any other command (call, emit, mark, term, etc.) means not a simple loop
+          return false
+        end
+      end
+
+      has_self_transition
+    end
+
+    # Check if a case has any self-transition (used for is_self_looping metadata)
     def has_self_transition?(kase)
       kase.commands.any? do |cmd|
         next false unless cmd.type == :transition
@@ -216,14 +248,16 @@ module Descent
 
     def collect_locals_from_commands(commands, locals)
       commands.each do |cmd|
-        case cmd.type
-        when :assign, :add_assign, :sub_assign
-          if cmd.value.is_a?(Hash) && cmd.value[:var]
-            locals[cmd.value[:var]] ||= :i32 # Default type
-          end
-        when AST::Conditional
+        if cmd.is_a?(AST::Conditional)
           cmd.clauses&.each do |clause|
             collect_locals_from_commands(clause.commands, locals)
+          end
+        elsif cmd.respond_to?(:type)
+          case cmd.type
+          when :assign, :add_assign, :sub_assign
+            if cmd.value.is_a?(Hash) && cmd.value[:var]
+              locals[cmd.value[:var]] ||= :i32 # Default type
+            end
           end
         end
       end

@@ -50,6 +50,7 @@
     |default    |.dedent   |return
 
   |state[:check]
+    |c[ \t]     |.ws       | ->               |>>
     |if[COL <= col]        |return
     |c[<P>]     |.child    | -> | /element(COL) |>> :children
     |default    |.text     | /text(COL)        |>> :children
