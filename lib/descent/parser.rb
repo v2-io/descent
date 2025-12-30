@@ -114,6 +114,11 @@ module Descent
             lineno:   t.lineno
           )
           advance
+        when /^\/\w+/
+          # Bare function call - unconditional action case (no char match)
+          # e.g., | /text(line_col, parent_col) |return
+          # Don't advance - parse_bare_action_case will consume the function call
+          cases << parse_bare_action_case
         when /^[a-z_]+$/
           if keywords.include?(t.tag)
             advance # Skip - these are commands, not cases
@@ -153,6 +158,37 @@ module Descent
 
       AST::Case.new(
         chars:    chars_str,
+        substate:,
+        commands:,
+        lineno:
+      )
+    end
+
+    # Parse a bare action case - one that starts with a command (like /function)
+    # instead of a character match. Used for unconditional action states.
+    def parse_bare_action_case
+      token  = current
+      lineno = token.lineno
+      # Don't advance - the current token IS the first command
+
+      substate = nil
+      commands = []
+
+      case_starters = %w[function type state c default eof if letter label_cont digit hex_digit]
+
+      while (t = current) && !case_starters.include?(t.tag)
+        case t.tag
+        when '.'
+          substate = t.rest.strip
+          advance
+        else
+          commands << parse_command(t)
+          advance
+        end
+      end
+
+      AST::Case.new(
+        chars:    nil,
         substate:,
         commands:,
         lineno:
