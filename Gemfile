@@ -4,9 +4,9 @@ source 'https://rubygems.org'
 
 gemspec
 
-# Local development gems
-gem 'devex',            path: '../_gems/devex'
-gem 'rubocop-tablecop', path: '../_gems/rubocop-tablecop'
+# Development tools
+gem 'devex', '~> 0.3'
+gem 'rubocop-tablecop'
 
 gem 'rake', '~> 13.0'
 
