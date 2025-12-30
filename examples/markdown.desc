@@ -283,12 +283,12 @@
   ; Consumed one *, check for ** or left-flanking single *
   |state[:after_star]
     |c[*]       |.double    | -> |>> :after_two_stars
-    |c[ \t\n]   |.not_left  | /literal_star    |>> :main    ; * + space = literal
+    |c[ \t\n]   |.not_left  | Text(*) |>> :main             ; * + space = literal
     |default    |.emph      | /emphasis        |>> :main    ; left-flanking, open emphasis
 
   ; Consumed **, check if left-flanking
   |state[:after_two_stars]
-    |c[ \t\n]   |.not_left  | /literal_two_stars |>> :main  ; ** + space = literal
+    |c[ \t\n]   |.not_left  | Text(**) |>> :main            ; ** + space = literal
     |default    |.strong    | /strong          |>> :main    ; left-flanking, open strong
 
 ; Inline code span: `code`
@@ -331,12 +331,12 @@
   ; * not right-flanking, consumed it, check if left-flanking (nested opener)
   |state[:not_right_flanking]
     |c[*]       |.double    | -> |>> :not_rf_double
-    |c[ \t\n]   |.literal   | /literal_star_inner |>> :content   ; not left-flanking either
+    |c[ \t\n]   |.literal   | Text(*) |>> :content             ; literal *
     |default    |.nested    | /emphasis          |>> :content   ; nested emphasis
 
   ; ** not right-flanking, check if left-flanking
   |state[:not_rf_double]
-    |c[ \t\n]   |.literal   | /literal_two_stars_inner |>> :content
+    |c[ \t\n]   |.literal   | Text(**) |>> :content            ; literal **
     |default    |.nested    | /strong            |>> :content   ; nested strong
 
 ; ============================================================
@@ -362,7 +362,7 @@
 
   ; Single right-flanking * inside ** - nested emphasis
   |state[:right_flank_single]
-    |c[ \t\n]   |.literal   | /literal_star_inner |>> :content
+    |c[ \t\n]   |.literal   | Text(*) |>> :content             ; literal *
     |default    |.nested    | /emphasis          |>> :content
 
   ; ** and right-flanking - this is our closer
@@ -372,11 +372,11 @@
   ; * not right-flanking
   |state[:not_right_flanking]
     |c[*]       |.double    | -> |>> :not_rf_double
-    |c[ \t\n]   |.literal   | /literal_star_inner |>> :content
+    |c[ \t\n]   |.literal   | Text(*) |>> :content             ; literal *
     |default    |.nested    | /emphasis          |>> :content
 
   |state[:not_rf_double]
-    |c[ \t\n]   |.literal   | /literal_two_stars_inner |>> :content
+    |c[ \t\n]   |.literal   | Text(**) |>> :content            ; literal **
     |default    |.nested    | /strong            |>> :content
 
 ; ============================================================
@@ -399,29 +399,3 @@
     |c[\n]      |.eol       |return
     |default    |.char      | ->               |>>
 
-; ============================================================
-; Literal star handling
-;
-; When * or ** is neither opener nor closer, emit as text.
-; These are called after consuming the star(s), so we use
-; explicit content in the emit.
-; ============================================================
-
-; For now, these emit empty - the star handling needs rethinking
-; TODO: Add emit(Type, "literal") support or restructure
-
-|function[literal_star:Text]
-  |state[:main]
-    |default    |.skip      |return
-
-|function[literal_two_stars:Text]
-  |state[:main]
-    |default    |.skip      |return
-
-|function[literal_star_inner:Text]
-  |state[:main]
-    |default    |.skip      |return
-
-|function[literal_two_stars_inner:Text]
-  |state[:main]
-    |default    |.skip      |return

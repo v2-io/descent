@@ -40,6 +40,7 @@ pub struct Parser<'a> {
     input: &'a [u8],
     pos: usize,
     mark_pos: usize,
+    term_pos: usize,
     line: u32,
     column: u32,
 }
@@ -51,6 +52,7 @@ impl<'a> Parser<'a> {
             input,
             pos: 0,
             mark_pos: 0,
+            term_pos: 0,
             line: 1,
             column: 1,
         }
@@ -95,11 +97,20 @@ impl<'a> Parser<'a> {
     #[inline(always)]
     fn mark(&mut self) {
         self.mark_pos = self.pos;
+        self.term_pos = self.pos; // Reset term position
+    }
+
+    /// Set termination point with optional offset (e.g., -1 for one char before current)
+    #[inline(always)]
+    fn set_term(&mut self, offset: i32) {
+        self.term_pos = (self.pos as i32 + offset) as usize;
     }
 
     #[inline(always)]
     fn term(&self) -> &'a [u8] {
-        &self.input[self.mark_pos..self.pos]
+        // Use term_pos if set after mark, otherwise use current pos
+        let end = if self.term_pos > self.mark_pos { self.term_pos } else { self.pos };
+        &self.input[self.mark_pos..end]
     }
 
     #[inline(always)]

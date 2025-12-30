@@ -115,6 +115,8 @@ module Descent
              when :emit, :call, :call_method, :transition, :error then { value: cmd.value }
              when :inline_emit_bare, :inline_emit_mark then { type: cmd.value }
              when :inline_emit_literal then cmd.value.is_a?(Hash) ? cmd.value : {}
+             when :term then { offset: cmd.value || 0 }
+             when :prepend then { literal: process_escapes(cmd.value) }
              else
                {}
              end

@@ -59,9 +59,25 @@ module Descent
       #
       # Comments start with ; and go to end of line (or end of part)
 
-      # Strip comments first (but preserve content before ;)
-      # Handle multi-line parts by stripping comment from each line
-      part = part.lines.map { |line| line.sub(/;.*/, '').rstrip }.join("\n").strip
+      # Strip comments (but not semicolons inside brackets)
+      # A comment starts with ; only if not inside []
+      part = part.lines.map do |line|
+        # Find first ; that's not inside brackets
+        depth = 0
+        comment_start = nil
+        line.each_char.with_index do |c, i|
+          case c
+          when '[' then depth += 1
+          when ']' then depth -= 1
+          when ';'
+            if depth == 0
+              comment_start = i
+              break
+            end
+          end
+        end
+        comment_start ? line[0...comment_start].rstrip : line.rstrip
+      end.join("\n").strip
 
       # Extract tag - downcase unless it's emit(), function call, or inline type emit
       raw_tag = part[/^(\.|[^ \[]+)/]&.strip || ''

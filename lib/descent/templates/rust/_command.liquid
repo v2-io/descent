@@ -42,7 +42,12 @@
                     self.mark();
 
 {% when "term" %}
-                    {% comment %} TERM alone just marks the end - emit happens on return {% endcomment %}
+{% assign term_offset = cmd.args.offset | default: 0 %}
+                    self.set_term({{ term_offset }});
+
+{% when "prepend" %}
+{% comment %} Emit literal as text (prepends to logical content stream) {% endcomment %}
+                    on_event(Event::Text { content: b"{{ cmd.args.literal }}", span: self.span() });
 
 {% when "return" %}
 {% comment %} Emit appropriate event based on return type, then return {% endcomment %}

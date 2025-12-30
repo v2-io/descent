@@ -209,6 +209,10 @@ module Descent
       when 'term'     then [:term, nil]
       when /^emit\(/i then [:emit, tag[/emit\(([^)]+)\)/i, 1]]
       when %r{^/\w}   then [:call, tag[1..] + (rest.empty? ? '' : "(#{rest})")]
+      when /^TERM\((-?\d+)\)$/i       then [:term, ::Regexp.last_match(1).to_i]
+      when /^TERM$/i                  then [:term, 0]
+      when /^MARK$/i                  then [:mark, nil]
+      when /^PREPEND\(([^)]+)\)$/i    then [:prepend, ::Regexp.last_match(1)]
       when /^([A-Z]\w*)\(USE_MARK\)$/  then [:inline_emit_mark, ::Regexp.last_match(1)]
       when /^([A-Z]\w*)\(([^)]+)\)$/   then [:inline_emit_literal, { type: ::Regexp.last_match(1), literal: ::Regexp.last_match(2) }]
       when /^([A-Z]\w*)$/              then [:inline_emit_bare, ::Regexp.last_match(1)]
@@ -223,7 +227,9 @@ module Descent
 
       case cmd
       when /^MARK\b/i             then [:mark, nil]
-      when /^TERM\b/i             then [:term, nil]
+      when /^TERM\((-?\d+)\)/i    then [:term, ::Regexp.last_match(1).to_i]
+      when /^TERM\b/i             then [:term, 0]
+      when /^PREPEND\(([^)]+)\)/i then [:prepend, ::Regexp.last_match(1)]
       when /^return\b\s*(.*)$/i   then [:return, ::Regexp.last_match(1).strip]
       when /^->\s*$/              then [:advance, nil]
       when /^->\s*\[([^\]]+)\]$/  then [:advance_to, ::Regexp.last_match(1)]
