@@ -63,7 +63,7 @@ module Descent
       # Handle multi-line parts by stripping comment from each line
       part = part.lines.map { |line| line.sub(/;.*/, '').rstrip }.join("\n").strip
 
-      # Extract tag - downcase unless it's emit() or function call (preserve args case)
+      # Extract tag - downcase unless it's emit(), function call, or inline type emit
       raw_tag = part[/^(\.|[^ \[]+)/]&.strip || ''
       tag = if raw_tag.match?(/^emit\(/i)
               raw_tag
@@ -72,6 +72,9 @@ module Descent
               name = raw_tag[%r{^/(\w+)\(}, 1]
               args = raw_tag[/\(([^)]*)\)/, 1]
               "/#{name.downcase}(#{args})"
+            elsif raw_tag.match?(/^[A-Z]/)
+              # PascalCase - inline type emit, preserve case entirely
+              raw_tag
             else
               raw_tag.downcase
             end

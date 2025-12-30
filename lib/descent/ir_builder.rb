@@ -113,6 +113,8 @@ module Descent
              when :assign, :add_assign, :sub_assign then cmd.value.is_a?(Hash) ? cmd.value : {}
              when :advance_to, :scan then { value: process_escapes(cmd.value) }
              when :emit, :call, :call_method, :transition, :error then { value: cmd.value }
+             when :inline_emit_bare, :inline_emit_mark then { type: cmd.value }
+             when :inline_emit_literal then cmd.value.is_a?(Hash) ? cmd.value : {}
              else
                {}
              end

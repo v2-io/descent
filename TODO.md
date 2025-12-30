@@ -220,13 +220,16 @@ pub enum ParseErrorCode {
 - MARK/TERM: parsed, auto-MARK for CONTENT works, explicit MARK/TERM in progress
 
 ### Not Yet Implemented
-- Inline literals: `TypeName(literal)`, `TypeName(USE_MARK)`
 - Combined char classes: `|c[LETTER'[.?!*+]`
 - TERM adjustments: `TERM(-1)`
 - PREPEND: `PREPEND(|)`
 - Return with value: `|return value`
 - Built-in /error
 - C template
+
+### Recently Implemented
+- [x] Inline literals: `TypeName`, `TypeName(literal)`, `TypeName(USE_MARK)`
+- [x] PREV variable: Previous byte for context-sensitive parsing
 
 ## Future Enhancements
 

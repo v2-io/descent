@@ -93,6 +93,18 @@
 {% assign emit_type = cmd.args.value %}
                     on_event(Event::{{ emit_type }} { content: self.term(), span: self.span_from_mark() });
 
+{% when "inline_emit_bare" %}
+{% comment %} Inline emit with no payload: TypeName {% endcomment %}
+                    on_event(Event::{{ cmd.args.type }} { span: self.span() });
+
+{% when "inline_emit_mark" %}
+{% comment %} Inline emit using accumulated content: TypeName(USE_MARK) {% endcomment %}
+                    on_event(Event::{{ cmd.args.type }} { content: self.term(), span: self.span_from_mark() });
+
+{% when "inline_emit_literal" %}
+{% comment %} Inline emit with literal: TypeName(literal) {% endcomment %}
+                    on_event(Event::{{ cmd.args.type }} { content: b"{{ cmd.args.literal }}", span: self.span() });
+
 {% when "error" %}
 {% assign error_code = cmd.args.value | pascalcase %}
                     on_event(Event::Error { code: ParseErrorCode::{{ error_code }}, span: self.span() });

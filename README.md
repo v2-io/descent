@@ -141,6 +141,23 @@ Actions are pipe-separated, execute left-to-right:
 | var += 1              ; Increment
 ```
 
+### Inline Literal Events
+
+For emitting events directly with literal or accumulated content:
+
+```
+| TypeName              ; Emit event with no payload (BoolTrue, Nil)
+| TypeName(literal)     ; Emit with literal value (Attr($id), Attr(?))
+| TypeName(USE_MARK)    ; Emit using current MARK/TERM content
+```
+
+Examples:
+```
+|c[?]        | Attr(?) | BoolTrue | ->   |return   ; Emit Attr "?", BoolTrue
+|c[[]        | Attr($id) | /value        |>> :next ; Emit Attr "$id", parse value
+|default     | TERM | Text(USE_MARK)     |return   ; Emit Text with accumulated
+```
+
 ### Transitions
 
 ```
@@ -160,10 +177,11 @@ Single-line guards only (no block structure):
 
 ### Special Variables
 
-| Variable | Meaning                    |
-|----------|----------------------------|
-| `COL`    | Current column (1-indexed) |
-| `LINE`   | Current line (1-indexed)   |
+| Variable | Meaning                              |
+|----------|--------------------------------------|
+| `COL`    | Current column (1-indexed)           |
+| `LINE`   | Current line (1-indexed)             |
+| `PREV`   | Previous byte (0 at start of input)  |
 
 ## Automatic Optimizations
 

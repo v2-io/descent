@@ -291,17 +291,6 @@
     |c[ \t\n]   |.not_left  | /literal_two_stars |>> :main  ; ** + space = literal
     |default    |.strong    | /strong          |>> :main    ; left-flanking, open strong
 
-; Emit literal * when it's not an opener (not left-flanking)
-; Already consumed the *, emit as text
-|function[literal_star:Text]
-  |state[:main]
-    |default    |.done      |return   ; emits "*" via accumulated content? No...
-    ; Problem: we entered AFTER consuming *, so MARK is at current pos
-    ; The * is behind us. Need different approach.
-
-; Actually, let's handle this differently - collect * as part of text
-; Rewriting to have text handle non-flanking stars
-
 ; Inline code span: `code`
 |function[code_span:Code]
   |state[:main]

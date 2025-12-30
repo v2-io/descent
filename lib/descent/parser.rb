@@ -209,6 +209,9 @@ module Descent
       when 'term'     then [:term, nil]
       when /^emit\(/i then [:emit, tag[/emit\(([^)]+)\)/i, 1]]
       when %r{^/\w}   then [:call, tag[1..] + (rest.empty? ? '' : "(#{rest})")]
+      when /^([A-Z]\w*)\(USE_MARK\)$/  then [:inline_emit_mark, ::Regexp.last_match(1)]
+      when /^([A-Z]\w*)\(([^)]+)\)$/   then [:inline_emit_literal, { type: ::Regexp.last_match(1), literal: ::Regexp.last_match(2) }]
+      when /^([A-Z]\w*)$/              then [:inline_emit_bare, ::Regexp.last_match(1)]
       else
         [:raw, "#{tag} #{rest}".strip]
       end
@@ -231,6 +234,9 @@ module Descent
       when /^(\w+)\s*\+=\s*(.+)$/ then [:add_assign, { var: ::Regexp.last_match(1), val: ::Regexp.last_match(2) }]
       when /^(\w+)\s*-=\s*(.+)$/  then [:sub_assign, { var: ::Regexp.last_match(1), val: ::Regexp.last_match(2) }]
       when /^(\w+)\s*=\s*(.+)$/   then [:assign, { var: ::Regexp.last_match(1), val: ::Regexp.last_match(2) }]
+      when /^([A-Z]\w*)\(USE_MARK\)$/  then [:inline_emit_mark, ::Regexp.last_match(1)]
+      when /^([A-Z]\w*)\(([^)]+)\)$/   then [:inline_emit_literal, { type: ::Regexp.last_match(1), literal: ::Regexp.last_match(2) }]
+      when /^([A-Z]\w*)$/              then [:inline_emit_bare, ::Regexp.last_match(1)]
       else                             [:raw, cmd]
       end
     end
