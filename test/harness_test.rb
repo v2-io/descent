@@ -56,6 +56,87 @@ class HarnessTest < Minitest::Test
     ], output
   end
 
+  # ============================================================
+  # Markdown parser tests
+  # ============================================================
+
+  def test_markdown_plain_text
+    output = run_parser('examples/markdown.desc', "hello world\n")
+    assert_equal [
+      'ParagraphStart @ 0..0',
+      'Text "hello world" @ 0..11',
+      'ParagraphEnd @ 12..12'
+    ], output
+  end
+
+  def test_markdown_emphasis
+    output = run_parser('examples/markdown.desc', "*hello*\n")
+    assert_equal [
+      'ParagraphStart @ 0..0',
+      'EmphasisStart @ 1..1',
+      'Text "hello" @ 1..6',
+      'EmphasisEnd @ 7..7',
+      'ParagraphEnd @ 8..8'
+    ], output
+  end
+
+  def test_markdown_strong
+    output = run_parser('examples/markdown.desc', "**hello**\n")
+    assert_equal [
+      'ParagraphStart @ 0..0',
+      'StrongStart @ 2..2',
+      'Text "hello" @ 2..7',
+      'StrongEnd @ 9..9',
+      'ParagraphEnd @ 10..10'
+    ], output
+  end
+
+  def test_markdown_nested_emphasis
+    output = run_parser('examples/markdown.desc', "*a **b** c*\n")
+    assert_equal [
+      'ParagraphStart @ 0..0',
+      'EmphasisStart @ 1..1',
+      'Text "a " @ 1..3',
+      'StrongStart @ 5..5',
+      'Text "b" @ 5..6',
+      'StrongEnd @ 8..8',
+      'Text " c" @ 8..10',
+      'EmphasisEnd @ 11..11',
+      'ParagraphEnd @ 12..12'
+    ], output
+  end
+
+  def test_markdown_heading
+    output = run_parser('examples/markdown.desc', "# Hello\n")
+    assert_equal [
+      'HeadingStart @ 0..0',
+      'Text "Hello" @ 2..7',
+      'HeadingEnd @ 8..8'
+    ], output
+  end
+
+  def test_markdown_code_span
+    output = run_parser('examples/markdown.desc', "use `code` here\n")
+    assert_equal [
+      'ParagraphStart @ 0..0',
+      'Text "use " @ 0..4',
+      'Code "code" @ 5..9',    # span should exclude closing backtick
+      'Text " here" @ 10..15',
+      'ParagraphEnd @ 16..16'
+    ], output
+  end
+
+  def test_markdown_strikethrough
+    output = run_parser('examples/markdown.desc', "~~deleted~~\n")
+    assert_equal [
+      'ParagraphStart @ 0..0',
+      'StrikethroughStart @ 2..2',
+      'Text "deleted" @ 2..9',
+      'StrikethroughEnd @ 11..11',
+      'ParagraphEnd @ 12..12'
+    ], output
+  end
+
   private
 
   def run_parser(desc_file, input)

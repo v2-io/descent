@@ -286,6 +286,15 @@ The IR provides enough structure for useful static analysis:
 The `.desc` format is valid UDON. When libudon is mature, descent can use the
 UDON parser (that it generated!) to parse its own input format.
 
+## Template Issues
+
+### TERM span calculation - FIXED
+
+~~When explicit TERM is used, `span_from_mark()` returns incorrect span because it uses
+`self.pos` after advancing past the delimiter.~~
+
+**Fixed:** `span_from_mark()` now uses the same logic as `term()` - respects `term_pos` when set.
+
 ## SCAN Optimization Limitations
 
 ### memchr3 Limit
