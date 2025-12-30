@@ -202,7 +202,9 @@ module Descent
                        .uniq
 
       return nil if explicit_chars.empty?
-      return nil if explicit_chars.size > 3 # memchr only supports up to 3 (memchr, memchr2, memchr3)
+      # Support up to 6 chars via chained memchr calls (memchr3 + memchr3)
+      # Beyond 6, the overhead of chaining outweighs the benefit
+      return nil if explicit_chars.size > 6
 
       explicit_chars
     end

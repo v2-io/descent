@@ -273,6 +273,79 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Scan forward to find first occurrence of b1, b2, b3, or b4 (chained memchr).
+    #[inline]
+    fn scan_to4(&mut self, b1: u8, b2: u8, b3: u8, b4: u8) -> Option<u8> {
+        let haystack = &self.input[self.pos..];
+        let p1 = memchr::memchr3(b1, b2, b3, haystack);
+        let p2 = memchr::memchr(b4, haystack);
+        let offset = match (p1, p2) {
+            (Some(x), Some(y)) => Some(x.min(y)),
+            (Some(x), None) | (None, Some(x)) => Some(x),
+            (None, None) => None,
+        };
+        self.apply_scan_offset(offset)
+    }
+
+    /// Scan forward to find first occurrence of b1..b5 (chained memchr).
+    #[inline]
+    fn scan_to5(&mut self, b1: u8, b2: u8, b3: u8, b4: u8, b5: u8) -> Option<u8> {
+        let haystack = &self.input[self.pos..];
+        let p1 = memchr::memchr3(b1, b2, b3, haystack);
+        let p2 = memchr::memchr2(b4, b5, haystack);
+        let offset = match (p1, p2) {
+            (Some(x), Some(y)) => Some(x.min(y)),
+            (Some(x), None) | (None, Some(x)) => Some(x),
+            (None, None) => None,
+        };
+        self.apply_scan_offset(offset)
+    }
+
+    /// Scan forward to find first occurrence of b1..b6 (chained memchr).
+    #[inline]
+    fn scan_to6(&mut self, b1: u8, b2: u8, b3: u8, b4: u8, b5: u8, b6: u8) -> Option<u8> {
+        let haystack = &self.input[self.pos..];
+        let p1 = memchr::memchr3(b1, b2, b3, haystack);
+        let p2 = memchr::memchr3(b4, b5, b6, haystack);
+        let offset = match (p1, p2) {
+            (Some(x), Some(y)) => Some(x.min(y)),
+            (Some(x), None) | (None, Some(x)) => Some(x),
+            (None, None) => None,
+        };
+        self.apply_scan_offset(offset)
+    }
+
+    /// Apply scan offset result, updating position and line/column.
+    #[inline]
+    fn apply_scan_offset(&mut self, offset: Option<usize>) -> Option<u8> {
+        match offset {
+            Some(off) => {
+                for &b in &self.input[self.pos..self.pos + off] {
+                    if b == b'\n' {
+                        self.line += 1;
+                        self.column = 1;
+                    } else {
+                        self.column += 1;
+                    }
+                }
+                self.pos += off;
+                Some(self.input[self.pos])
+            }
+            None => {
+                for &b in &self.input[self.pos..] {
+                    if b == b'\n' {
+                        self.line += 1;
+                        self.column = 1;
+                    } else {
+                        self.column += 1;
+                    }
+                }
+                self.pos = self.input.len();
+                None
+            }
+        }
+    }
+
     // ========== Generated Parse Functions ==========
 
 {% for func in functions %}
@@ -325,6 +398,12 @@ impl<'a> Parser<'a> {
             match self.scan_to2({{ state.scan_chars[0] | escape_rust_char }}, {{ state.scan_chars[1] | escape_rust_char }}) {
             {% elsif scan_count == 3 %}
             match self.scan_to3({{ state.scan_chars[0] | escape_rust_char }}, {{ state.scan_chars[1] | escape_rust_char }}, {{ state.scan_chars[2] | escape_rust_char }}) {
+            {% elsif scan_count == 4 %}
+            match self.scan_to4({{ state.scan_chars[0] | escape_rust_char }}, {{ state.scan_chars[1] | escape_rust_char }}, {{ state.scan_chars[2] | escape_rust_char }}, {{ state.scan_chars[3] | escape_rust_char }}) {
+            {% elsif scan_count == 5 %}
+            match self.scan_to5({{ state.scan_chars[0] | escape_rust_char }}, {{ state.scan_chars[1] | escape_rust_char }}, {{ state.scan_chars[2] | escape_rust_char }}, {{ state.scan_chars[3] | escape_rust_char }}, {{ state.scan_chars[4] | escape_rust_char }}) {
+            {% elsif scan_count == 6 %}
+            match self.scan_to6({{ state.scan_chars[0] | escape_rust_char }}, {{ state.scan_chars[1] | escape_rust_char }}, {{ state.scan_chars[2] | escape_rust_char }}, {{ state.scan_chars[3] | escape_rust_char }}, {{ state.scan_chars[4] | escape_rust_char }}, {{ state.scan_chars[5] | escape_rust_char }}) {
             {% endif %}
                 {% for kase in state.cases %}
                 {% unless kase.is_default %}
@@ -412,6 +491,12 @@ impl<'a> Parser<'a> {
                     match self.scan_to2({{ state.scan_chars[0] | escape_rust_char }}, {{ state.scan_chars[1] | escape_rust_char }}) {
                     {% elsif scan_count == 3 %}
                     match self.scan_to3({{ state.scan_chars[0] | escape_rust_char }}, {{ state.scan_chars[1] | escape_rust_char }}, {{ state.scan_chars[2] | escape_rust_char }}) {
+                    {% elsif scan_count == 4 %}
+                    match self.scan_to4({{ state.scan_chars[0] | escape_rust_char }}, {{ state.scan_chars[1] | escape_rust_char }}, {{ state.scan_chars[2] | escape_rust_char }}, {{ state.scan_chars[3] | escape_rust_char }}) {
+                    {% elsif scan_count == 5 %}
+                    match self.scan_to5({{ state.scan_chars[0] | escape_rust_char }}, {{ state.scan_chars[1] | escape_rust_char }}, {{ state.scan_chars[2] | escape_rust_char }}, {{ state.scan_chars[3] | escape_rust_char }}, {{ state.scan_chars[4] | escape_rust_char }}) {
+                    {% elsif scan_count == 6 %}
+                    match self.scan_to6({{ state.scan_chars[0] | escape_rust_char }}, {{ state.scan_chars[1] | escape_rust_char }}, {{ state.scan_chars[2] | escape_rust_char }}, {{ state.scan_chars[3] | escape_rust_char }}, {{ state.scan_chars[4] | escape_rust_char }}, {{ state.scan_chars[5] | escape_rust_char }}) {
                     {% endif %}
                         {% for kase in state.cases %}
                         {% unless kase.is_default %}
