@@ -1,5 +1,132 @@
 # descent TODO
 
+## libudon Integration Issues (BLOCKING)
+
+Issues discovered during libudon integration. Items 1-5 need fixing before libudon can use
+descent-generated parsers.
+
+### 1. Duplicate Error Codes - DONE
+Multiple functions returning the same type with `expects_char` generate duplicate enum variants.
+Example: `dquote_string:StringValue` and `squote_string:StringValue` both generate
+`UnclosedStringValue`. Need deduplication at template level - collect unique
+`(type_name, expects_char)` pairs when generating error enum.
+
+**Status:** FIXED - Template now uses comma-delimited pattern matching to avoid partial string
+matches (e.g., "Code" vs "CodeBlock"). See `parser.liquid` lines 55-66.
+
+### 2. Local Variable Scoping Across States - DONE
+Variables assigned in one state (e.g., `col = /count_indent` in `:children`) aren't visible in
+subsequent states (`:check_child`, `:child_dispatch`). Multi-state functions use a `State` enum
+and loop, but locals need to be declared at function scope, not inside state match arms.
+
+**Status:** FIXED - Two issues resolved:
+1. Parser was creating `{var, val}` but template expected `{var, expr}` - fixed in parser.rb
+2. Function call assignments (`col = /count_indent`) now properly transformed via `rust_expr`
+   filter in generator.rb (converts `/func(args)` to `self.parse_func(args, on_event)`)
+
+### 3. Functions with No States - DONE
+A function with just `| |return` (no explicit `|state[:]`) generates invalid Rust:
+`enum State {}` and `State::;`. Should either:
+- Validator rejects (require at least one state)
+- Template handles gracefully (stateless function = simple sequential code, no loop/enum)
+
+Graceful handling is preferred - immediate-return functions don't need state machines.
+
+**Status:** FIXED - Template now handles `func.states.size == 0` by emitting appropriate
+event (for BRACKET/CONTENT) or `return 0` (for INTERNAL) without any state machine.
+
+### 5. `|return result` (Return with Value) - DONE
+udon.desc uses `|return result` in `count_indent` for INTERNAL type functions that compute
+and return values. TODO says "Return with value" is implemented, but needs verification
+given other issues.
+
+**Status:** FIXED - Three changes made:
+1. IR builder's `parse_return_value` now recognizes lowercase variable names as return values
+2. Template generates `-> i32` return type for INTERNAL functions
+3. Command template generates `return varname;` for INTERNAL type returns
+4. EOF handling returns `0` for INTERNAL types
+
+---
+
+## Session 2 Fixes (Codex Feedback + libudon Continued)
+
+### Assignment Parsing - FIXED
+Assignments like `depth = 1` were being parsed as `:raw` commands because the lexer
+splits them so `depth` becomes the tag and `= 1` the rest. Fixed `classify_command`
+to fall through to `parse_inline_command` for the combined `tag + rest`.
+
+### parse_case Stopping Conditions - FIXED
+Added `if`, `letter`, `label_cont`, `digit`, `hex_digit` to case_starters in `parse_case`
+so conditional cases and character class cases aren't swallowed by the previous case.
+
+### TERM(-n) Underflow - FIXED
+Fixed `set_term` to use clamped i64 arithmetic instead of unsafe cast that could
+panic when offset is negative at start of input.
+
+### Lexer Pipe-in-Comments - FIXED
+Added `strip_comments` method that runs BEFORE splitting on `|` to prevent
+comments containing pipe characters from corrupting tokenization.
+
+### Uppercase Character Classes - FIXED
+Added regex check for SCREAMING_SNAKE_CASE in lexer to lowercase character class
+names like `LETTER`, `LABEL_CONT` so they work as documented in README.
+
+### Validator Bugs - FIXED
+- Extract function name before `(` when validating calls (`element(COL)` → `element`)
+- Fixed transition validation to warn on malformed targets
+
+### /error(code) Custom Error Codes - FIXED
+Custom error codes from `/error(NoTabs)` weren't being added to the ParseErrorCode enum.
+
+Fix:
+1. Added `custom_error_codes` field to IR::Parser
+2. IR builder now collects error codes from `/error(code)` calls across all functions
+3. Template includes custom error codes in ParseErrorCode enum
+
+### Some() Pattern Matching Bug - FIXED
+Empty chars array produced invalid `Some()` instead of valid pattern.
+
+Fix: Added `{% elsif kase.chars.size > 1 %}` check before the for loop,
+with fallback to `Some(_)` for edge cases with no chars.
+
+### Unreachable Code After Return
+Could not reproduce with current test examples. The structure of generated code
+uses `return;` inside match arms which should not produce unreachable code.
+May be specific to patterns in udon.desc - needs investigation with actual file.
+
+---
+
+### 7. Unicode Identifiers - **DISCUSS WITH JOSEPH FIRST**
+`is_letter()` in generated code uses `b.is_ascii_alphabetic()`. UDON spec allows Unicode
+XID_Start/XID_Continue for element names.
+
+Options:
+- Use `unicode-ident` crate (fast, exactly XID_Start/XID_Continue per UAX#31)
+- Requires UTF-8 decoding on-demand (current parser is byte-based)
+
+### 8. Value Type Parsing - **DISCUSS WITH JOSEPH FIRST**
+descent emits `BareValue` with raw content. UDON needs to distinguish Int, Float, Rational,
+Complex, Bool, Nil from bare strings.
+
+Recommendation: Keep in libudon, not descent.
+- descent emits `BareValue { content }` - just raw bytes
+- libudon post-processes with Rust libraries (`fast-float`, `lexical-core`)
+- Keeps grammar simple, leverages battle-tested parsers
+
+### 9. Multi-Chunk Streaming - **DISCUSS WITH JOSEPH FIRST**
+Current parser is single-buffer only (`&'a [u8]`). UDON needs streaming for LLM use case:
+- Feed partial chunks
+- Resume when more data arrives
+- Handle tokens split across chunk boundaries
+
+Options:
+- Internal buffering (simpler for caller, memory cost)
+- Resumable state machine (zero-copy, complex)
+
+This is a larger architectural discussion.
+
+---
+
 ## CLI Implementation (using devex/core)
 
 Entry point: `exe/descent`

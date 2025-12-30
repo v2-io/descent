@@ -119,7 +119,8 @@ Each case has: `match | actions | transition`
 |--------|-----------|
 | `\n`   | Newline   |
 | `\t`   | Tab       |
-| `\\`   | Backslash |
+| `\\`   | Backslash `\` |
+| `<BS>` | Backslash `\` (alternate) |
 | `<P>`  | Pipe `\|` |
 | `<L>`  | `[`       |
 | `<R>`  | `]`       |

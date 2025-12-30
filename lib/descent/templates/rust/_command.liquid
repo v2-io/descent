@@ -51,21 +51,31 @@
 
 {% when "return" %}
 {% comment %} Emit appropriate event based on return type, then return {% endcomment %}
-{% if cmd.args.emit_type %}
+{% if cmd.args.return_value %}
+{% comment %} INTERNAL type returning a computed value {% endcomment %}
+                    return {{ cmd.args.return_value }};
+{% elsif cmd.args.emit_type %}
 {% comment %} Explicit return type specified {% endcomment %}
 {% if cmd.args.emit_mode == "mark" %}
                     on_event(Event::{{ cmd.args.emit_type }} { content: self.term(), span: self.span_from_mark() });
 {% elsif cmd.args.emit_mode == "literal" %}
                     on_event(Event::{{ cmd.args.emit_type }} { content: b"{{ cmd.args.literal }}", span: self.span() });
 {% else %}
-                    on_event(Event::{{ cmd.args.emit_type }} { span: self.span() });
-{% endif %}
-{% elsif return_type_info.kind == "content" %}
-                    on_event(Event::{{ func.return_type }} { content: self.term(), span: self.span_from_mark() });
-{% elsif return_type_info.kind == "bracket" %}
-                    on_event(Event::{{ func.return_type }}End { span: self.span() });
+                    on_event(Event::{{ cmd.args.emit_type }} { content: b"", span: self.span() });
 {% endif %}
                     return;
+{% elsif return_type_info.kind == "internal" %}
+{% comment %} INTERNAL type with no explicit return value - return 0 as default {% endcomment %}
+                    return 0;
+{% elsif return_type_info.kind == "content" %}
+                    on_event(Event::{{ func.return_type }} { content: self.term(), span: self.span_from_mark() });
+                    return;
+{% elsif return_type_info.kind == "bracket" %}
+                    on_event(Event::{{ func.return_type }}End { span: self.span() });
+                    return;
+{% else %}
+                    return;
+{% endif %}
 
 {% when "transition" %}
 {% if cmd.args.value == "" or cmd.args.value == nil %}
@@ -84,7 +94,7 @@
 {% assign call_args = call_value | split: "(" | last | remove: ")" %}
 {% if call_name == "error" %}
 {% comment %} Built-in /error(ErrorCode) - emit error and return {% endcomment %}
-                    on_event(Event::Error { code: ParseErrorCode::{{ call_args }}, span: self.span() });
+                    on_event(Event::Error { code: ParseErrorCode::{{ call_args | pascalcase }}, span: self.span() });
                     return;
 {% else %}
                     self.parse_{{ call_name }}({{ call_args | rust_expr }}, on_event);
@@ -118,8 +128,8 @@
                     on_event(Event::{{ emit_type }} { content: self.term(), span: self.span_from_mark() });
 
 {% when "inline_emit_bare" %}
-{% comment %} Inline emit with no payload: TypeName {% endcomment %}
-                    on_event(Event::{{ cmd.args.type }} { span: self.span() });
+{% comment %} Inline emit with no payload: TypeName - CONTENT types still need content field {% endcomment %}
+                    on_event(Event::{{ cmd.args.type }} { content: b"", span: self.span() });
 
 {% when "inline_emit_mark" %}
 {% comment %} Inline emit using accumulated content: TypeName(USE_MARK) {% endcomment %}

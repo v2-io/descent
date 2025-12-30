@@ -52,10 +52,21 @@ impl<'a> Event<'a> {
 pub enum ParseErrorCode {
     UnexpectedEof,
     UnexpectedChar,
+{% comment %} Deduplicate error codes by return_type - multiple functions may return the same type {% endcomment %}
+{% comment %} Use comma-delimited format with leading comma to avoid partial matches {% endcomment %}
+{% assign seen_unclosed_types = "," %}
 {% for func in functions %}
 {% if func.expects_char %}
+{% assign type_pattern = "," | append: func.return_type | append: "," %}
+{% unless seen_unclosed_types contains type_pattern %}
     Unclosed{{ func.return_type }},
+{% assign seen_unclosed_types = seen_unclosed_types | append: func.return_type | append: "," %}
+{% endunless %}
 {% endif %}
+{% endfor %}
+{% comment %} Custom error codes from /error(code) calls {% endcomment %}
+{% for code in custom_error_codes %}
+    {{ code | pascalcase }},
 {% endfor %}
 }
 
@@ -71,6 +82,7 @@ pub struct Parser<'a> {
     column: u32,
 }
 
+#[allow(unused_variables)]
 impl<'a> Parser<'a> {
     /// Create a new parser for the given input.
     pub fn new(input: &'a [u8]) -> Self {
@@ -127,9 +139,11 @@ impl<'a> Parser<'a> {
     }
 
     /// Set termination point with optional offset (e.g., -1 for one char before current)
+    /// Clamps to valid range [0, input.len()] to prevent underflow/overflow.
     #[inline(always)]
     fn set_term(&mut self, offset: i32) {
-        self.term_pos = (self.pos as i32 + offset) as usize;
+        let new_pos = self.pos as i64 + offset as i64;
+        self.term_pos = new_pos.clamp(0, self.input.len() as i64) as usize;
     }
 
     #[inline(always)]
@@ -359,9 +373,9 @@ impl<'a> Parser<'a> {
 
     /// Parse {{ func.name }}{% if func.return_type %} -> {{ func.return_type }}{% endif %}
     {% if func.params.size > 0 %}
-    fn parse_{{ func.name }}<F>(&mut self, {% for param in func.params %}{{ param }}: i32, {% endfor %}on_event: &mut F)
+    fn parse_{{ func.name }}<F>(&mut self, {% for param in func.params %}{{ param }}: i32, {% endfor %}on_event: &mut F){% if return_type_info.kind == "internal" %} -> i32{% endif %}
     {% else %}
-    fn parse_{{ func.name }}<F>(&mut self, on_event: &mut F)
+    fn parse_{{ func.name }}<F>(&mut self, on_event: &mut F){% if return_type_info.kind == "internal" %} -> i32{% endif %}
     {% endif %}
     where
         F: FnMut(Event<'a>),
@@ -385,7 +399,16 @@ impl<'a> Parser<'a> {
         {% endfor %}
 
         {% comment %} State machine {% endcomment %}
-        {% if func.states.size == 1 %}
+        {% if func.states.size == 0 %}
+        {% comment %} No states - immediate return (stateless function) {% endcomment %}
+        {% if return_type_info.kind == "content" %}
+        on_event(Event::{{ func.return_type }} { content: self.term(), span: self.span_from_mark() });
+        {% elsif return_type_info.kind == "bracket" %}
+        on_event(Event::{{ func.return_type }}End { span: self.span() });
+        {% elsif return_type_info.kind == "internal" %}
+        return 0;
+        {% endif %}
+        {% elsif func.states.size == 1 %}
         {% comment %} Single state - no enum needed {% endcomment %}
         {% assign state = func.states.first %}
         loop {
@@ -414,8 +437,10 @@ impl<'a> Parser<'a> {
                 Some(b) if Self::is_{{ kase.special_class }}(b) => {
                 {% elsif kase.chars.size == 1 %}
                 Some({{ kase.chars[0] | escape_rust_char }}) => {
-                {% else %}
+                {% elsif kase.chars.size > 1 %}
                 Some({% for ch in kase.chars %}{{ ch | escape_rust_char }}{% unless forloop.last %} | {% endunless %}{% endfor %}) => {
+                {% else %}
+                Some(_) => {
                 {% endif %}
                     {% for cmd in kase.commands %}
                     {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info %}
@@ -433,7 +458,7 @@ impl<'a> Parser<'a> {
                     {% elsif return_type_info.kind == "bracket" %}
                     on_event(Event::{{ func.return_type }}End { span: self.span() });
                     {% endif %}
-                    return;
+                    {% if return_type_info.kind == "internal" %}return 0;{% else %}return;{% endif %}
                 }
                 _ => unreachable!("scan_to only returns target chars"),
             }
@@ -448,7 +473,7 @@ impl<'a> Parser<'a> {
                 {% elsif return_type_info.kind == "bracket" %}
                 on_event(Event::{{ func.return_type }}End { span: self.span() });
                 {% endif %}
-                return;
+                {% if return_type_info.kind == "internal" %}return 0;{% else %}return;{% endif %}
             }
             match self.peek() {
                 {% for kase in state.cases %}
@@ -462,14 +487,22 @@ impl<'a> Parser<'a> {
                 Some(b) if Self::is_{{ kase.special_class }}(b) => {
                 {% elsif kase.chars.size == 1 %}
                 Some({{ kase.chars[0] | escape_rust_char }}) => {
-                {% else %}
+                {% elsif kase.chars.size > 1 %}
                 Some({% for ch in kase.chars %}{{ ch | escape_rust_char }}{% unless forloop.last %} | {% endunless %}{% endfor %}) => {
+                {% else %}
+                Some(_) => {
                 {% endif %}
                     {% for cmd in kase.commands %}
                     {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info %}
                     {% endfor %}
                 }
                 {% endfor %}
+                {% unless state.has_default %}
+                {% comment %} Add default arm if state has no explicit default case {% endcomment %}
+                _ => {
+                    {% if return_type_info.kind == "internal" %}return 0;{% else %}return;{% endif %}
+                }
+                {% endunless %}
             }
             {% endif %}
         }
@@ -508,8 +541,10 @@ impl<'a> Parser<'a> {
                         Some(b) if Self::is_{{ kase.special_class }}(b) => {
                         {% elsif kase.chars.size == 1 %}
                         Some({{ kase.chars[0] | escape_rust_char }}) => {
-                        {% else %}
+                        {% elsif kase.chars.size > 1 %}
                         Some({% for ch in kase.chars %}{{ ch | escape_rust_char }}{% unless forloop.last %} | {% endunless %}{% endfor %}) => {
+                        {% else %}
+                        Some(_) => {
                         {% endif %}
                             {% for cmd in kase.commands %}
                             {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info, states: func.states %}
@@ -527,7 +562,7 @@ impl<'a> Parser<'a> {
                             {% elsif return_type_info.kind == "bracket" %}
                             on_event(Event::{{ func.return_type }}End { span: self.span() });
                             {% endif %}
-                            return;
+                            {% if return_type_info.kind == "internal" %}return 0;{% else %}return;{% endif %}
                         }
                         _ => unreachable!("scan_to only returns target chars"),
                     }
@@ -542,7 +577,7 @@ impl<'a> Parser<'a> {
                         {% elsif return_type_info.kind == "bracket" %}
                         on_event(Event::{{ func.return_type }}End { span: self.span() });
                         {% endif %}
-                        return;
+                        {% if return_type_info.kind == "internal" %}return 0;{% else %}return;{% endif %}
                     }
                     match self.peek() {
                         {% for kase in state.cases %}
@@ -556,14 +591,22 @@ impl<'a> Parser<'a> {
                         Some(b) if Self::is_{{ kase.special_class }}(b) => {
                         {% elsif kase.chars.size == 1 %}
                         Some({{ kase.chars[0] | escape_rust_char }}) => {
-                        {% else %}
+                        {% elsif kase.chars.size > 1 %}
                         Some({% for ch in kase.chars %}{{ ch | escape_rust_char }}{% unless forloop.last %} | {% endunless %}{% endfor %}) => {
+                        {% else %}
+                        Some(_) => {
                         {% endif %}
                             {% for cmd in kase.commands %}
                             {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info, states: func.states %}
                             {% endfor %}
                         }
                         {% endfor %}
+                        {% unless state.has_default %}
+                        {% comment %} Add default arm if state has no explicit default case {% endcomment %}
+                        _ => {
+                            {% if return_type_info.kind == "internal" %}return 0;{% else %}return;{% endif %}
+                        }
+                        {% endunless %}
                     }
                     {% endif %}
                 }

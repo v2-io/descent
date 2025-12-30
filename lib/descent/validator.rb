@@ -147,9 +147,11 @@ module Descent
         case cmd.type
         when :call
           # Check if called function exists
+          # Extract function name from call value (might include args like "element(COL)")
           called = cmd.args[:value] || cmd.args['value']
-          unless function_exists?(called)
-            warn "Call to undefined function '#{called}'",
+          func_name = called&.split('(')&.first
+          unless function_exists?(func_name)
+            warn "Call to undefined function '#{func_name}'",
                  location: loc
           end
         when :emit
@@ -164,13 +166,19 @@ module Descent
         when :transition
           # Check if target state exists (if specified)
           target = cmd.args[:value] || cmd.args['value']
-          if target && !target.empty? && !target.start_with?(':') == false
-            # Target should be :statename or empty (self-loop)
+          next if target.nil? || target.empty? # Self-loop, valid
+
+          if target.start_with?(':')
+            # Target is :statename - validate state exists
             state_name = target.delete_prefix(':')
             unless state_exists_in_function?(func, state_name)
               warn "Transition to undefined state '#{target}'",
                    location: loc
             end
+          else
+            # Target doesn't start with : but isn't empty - probably malformed
+            warn "Invalid transition target '#{target}' (should be :statename or empty)",
+                 location: loc
           end
         end
       end

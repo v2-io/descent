@@ -104,6 +104,16 @@ module Descent
         when 'default' then cases << parse_case(nil)
         when 'eof'     then eof_handler = parse_eof_handler
         when 'if'      then cases << parse_if_case
+        when '>>'
+          # Bare >> is an else branch (default case with just transition)
+          # Often follows |if[cond] |return as the else case
+          cases << AST::Case.new(
+            chars:    nil,
+            substate: nil,
+            commands: [parse_command(t)],
+            lineno:   t.lineno
+          )
+          advance
         when /^[a-z_]+$/
           if keywords.include?(t.tag)
             advance # Skip - these are commands, not cases
@@ -126,12 +136,15 @@ module Descent
       substate = nil
       commands = []
 
-      while (t = current) && !%w[function type state c default eof].include?(t.tag)
+      # Stop on any tag that could start a new case in parse_state
+      # This includes: function, type, state, c, default, eof, if, and character classes
+      case_starters = %w[function type state c default eof if letter label_cont digit hex_digit]
+
+      while (t = current) && !case_starters.include?(t.tag)
         case t.tag
         when '.'
           substate = t.rest.strip
           advance
-        when 'if' then commands << parse_conditional
         else
           commands << parse_command(t)
           advance
@@ -155,12 +168,19 @@ module Descent
       commands = []
       # Case starters - anything that would start a new case or end the state
       case_starters = %w[function type state c default eof if letter label_cont]
+      last_cmd_type = nil
 
       while (t = current) && !case_starters.include?(t.tag)
+        # If previous command was return and current is >>, the >> is an else branch
+        # (a new default case), not part of this case's transition
+        break if last_cmd_type == :return && t.tag == '>>'
+
         if t.tag == '.'
           advance # Skip substate marker
         else
-          commands << parse_command(t)
+          cmd = parse_command(t)
+          commands << cmd
+          last_cmd_type = cmd.type
           advance
         end
       end
@@ -217,7 +237,9 @@ module Descent
       when /^([A-Z]\w*)\(([^)]+)\)$/   then [:inline_emit_literal, { type: ::Regexp.last_match(1), literal: ::Regexp.last_match(2) }]
       when /^([A-Z]\w*)$/              then [:inline_emit_bare, ::Regexp.last_match(1)]
       else
-        [:raw, "#{tag} #{rest}".strip]
+        # Check if tag + rest forms an assignment (e.g., tag="depth", rest="= 1")
+        full_cmd = "#{tag} #{rest}".strip
+        parse_inline_command(full_cmd)
       end
     end
 
@@ -237,9 +259,9 @@ module Descent
       when /^CALL:(\w+)/i         then [:call_method, ::Regexp.last_match(1)]
       when /^SCAN\(([^)]+)\)/i    then [:scan, ::Regexp.last_match(1)]
       when %r{^/(\w+)} then [:call, ::Regexp.last_match(1)]
-      when /^(\w+)\s*\+=\s*(.+)$/ then [:add_assign, { var: ::Regexp.last_match(1), val: ::Regexp.last_match(2) }]
-      when /^(\w+)\s*-=\s*(.+)$/  then [:sub_assign, { var: ::Regexp.last_match(1), val: ::Regexp.last_match(2) }]
-      when /^(\w+)\s*=\s*(.+)$/   then [:assign, { var: ::Regexp.last_match(1), val: ::Regexp.last_match(2) }]
+      when /^(\w+)\s*\+=\s*(.+)$/ then [:add_assign, { var: ::Regexp.last_match(1), expr: ::Regexp.last_match(2) }]
+      when /^(\w+)\s*-=\s*(.+)$/  then [:sub_assign, { var: ::Regexp.last_match(1), expr: ::Regexp.last_match(2) }]
+      when /^(\w+)\s*=\s*(.+)$/   then [:assign, { var: ::Regexp.last_match(1), expr: ::Regexp.last_match(2) }]
       when /^([A-Z]\w*)\(USE_MARK\)$/  then [:inline_emit_mark, ::Regexp.last_match(1)]
       when /^([A-Z]\w*)\(([^)]+)\)$/   then [:inline_emit_literal, { type: ::Regexp.last_match(1), literal: ::Regexp.last_match(2) }]
       when /^([A-Z]\w*)$/              then [:inline_emit_bare, ::Regexp.last_match(1)]

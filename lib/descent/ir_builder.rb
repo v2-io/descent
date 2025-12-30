@@ -16,11 +16,15 @@ module Descent
       types     = build_types(@ast.types)
       functions = @ast.functions.map { |f| build_function(f, types) }
 
+      # Collect custom error codes from /error(code) calls
+      custom_error_codes = collect_custom_error_codes(functions)
+
       IR::Parser.new(
         name:        @ast.name,
         entry_point: @ast.entry_point,
         types:,
-        functions:
+        functions:,
+        custom_error_codes:
       )
     end
 
@@ -70,12 +74,22 @@ module Descent
       scan_chars      = infer_scan_chars(state, cases)
       is_self_looping = cases.any? { |c| c.default? && has_self_transition?(c) }
 
+      # Check if state has a default case (no chars, no condition, no special_class)
+      has_default = cases.any?(&:default?)
+
+      # Check if first case is unconditional (bare action - no char match)
+      # This means the state just executes actions without matching any character
+      first_case = cases.first
+      is_unconditional = first_case && first_case.chars.nil? && first_case.special_class.nil? && first_case.condition.nil?
+
       IR::State.new(
         name:            state.name,
         cases:,
         eof_handler:     state.eof_handler,
         scan_chars:,
         is_self_looping:,
+        has_default:,
+        is_unconditional:,
         lineno:          state.lineno
       )
     end
@@ -135,6 +149,7 @@ module Descent
          .gsub('<RB>', '}')
          .gsub('<P>', '|')
          .gsub('<BS>', '\\')
+         .gsub('\\\\', '\\')  # \\ -> \ (escaped backslash)
          .gsub('\\n', "\n")
          .gsub('\\t', "\t")
     end
@@ -165,12 +180,13 @@ module Descent
     end
 
     # Parse return value specification
-    # Returns hash with :emit_type, :emit_mode, :literal
+    # Returns hash with :emit_type, :emit_mode, :literal, :return_value
     # Examples:
     #   nil or ""        -> {} (default behavior)
     #   "TypeName"       -> { emit_type: "TypeName", emit_mode: :bare }
     #   "TypeName(USE_MARK)" -> { emit_type: "TypeName", emit_mode: :mark }
     #   "TypeName(lit)"  -> { emit_type: "TypeName", emit_mode: :literal, literal: "lit" }
+    #   "varname"        -> { return_value: "varname" } (for INTERNAL types returning a value)
     def parse_return_value(value)
       return {} if value.nil? || value.empty?
 
@@ -181,6 +197,9 @@ module Descent
         { emit_type: ::Regexp.last_match(1), emit_mode: :literal, literal: process_escapes(::Regexp.last_match(2)) }
       when /^([A-Z]\w*)$/
         { emit_type: ::Regexp.last_match(1), emit_mode: :bare }
+      when /^[a-z_]\w*$/
+        # Variable name - for INTERNAL types returning a computed value
+        { return_value: value }
       else
         {} # Unknown format, use default
       end
@@ -281,6 +300,44 @@ module Descent
       end
 
       [expects_char, emits_content]
+    end
+
+    # Collect custom error codes from /error(code) calls across all functions
+    def collect_custom_error_codes(functions)
+      codes = Set.new
+
+      functions.each do |func|
+        func.states.each do |state|
+          state.cases.each do |kase|
+            collect_error_codes_from_commands(kase.commands, codes)
+          end
+        end
+      end
+
+      codes.to_a.sort
+    end
+
+    def collect_error_codes_from_commands(commands, codes)
+      commands.each do |cmd|
+        case cmd.type
+        when :error
+          # /error(code) - collect the code
+          code = cmd.args[:value] || cmd.args['value']
+          codes << code if code && !code.empty?
+        when :call
+          # /error(code) is also parsed as a call sometimes
+          value = cmd.args[:value] || cmd.args['value']
+          if value&.start_with?('error(')
+            code = value[/error\(([^)]+)\)/, 1]
+            codes << code if code && !code.empty?
+          end
+        when :conditional
+          # Recurse into conditional clauses
+          cmd.args[:clauses]&.each do |clause|
+            collect_error_codes_from_commands(clause['commands'] || [], codes)
+          end
+        end
+      end
     end
 
     # Infer local variables from assignments in function

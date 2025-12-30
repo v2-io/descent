@@ -10,8 +10,8 @@ module Descent
   # - Local variable declarations with types
   module IR
     # Top-level parser definition
-    Parser = Data.define(:name, :entry_point, :types, :functions) do
-      def initialize(name:, entry_point:, types: [], functions: []) = super
+    Parser = Data.define(:name, :entry_point, :types, :functions, :custom_error_codes) do
+      def initialize(name:, entry_point:, types: [], functions: [], custom_error_codes: []) = super
     end
 
     # Resolved type information
@@ -38,10 +38,13 @@ module Descent
     end
 
     # State with inferred optimizations
-    State = Data.define(:name, :cases, :eof_handler, :scan_chars, :is_self_looping, :lineno) do
+    State = Data.define(:name, :cases, :eof_handler, :scan_chars, :is_self_looping, :has_default, :is_unconditional, :lineno) do
       # scan_chars: Array of chars for SIMD memchr scan, or nil if not applicable
       # is_self_looping: true if has default case that loops back to self
-      def initialize(name:, cases: [], eof_handler: nil, scan_chars: nil, is_self_looping: false, lineno: 0) = super
+      # has_default: true if state has a default case (no chars, no condition)
+      # is_unconditional: true if first case has no char match (bare action case)
+      def initialize(name:, cases: [], eof_handler: nil, scan_chars: nil, is_self_looping: false,
+                     has_default: false, is_unconditional: false, lineno: 0) = super
 
       def scannable? = !scan_chars.nil? && !scan_chars.empty?
     end

@@ -23,17 +23,21 @@ module Descent
         line_offsets << (i + 1) if c == "\n"
       end
 
+      # Strip comments BEFORE splitting on pipes to avoid corrupted parsing
+      # when a comment contains a pipe character
+      content_without_comments = strip_comments(@content)
+
       # Split on pipes, tracking position
       # Skip comment-only lines (starting with ;)
+      # Use bracket-aware split to handle |c[|] correctly
       parts       = []
       current_pos = 0
 
-      @content.split('|').each do |part|
+      split_on_pipes(content_without_comments).each do |part|
         next if part.strip.empty?
-        next if part.strip.start_with?(';')
 
-        # Find line number for this part
-        found_pos = @content.index(part, current_pos) || current_pos
+        # Find line number for this part (use original content for position tracking)
+        found_pos = content_without_comments.index(part, current_pos) || current_pos
         line = line_offsets.bsearch_index { |off| off > found_pos } || line_offsets.size
         lineno = line
 
@@ -47,6 +51,59 @@ module Descent
       end
 
       tokens
+    end
+
+    # Split content on pipes, but not on pipes inside bracket-delimited IDs
+    # This correctly handles cases like |c[|] where the pipe is a literal
+    # Also handles |c[LETTER'[.?!] where [ inside is literal, not a delimiter
+    def split_on_pipes(content)
+      parts = []
+      current = +''
+      in_bracket = false
+
+      content.each_char do |c|
+        case c
+        when '['
+          # Only first [ opens the bracket context - nested [ are literal
+          in_bracket = true unless in_bracket
+          current << c
+        when ']'
+          # ] always closes the bracket context (only one level)
+          current << c
+          in_bracket = false
+        when '|'
+          if in_bracket
+            current << c
+          else
+            parts << current unless current.empty?
+            current = +''
+          end
+        else
+          current << c
+        end
+      end
+      parts << current unless current.empty?
+      parts
+    end
+
+    # Strip comments from content, preserving semicolons inside brackets
+    def strip_comments(content)
+      content.lines.map do |line|
+        depth = 0
+        comment_start = nil
+        line.each_char.with_index do |c, i|
+          case c
+          when '[' then depth += 1
+          when ']' then depth -= 1
+          when ';'
+            if depth == 0
+              comment_start = i
+              break
+            end
+          end
+        end
+        comment_start ? line[0...comment_start].rstrip + "\n" : line
+      end.join
     end
 
     private
@@ -80,7 +137,14 @@ module Descent
       end.join("\n").strip
 
       # Extract tag - downcase unless it's emit(), function call, or inline type emit
-      raw_tag = part[/^(\.|[^ \[]+)/]&.strip || ''
+      # For function calls with parens, capture the full call including arguments
+      raw_tag = if part.match?(%r{^/\w+\(})
+                  # Function call - capture up to and including closing paren
+                  part[%r{^/\w+\([^)]*\)}] || part[/^[^ \[]+/]
+                else
+                  part[/^(\.|[^ \[]+)/]
+                end&.strip || ''
+
       tag = if raw_tag.match?(/^emit\(/i)
               raw_tag
             elsif raw_tag.match?(%r{^/\w+\(})
@@ -88,6 +152,10 @@ module Descent
               name = raw_tag[%r{^/(\w+)\(}, 1]
               args = raw_tag[/\(([^)]*)\)/, 1]
               "/#{name.downcase}(#{args})"
+            elsif raw_tag.match?(/^[A-Z]+(_[A-Z]+)*$/)
+              # SCREAMING_SNAKE_CASE - character class like LETTER, LABEL_CONT, DIGIT
+              # Lowercase it so parser can handle it uniformly
+              raw_tag.downcase
             elsif raw_tag.match?(/^[A-Z]/)
               # PascalCase - inline type emit, preserve case entirely
               raw_tag
@@ -95,10 +163,12 @@ module Descent
               raw_tag.downcase
             end
       id      = part[/\[([^\]]*)\]/, 1] || ''
-      rest = part
-             .sub(/^(\.|[^ \[]+)/, '')
-             .sub(/\[[^\]]*\]/, '')
-             .strip
+      # For function calls, strip the full call including parens
+      rest = if raw_tag.match?(%r{^/\w+\(})
+               part.sub(%r{^/\w+\([^)]*\)}, '').sub(/\[[^\]]*\]/, '').strip
+             else
+               part.sub(/^(\.|[^ \[]+)/, '').sub(/\[[^\]]*\]/, '').strip
+             end
 
       # For parser name and similar, take only first word/line
       rest = rest.split("\n").first&.strip || '' if %w[parser entry-point].include?(tag)

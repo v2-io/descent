@@ -32,6 +32,8 @@ module Descent
     # Transform DSL expressions to Rust.
     # - COL -> self.col()
     # - PREV -> self.prev()
+    # - /function(args) -> self.parse_function(args, on_event)
+    # - /function -> self.parse_function(on_event)
     # - Character literals: ' ' -> b' ', '\t' -> b'\t'
     def rust_expr(str)
       return '' if str.nil?
@@ -39,6 +41,8 @@ module Descent
       str.to_s
          .gsub(/\bCOL\b/, 'self.col()')
          .gsub(/\bPREV\b/, 'self.prev()')
+         .gsub(%r{/(\w+)\(([^)]*)\)}) { "self.parse_#{::Regexp.last_match(1)}(#{::Regexp.last_match(2)}, on_event)" }
+         .gsub(%r{/(\w+)}) { "self.parse_#{::Regexp.last_match(1)}(on_event)" }
          .gsub(/'(\\.|.)'/, "b'\\1'")  # Convert char literals to byte literals (including escapes)
     end
   end
@@ -101,11 +105,12 @@ module Descent
 
     def build_context
       {
-        'parser'      => @ir.name,
-        'entry_point' => @ir.entry_point,
-        'types'       => @ir.types.map { |t| type_to_hash(t) },
-        'functions'   => @ir.functions.map { |f| function_to_hash(f) },
-        'trace'       => @trace
+        'parser'             => @ir.name,
+        'entry_point'        => @ir.entry_point,
+        'types'              => @ir.types.map { |t| type_to_hash(t) },
+        'functions'          => @ir.functions.map { |f| function_to_hash(f) },
+        'custom_error_codes' => @ir.custom_error_codes,
+        'trace'              => @trace
       }
     end
 
@@ -137,9 +142,11 @@ module Descent
         'name'            => state.name,
         'cases'           => state.cases.map { |c| case_to_hash(c) },
         'eof_handler'     => state.eof_handler,
-        'scan_chars'      => state.scan_chars,
-        'scannable'       => state.scannable?,
-        'is_self_looping' => state.is_self_looping
+        'scan_chars'       => state.scan_chars,
+        'scannable'        => state.scannable?,
+        'is_self_looping'  => state.is_self_looping,
+        'has_default'      => state.has_default,
+        'is_unconditional' => state.is_unconditional
       }
     end
 
