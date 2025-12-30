@@ -217,19 +217,22 @@ pub enum ParseErrorCode {
 - EOF inference (basic)
 
 ### Partially Implemented
-- MARK/TERM: parsed, auto-MARK for CONTENT works, explicit MARK/TERM in progress
+- MARK/TERM: parsed, auto-MARK for CONTENT works, explicit MARK/TERM working
+- Character ranges: `|c[0-9]`, `|c[a-z]` not yet supported (use DIGIT, LETTER classes)
 
 ### Not Yet Implemented
-- Return with value: `|return value`
-- Built-in /error
+- Character ranges: `|c[0-9]` → `b'0'..=b'9'`
 - C template
 
 ### Recently Implemented
+- [x] Return with value: `|return TypeName`, `|return TypeName(USE_MARK)`
+- [x] Built-in /error: `/error`, `/error(CustomError)`
 - [x] Combined char classes: `|c[LETTER'[.?!*+]` - match class OR literal chars
 - [x] TERM adjustments: `TERM(-1)` - terminate slice before current position
 - [x] PREPEND: `PREPEND(|)` - emit literal as text event
 - [x] Inline literals: `TypeName`, `TypeName(literal)`, `TypeName(USE_MARK)`
 - [x] PREV variable: Previous byte for context-sensitive parsing
+- [x] Test harness: End-to-end Rust compilation and testing (12 tests)
 
 ## Testing Harness
 
