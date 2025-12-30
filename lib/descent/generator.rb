@@ -32,14 +32,14 @@ module Descent
     # Transform DSL expressions to Rust.
     # - COL -> self.col()
     # - PREV -> self.prev()
-    # - Character literals: ' ' -> b' '
+    # - Character literals: ' ' -> b' ', '\t' -> b'\t'
     def rust_expr(str)
       return '' if str.nil?
 
       str.to_s
          .gsub(/\bCOL\b/, 'self.col()')
          .gsub(/\bPREV\b/, 'self.prev()')
-         .gsub(/'(.)'/, "b'\\1'")  # Convert char literals to byte literals
+         .gsub(/'(\\.|.)'/, "b'\\1'")  # Convert char literals to byte literals (including escapes)
     end
   end
 

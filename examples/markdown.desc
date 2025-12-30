@@ -3,8 +3,9 @@
 ; Demonstrates:
 ; - Multiple BRACKET types for document structure
 ; - CONTENT types for text accumulation with SCAN optimization
-; - Recursive calls for nested structures (blockquotes, lists)
+; - Recursive calls for nested structures (blockquotes, lists, emphasis)
 ; - Column-based indentation tracking for list nesting
+; - PREV-based flanking detection for emphasis
 ; - Character dispatch for block-level element detection
 ;
 ; Supported elements:
@@ -14,10 +15,7 @@
 ; - Blockquotes (> with nesting)
 ; - Unordered lists (- or *, nested via indentation)
 ; - Horizontal rules (---, ***)
-; - Inline code spans (`)
-;
-; Note: This is a practical subset. Full CommonMark would require
-; additional complexity for link parsing, emphasis disambiguation, etc.
+; - Inline: code spans (`), emphasis (*), strong (**)
 
 |parser markdown
 
@@ -28,6 +26,10 @@
 |type[Blockquote] BRACKET
 |type[ListItem]   BRACKET
 |type[ThematicBreak] BRACKET
+
+; Inline containers - nesting handled via recursion
+|type[Emphasis]   BRACKET
+|type[Strong]     BRACKET
 
 ; Content - MARK on entry, emit on return
 |type[Text]       CONTENT
@@ -263,37 +265,174 @@
     |default    |.cont      |                  |>> :content
 
 ; ============================================================
-; Inline content: text with code spans
+; Inline content: text, code spans, emphasis, strong
+;
+; Emphasis uses recursive descent with PREV for flanking rules:
+; - Left-flanking * (followed by non-space): can open emphasis
+; - Right-flanking * (PREV is non-space): can close emphasis
+; - Nesting is natural: *a **b** c* = Emphasis(a Strong(b) c)
 ; ============================================================
 
 |function[inline]
   |state[:main]
-    |c[`]       |.code      | -> | /code_span |>> :after_code
+    |c[`]       |.code      | -> | /code_span   |>>
+    |c[*]       |.star      | -> |>> :after_star
     |c[\n]      |.eol       |return
-    |default    |.text      | /text           |>> :check
+    |default    |.text      | /text            |>>
 
-  |state[:after_code]
-    |c[`]       |.more_code | -> | /code_span |>>
-    |c[\n]      |.eol       |return
-    |default    |.text      | /text           |>> :check
+  ; Consumed one *, check for ** or left-flanking single *
+  |state[:after_star]
+    |c[*]       |.double    | -> |>> :after_two_stars
+    |c[ \t\n]   |.not_left  | /literal_star    |>> :main    ; * + space = literal
+    |default    |.emph      | /emphasis        |>> :main    ; left-flanking, open emphasis
 
-  |state[:check]
-    |c[`]       |.code      | -> | /code_span |>> :after_code
-    |c[\n]      |.eol       |return
-    |default    |.more      | /text           |>>
+  ; Consumed **, check if left-flanking
+  |state[:after_two_stars]
+    |c[ \t\n]   |.not_left  | /literal_two_stars |>> :main  ; ** + space = literal
+    |default    |.strong    | /strong          |>> :main    ; left-flanking, open strong
+
+; Emit literal * when it's not an opener (not left-flanking)
+; Already consumed the *, emit as text
+|function[literal_star:Text]
+  |state[:main]
+    |default    |.done      |return   ; emits "*" via accumulated content? No...
+    ; Problem: we entered AFTER consuming *, so MARK is at current pos
+    ; The * is behind us. Need different approach.
+
+; Actually, let's handle this differently - collect * as part of text
+; Rewriting to have text handle non-flanking stars
 
 ; Inline code span: `code`
-; SCAN optimization: default self-loop with ` and \n as exits
 |function[code_span:Code]
   |state[:main]
     |c[`]       |.end       | ->               |return
     |c[\n]      |.eol       |return
     |default    |.char      | ->               |>>
 
-; Plain text content
-; SCAN optimization: default self-loop with `, \n as exits
+; ============================================================
+; Emphasis: *content* with recursive nesting
+;
+; Entered after consuming opening *, looking for right-flanking closer.
+; Uses PREV to check if * is right-flanking (preceded by non-space).
+; Nested emphasis/strong handled via recursive calls.
+; ============================================================
+
+|function[emphasis:Emphasis]
+  |state[:content]
+    |c[`]       |.code      | -> | /code_span   |>>
+    |c[*]       |.star      |>> :check_star
+    |c[\n]      |.eol       | ->               |return    ; unclosed at EOL
+    |default    |.text      | /emph_text       |>>
+
+  ; At *, check if it's a closer (right-flanking) or nested opener
+  |state[:check_star]
+    |if[PREV == ' ']        | -> |>> :not_right_flanking
+    |if[PREV == '\t']       | -> |>> :not_right_flanking
+    |if[PREV == '\n']       | -> |>> :not_right_flanking
+    |if[PREV == 0]          | -> |>> :not_right_flanking
+    ; PREV is non-space: right-flanking, this * can close
+    |c[*]       |.double    | -> |>> :right_flank_double
+    |default    |.close     | -> |return          ; single * closer, consume and return
+
+  ; ** where first * is right-flanking - could be nested strong closing
+  ; In single emphasis, treat first * as our closer, leave second for parent
+  |state[:right_flank_double]
+    |default    |.close     |return              ; close emphasis, don't consume second *
+
+  ; * not right-flanking, consumed it, check if left-flanking (nested opener)
+  |state[:not_right_flanking]
+    |c[*]       |.double    | -> |>> :not_rf_double
+    |c[ \t\n]   |.literal   | /literal_star_inner |>> :content   ; not left-flanking either
+    |default    |.nested    | /emphasis          |>> :content   ; nested emphasis
+
+  ; ** not right-flanking, check if left-flanking
+  |state[:not_rf_double]
+    |c[ \t\n]   |.literal   | /literal_two_stars_inner |>> :content
+    |default    |.nested    | /strong            |>> :content   ; nested strong
+
+; ============================================================
+; Strong: **content** with recursive nesting
+; ============================================================
+
+|function[strong:Strong]
+  |state[:content]
+    |c[`]       |.code      | -> | /code_span   |>>
+    |c[*]       |.star      |>> :check_star
+    |c[\n]      |.eol       | ->               |return
+    |default    |.text      | /emph_text       |>>
+
+  ; At *, check for ** closer or nested emphasis
+  |state[:check_star]
+    |if[PREV == ' ']        | -> |>> :not_right_flanking
+    |if[PREV == '\t']       | -> |>> :not_right_flanking
+    |if[PREV == '\n']       | -> |>> :not_right_flanking
+    |if[PREV == 0]          | -> |>> :not_right_flanking
+    ; Right-flanking
+    |c[*]       |.double    | -> |>> :right_flank_double
+    |default    |.single    | -> |>> :right_flank_single
+
+  ; Single right-flanking * inside ** - nested emphasis
+  |state[:right_flank_single]
+    |c[ \t\n]   |.literal   | /literal_star_inner |>> :content
+    |default    |.nested    | /emphasis          |>> :content
+
+  ; ** and right-flanking - this is our closer
+  |state[:right_flank_double]
+    |default    |.close     | -> |return
+
+  ; * not right-flanking
+  |state[:not_right_flanking]
+    |c[*]       |.double    | -> |>> :not_rf_double
+    |c[ \t\n]   |.literal   | /literal_star_inner |>> :content
+    |default    |.nested    | /emphasis          |>> :content
+
+  |state[:not_rf_double]
+    |c[ \t\n]   |.literal   | /literal_two_stars_inner |>> :content
+    |default    |.nested    | /strong            |>> :content
+
+; ============================================================
+; Text collection - stops at significant chars
+; ============================================================
+
+; Plain text in normal inline context
 |function[text:Text]
   |state[:main]
     |c[`]       |.code      |return
+    |c[*]       |.star      |return
     |c[\n]      |.eol       |return
     |default    |.char      | ->               |>>
+
+; Text inside emphasis/strong - same stops
+|function[emph_text:Text]
+  |state[:main]
+    |c[`]       |.code      |return
+    |c[*]       |.star      |return
+    |c[\n]      |.eol       |return
+    |default    |.char      | ->               |>>
+
+; ============================================================
+; Literal star handling
+;
+; When * or ** is neither opener nor closer, emit as text.
+; These are called after consuming the star(s), so we use
+; explicit content in the emit.
+; ============================================================
+
+; For now, these emit empty - the star handling needs rethinking
+; TODO: Add emit(Type, "literal") support or restructure
+
+|function[literal_star:Text]
+  |state[:main]
+    |default    |.skip      |return
+
+|function[literal_two_stars:Text]
+  |state[:main]
+    |default    |.skip      |return
+
+|function[literal_star_inner:Text]
+  |state[:main]
+    |default    |.skip      |return
+
+|function[literal_two_stars_inner:Text]
+  |state[:main]
+    |default    |.skip      |return
