@@ -11,11 +11,12 @@ Gem::Specification.new do |spec|
   spec.summary     = 'Recursive descent parser generator from .desc specifications'
   spec.description = <<~DESC
     Generates high-performance callback-based recursive descent parsers from
-    declarative .desc specifications. Supports multiple target languages (Rust, C)
-    via Liquid templates. The .desc format is valid UDON, enabling future
-    bootstrapping where descent can parse its own input format.
+    declarative .desc specifications. Supports target language of Rust and will
+    soon support multiple more target languages (Rust, C, wasm, ruby, go,
+    elixir...) via Liquid templates. The .desc format is valid UDON, enabling
+    future bootstrapping where descent can parse its own input format.
   DESC
-  spec.homepage = 'https://github.com/josephwecker/descent'
+  spec.homepage = 'https://github.com/v2-io/descent'
   spec.license  = 'MIT'
 
   spec.required_ruby_version = '>= 3.3.0'
