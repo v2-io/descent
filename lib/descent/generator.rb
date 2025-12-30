@@ -85,8 +85,12 @@ module Descent
         strict_filters:   true
       )
 
-      # Post-process: collapse excessive whitespace (3+ newlines -> 2)
-      result.gsub(/\n{3,}/, "\n\n")
+      # Post-process: clean up whitespace from Liquid template
+      result
+        .gsub(/^[ \t]+$/, '')                                 # Remove whitespace-only lines
+        .gsub(/\n{2,}/, "\n")                                 # Collapse all blank lines
+        .gsub(/^(\/\/.*)\n(use |pub |impl )/, "\\1\n\n\\2")   # Blank before use/pub/impl
+        .gsub(/(\})\n([ \t]*(?:\/\/|#\[|pub |fn ))/, "\\1\n\n\\2")  # Blank after } before new item
     end
 
     private

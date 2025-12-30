@@ -1,0 +1,299 @@
+; Markdown parser - recursive descent for CommonMark subset
+;
+; Demonstrates:
+; - Multiple BRACKET types for document structure
+; - CONTENT types for text accumulation with SCAN optimization
+; - Recursive calls for nested structures (blockquotes, lists)
+; - Column-based indentation tracking for list nesting
+; - Character dispatch for block-level element detection
+;
+; Supported elements:
+; - ATX headings (# through ######)
+; - Paragraphs (blank line separated)
+; - Fenced code blocks (```)
+; - Blockquotes (> with nesting)
+; - Unordered lists (- or *, nested via indentation)
+; - Horizontal rules (---, ***)
+; - Inline code spans (`)
+;
+; Note: This is a practical subset. Full CommonMark would require
+; additional complexity for link parsing, emphasis disambiguation, etc.
+
+|parser markdown
+
+; Block containers - emit Start on entry, End on return
+|type[Heading]    BRACKET
+|type[Paragraph]  BRACKET
+|type[CodeBlock]  BRACKET
+|type[Blockquote] BRACKET
+|type[ListItem]   BRACKET
+|type[ThematicBreak] BRACKET
+
+; Content - MARK on entry, emit on return
+|type[Text]       CONTENT
+|type[Code]       CONTENT
+
+|entry-point /document
+
+; ============================================================
+; Document: dispatch to block handlers based on first character
+; ============================================================
+
+|function[document]
+  |state[:main]
+    |c[\n]      |.blank     | ->               |>>
+    |c[ \t]     |.ws        | ->               |>> :indented
+    |c[#]       |.hash      | /heading         |>>
+    |c[`]       |.tick      | /maybe_fence     |>>
+    |c[>]       |.quote     | -> | /blockquote |>>
+    |c[-]       |.dash      | /dash_line       |>>
+    |c[*]       |.star      | /star_line       |>>
+    |default    |.para      | /paragraph       |>>
+
+  ; After leading whitespace - check for list continuation
+  |state[:indented]
+    |c[ \t]     |.more_ws   | ->               |>>
+    |c[-]       |.list      | -> | /list_item(COL) |>>
+    |c[*]       |.list      | -> | /list_item(COL) |>>
+    |c[\n]      |.blank     | ->               |>> :main
+    |default    |.text      | /paragraph       |>> :main
+
+; ============================================================
+; ATX Headings: # through ######
+; HeadingMarker captures the hashes for level detection
+; ============================================================
+
+|function[heading:Heading]
+  |state[:hashes]
+    |c[#]       |.hash      | ->               |>>
+    |c[ \t]     |.space     | ->               |>> :content
+    |c[\n]      |.empty     | ->               |return
+    |default    |.not_head  | /paragraph       |return
+
+  |state[:content]
+    |c[ \t]     |.ws        | ->               |>>
+    |c[\n]      |.eol       | ->               |return
+    |default    |.text      | /inline          |>> :trailing
+
+  ; Handle optional closing hashes: ## Heading ##
+  |state[:trailing]
+    |c[\n]      |.eol       | ->               |return
+    |c[#]       |.trail     | ->               |>> :close_hash
+    |default    |.more      | /inline          |>>
+
+  |state[:close_hash]
+    |c[#]       |.hash      | ->               |>>
+    |c[ \t]     |.ws        | ->               |>>
+    |c[\n]      |.eol       | ->               |return
+    |default    |.text      | /inline          |>> :trailing
+
+; ============================================================
+; Paragraphs: continuous text until blank line or block marker
+; ============================================================
+
+|function[paragraph:Paragraph]
+  |state[:main]
+    |c[\n]      |.eol       | ->               |>> :check
+    |default    |.text      | /inline          |>>
+
+  ; Blank line or new block ends paragraph
+  |state[:check]
+    |c[\n]      |.blank     |return
+    |c[#]       |.heading   |return
+    |c[`]       |.fence     |return
+    |c[>]       |.quote     |return
+    |c[-]       |.dash      |return
+    |c[*]       |.star      |return
+    |default    |.cont      | /inline          |>> :main
+
+; ============================================================
+; Fenced code blocks: ``` ... ```
+; ============================================================
+
+|function[maybe_fence]
+  |state[:check1]
+    |c[`]       |.tick2     | ->               |>> :check2
+    |default    |.not_fence | /paragraph       |return
+
+  |state[:check2]
+    |c[`]       |.tick3     | -> | /code_block |return
+    |default    |.not_fence | /paragraph       |return
+
+|function[code_block:CodeBlock]
+  ; Skip optional info string (language hint)
+  |state[:info]
+    |c[\n]      |.eol       | ->               |>> :content
+    |default    |.skip      | ->               |>>
+
+  |state[:content]
+    |c[`]       |.maybe_end | ->               |>> :end1
+    |c[\n]      |.newline   | ->               |>>
+    |default    |.code      | /code_line       |>>
+
+  |state[:end1]
+    |c[`]       |.tick2     | ->               |>> :end2
+    |c[\n]      |.newline   | ->               |>> :content
+    |default    |.not_end   | /code_line       |>> :content
+
+  |state[:end2]
+    |c[`]       |.tick3     | ->               |>> :end3
+    |c[\n]      |.newline   | ->               |>> :content
+    |default    |.not_end   | /code_line       |>> :content
+
+  |state[:end3]
+    |c[`]       |.extra     | ->               |>>
+    |c[\n]      |.done      | ->               |return
+    |c[ \t]     |.ws        | ->               |>>
+    |default    |.not_end   |                  |>> :content
+
+; Single line of code content
+|function[code_line:Code]
+  |state[:main]
+    |c[\n]      |.eol       | ->               |return
+    |default    |.char      | ->               |>>
+
+; ============================================================
+; Blockquotes: > prefixed, supports nesting
+; ============================================================
+
+|function[blockquote:Blockquote]
+  |state[:start]
+    |c[ ]       |.space     | ->               |>> :content
+    |c[>]       |.nested    | -> | /blockquote |>> :after
+    |c[\n]      |.empty     | ->               |>> :next
+    |default    |.text      |                  |>> :content
+
+  |state[:content]
+    |c[\n]      |.eol       | ->               |>> :next
+    |default    |.text      | /inline          |>>
+
+  |state[:after]
+    |c[\n]      |.eol       | ->               |>> :next
+    |default    |.more      | /inline          |>> :after
+
+  ; Check for continuation or end
+  |state[:next]
+    |c[>]       |.cont      | ->               |>> :start
+    |c[\n]      |.blank     |return
+    |c[ \t]     |.ws        | ->               |>> :lazy
+    |default    |.end       |return
+
+  ; Lazy continuation (no > but still in blockquote)
+  |state[:lazy]
+    |c[>]       |.quote     | ->               |>> :start
+    |c[\n]      |.blank     |return
+    |default    |.cont      |                  |>> :content
+
+; ============================================================
+; Lines starting with dash: list item or thematic break
+; ============================================================
+
+|function[dash_line]
+  |state[:first]
+    |c[-]       |.dash2     | ->               |>> :second
+    |c[ \t]     |.space     | -> | /list_item(0) |return
+    |c[\n]      |.eol       | -> | /list_item(0) |return
+    |default    |.text      | /paragraph       |return
+
+  |state[:second]
+    |c[-]       |.dash3     | ->               |>> :hr_check
+    |c[ \t]     |.space     | /paragraph       |return
+    |default    |.text      | /paragraph       |return
+
+  |state[:hr_check]
+    |c[-]       |.more      | ->               |>>
+    |c[ \t]     |.ws        | ->               |>>
+    |c[\n]      |.hr        | -> | /thematic_break |return
+    |default    |.text      | /paragraph       |return
+
+; Lines starting with star: list item or thematic break
+|function[star_line]
+  |state[:first]
+    |c[*]       |.star2     | ->               |>> :second
+    |c[ \t]     |.space     | -> | /list_item(0) |return
+    |c[\n]      |.eol       | -> | /list_item(0) |return
+    |default    |.text      | /paragraph       |return
+
+  |state[:second]
+    |c[*]       |.star3     | ->               |>> :hr_check
+    |c[ \t]     |.space     | /paragraph       |return
+    |default    |.text      | /paragraph       |return
+
+  |state[:hr_check]
+    |c[*]       |.more      | ->               |>>
+    |c[ \t]     |.ws        | ->               |>>
+    |c[\n]      |.hr        | -> | /thematic_break |return
+    |default    |.text      | /paragraph       |return
+
+; Thematic break (horizontal rule) - just marks position
+|function[thematic_break:ThematicBreak]
+  |state[:main]
+    |default    |.done      |return
+
+; ============================================================
+; List items: - or * prefixed, nesting via column tracking
+; ============================================================
+
+|function[list_item:ListItem] :col
+  |state[:content]
+    |c[\n]      |.eol       | ->               |>> :next
+    |default    |.text      | /inline          |>>
+
+  ; Check what follows: continuation, sibling, nested, or end
+  |state[:next]
+    |c[\n]      |.blank     | ->               |>> :after_blank
+    |c[ \t]     |.ws        | ->               |>> :check_indent
+    |c[-]       |.sibling   |return
+    |c[*]       |.sibling   |return
+    |default    |.dedent    |return
+
+  ; After blank line - tight vs loose list detection point
+  |state[:after_blank]
+    |c[\n]      |.more_blank|return
+    |c[ \t]     |.ws        | ->               |>> :check_indent
+    |default    |.end       |return
+
+  ; Check indentation for nesting
+  |state[:check_indent]
+    |c[ \t]     |.ws        | ->               |>>
+    |if[COL <= col]         |return
+    |c[-]       |.nested    | -> | /list_item(COL) |>> :next
+    |c[*]       |.nested    | -> | /list_item(COL) |>> :next
+    |c[\n]      |.blank     | ->               |>> :after_blank
+    |default    |.cont      |                  |>> :content
+
+; ============================================================
+; Inline content: text with code spans
+; ============================================================
+
+|function[inline]
+  |state[:main]
+    |c[`]       |.code      | -> | /code_span |>> :after_code
+    |c[\n]      |.eol       |return
+    |default    |.text      | /text           |>> :check
+
+  |state[:after_code]
+    |c[`]       |.more_code | -> | /code_span |>>
+    |c[\n]      |.eol       |return
+    |default    |.text      | /text           |>> :check
+
+  |state[:check]
+    |c[`]       |.code      | -> | /code_span |>> :after_code
+    |c[\n]      |.eol       |return
+    |default    |.more      | /text           |>>
+
+; Inline code span: `code`
+; SCAN optimization: default self-loop with ` and \n as exits
+|function[code_span:Code]
+  |state[:main]
+    |c[`]       |.end       | ->               |return
+    |c[\n]      |.eol       |return
+    |default    |.char      | ->               |>>
+
+; Plain text content
+; SCAN optimization: default self-loop with `, \n as exits
+|function[text:Text]
+  |state[:main]
+    |c[`]       |.code      |return
+    |c[\n]      |.eol       |return
+    |default    |.char      | ->               |>>
