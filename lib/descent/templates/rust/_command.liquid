@@ -50,49 +50,90 @@
                     on_event(Event::Text { content: b"{{ cmd.args.literal }}", span: self.span() });
 
 {% when "prepend_param" %}
-{% comment %} Emit parameter value as text (no-op if param is 0/empty). Uses static slices for lifetime safety. {% endcomment %}
-                    if {{ cmd.args.param_ref }} != 0 {
-                        let content: &'static [u8] = match {{ cmd.args.param_ref }} {
+{% comment %} Emit parameter value as text (no-op if param is 0). Uses static slices traced from call sites. {% endcomment %}
+{% assign param_name = cmd.args.param_ref %}
+{% assign traced_values = func.prepend_values[param_name] %}
+                    if {{ param_name }} != 0 {
+{% if traced_values and traced_values.size > 0 %}
+                        let content: &'static [u8] = match {{ param_name }} {
+{% for val in traced_values %}
+{% if val == '|' %}
                             b'|' => b"|",
+{% elsif val == '!' %}
                             b'!' => b"!",
+{% elsif val == ';' %}
                             b';' => b";",
+{% elsif val == ':' %}
                             b':' => b":",
+{% elsif val == '#' %}
                             b'#' => b"#",
+{% elsif val == '*' %}
                             b'*' => b"*",
+{% elsif val == '-' %}
                             b'-' => b"-",
+{% elsif val == '_' %}
                             b'_' => b"_",
+{% elsif val == '[' %}
                             b'[' => b"[",
+{% elsif val == ']' %}
                             b']' => b"]",
+{% elsif val == '{' %}
                             b'{' => b"{",
+{% elsif val == '}' %}
                             b'}' => b"}",
+{% elsif val == '(' %}
                             b'(' => b"(",
+{% elsif val == ')' %}
                             b')' => b")",
+{% elsif val == '<' %}
                             b'<' => b"<",
+{% elsif val == '>' %}
                             b'>' => b">",
+{% elsif val == '/' %}
                             b'/' => b"/",
+{% elsif val == '\\' %}
                             b'\\' => b"\\",
+{% elsif val == "'" %}
                             b'\'' => b"'",
+{% elsif val == '"' %}
                             b'"' => b"\"",
+{% elsif val == '`' %}
                             b'`' => b"`",
+{% elsif val == '~' %}
                             b'~' => b"~",
+{% elsif val == '@' %}
                             b'@' => b"@",
+{% elsif val == '$' %}
                             b'$' => b"$",
+{% elsif val == '%' %}
                             b'%' => b"%",
+{% elsif val == '^' %}
                             b'^' => b"^",
+{% elsif val == '&' %}
                             b'&' => b"&",
+{% elsif val == '+' %}
                             b'+' => b"+",
+{% elsif val == '=' %}
                             b'=' => b"=",
+{% elsif val == '?' %}
                             b'?' => b"?",
+{% elsif val == ',' %}
                             b',' => b",",
+{% elsif val == '.' %}
                             b'.' => b".",
+{% elsif val == ' ' %}
                             b' ' => b" ",
-                            b'\t' => b"\t",
-                            b'\n' => b"\n",
-                            _ => b"",
+{% else %}
+                            b'{{ val }}' => b"{{ val }}",
+{% endif %}
+{% endfor %}
+                            _ => unreachable!("PREPEND(:{{ param_name }}) received unexpected byte value"),
                         };
-                        if !content.is_empty() {
-                            on_event(Event::Text { content, span: self.span() });
-                        }
+                        on_event(Event::Text { content, span: self.span() });
+{% else %}
+                        // WARNING: No call sites found for PREPEND(:{{ param_name }}) - cannot determine valid values
+                        unreachable!("PREPEND(:{{ param_name }}) has no traced call sites");
+{% endif %}
                     }
 
 {% when "return" %}

@@ -19,6 +19,9 @@ module Descent
       # Collect custom error codes from /error(code) calls
       custom_error_codes = collect_custom_error_codes(functions)
 
+      # Collect prepend values by tracing call sites
+      functions = collect_prepend_values(functions)
+
       IR::Parser.new(
         name:               @ast.name,
         entry_point:        @ast.entry_point,
@@ -479,6 +482,111 @@ module Descent
       end
 
       types
+    end
+
+    # Collect prepend values by tracing call sites to functions with PREPEND(:param).
+    # Returns updated functions with prepend_values filled in.
+    def collect_prepend_values(functions)
+      func_by_name = functions.to_h { |f| [f.name, f] }
+
+      # Step 1: Find which functions have PREPEND(:param) and which param it uses
+      prepend_params = {} # func_name -> param_name
+      functions.each do |func|
+        func.states.each do |state|
+          state.cases.each do |kase|
+            kase.commands.each do |cmd|
+              if cmd.type == :prepend_param
+                prepend_params[func.name] = cmd.args[:param_ref]
+              end
+            end
+          end
+        end
+      end
+
+      return functions if prepend_params.empty?
+
+      # Step 2: Find all call sites and collect byte values passed
+      prepend_values = Hash.new { |h, k| h[k] = Set.new }
+
+      functions.each do |func|
+        collect_call_values_from_states(func.states, prepend_params, func_by_name, prepend_values)
+      end
+
+      # Step 3: Update functions with prepend_values
+      functions.map do |func|
+        if prepend_params.key?(func.name)
+          param_name = prepend_params[func.name]
+          values = prepend_values[func.name].to_a.sort
+
+          # Create updated function with prepend_values
+          IR::Function.new(
+            name:                   func.name,
+            return_type:            func.return_type,
+            params:                 func.params,
+            param_types:            func.param_types,
+            locals:                 func.locals,
+            states:                 func.states,
+            eof_handler:            func.eof_handler,
+            emits_events:           func.emits_events,
+            expects_char:           func.expects_char,
+            emits_content_on_close: func.emits_content_on_close,
+            prepend_values:         { param_name => values },
+            lineno:                 func.lineno
+          )
+        else
+          func
+        end
+      end
+    end
+
+    def collect_call_values_from_states(states, prepend_params, func_by_name, prepend_values)
+      states.each do |state|
+        state.cases.each do |kase|
+          collect_call_values_from_commands(kase.commands, prepend_params, func_by_name, prepend_values)
+        end
+        collect_call_values_from_commands(state.eof_handler || [], prepend_params, func_by_name, prepend_values)
+      end
+    end
+
+    def collect_call_values_from_commands(commands, prepend_params, func_by_name, prepend_values)
+      commands.each do |cmd|
+        case cmd.type
+        when :call
+          func_name = cmd.args[:name]
+          next unless prepend_params.key?(func_name)
+
+          # Extract the byte value from call_args
+          call_args = cmd.args[:call_args]
+          byte_value = parse_byte_literal(call_args)
+          prepend_values[func_name] << byte_value if byte_value
+        when :conditional
+          cmd.args[:clauses]&.each do |clause|
+            nested_cmds = (clause['commands'] || []).map { |c| c.is_a?(Hash) ? IR::Command.new(type: c['type'].to_sym, args: c['args'].transform_keys(&:to_sym)) : c }
+            collect_call_values_from_commands(nested_cmds, prepend_params, func_by_name, prepend_values)
+          end
+        end
+      end
+    end
+
+    # Parse a call argument into a byte literal string for the template
+    def parse_byte_literal(arg)
+      return nil if arg.nil? || arg.empty?
+
+      case arg
+      when '0' then nil  # 0 means no prepend
+      when '<P>' then '|'
+      when '<L>' then '['
+      when '<R>' then ']'
+      when '<LB>' then '{'
+      when '<RB>' then '}'
+      when '<LP>' then '('
+      when '<RP>' then ')'
+      when '<BS>' then '\\\\'
+      when /^'(.)'$/ then ::Regexp.last_match(1)  # Single quoted char
+      when /^"(.)"$/ then ::Regexp.last_match(1)  # Double quoted char
+      when /^.$/ then arg  # Single char
+      else nil  # Unknown format
+      end
     end
   end
 end

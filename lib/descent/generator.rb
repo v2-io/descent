@@ -172,7 +172,8 @@ module Descent
         'eof_handler'            => func.eof_handler&.map { |c| command_to_hash(c) } || [],
         'emits_events'           => func.emits_events,
         'expects_char'           => func.expects_char,
-        'emits_content_on_close' => func.emits_content_on_close
+        'emits_content_on_close' => func.emits_content_on_close,
+        'prepend_values'         => func.prepend_values.transform_keys(&:to_s)
       }
     end
 
