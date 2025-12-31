@@ -119,6 +119,12 @@ module Descent
           # e.g., | /text(line_col, parent_col) |return
           # Don't advance - parse_bare_action_case will consume the function call
           cases << parse_bare_action_case
+        when /^(PREPEND|MARK|TERM|->)/i
+          # Bare action case starting with a command (not char match, not function call)
+          # e.g., | PREPEND(:prepend) |>> :main
+          # e.g., | MARK |>> :next
+          # Don't advance - parse_bare_action_case will consume the commands
+          cases << parse_bare_action_case
         when /^[a-z_]+$/
           if keywords.include?(t.tag)
             advance # Skip - these are commands, not cases
