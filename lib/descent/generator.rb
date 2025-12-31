@@ -34,16 +34,51 @@ module Descent
     # - PREV -> self.prev()
     # - /function(args) -> self.parse_function(args, on_event)
     # - /function -> self.parse_function(on_event)
-    # - Character literals: ' ' -> b' ', '\t' -> b'\t'
+    # - Character literals: ' ' -> b' ', '\t' -> b'\t' (only if not already a byte literal)
+    # - Escape sequences: <R> -> b']', <RB> -> b'}', <P> -> b'|', etc.
+    # - Parameter references: :param -> param
     def rust_expr(str)
       return '' if str.nil?
 
-      str.to_s
-         .gsub(/\bCOL\b/, 'self.col()')
-         .gsub(/\bPREV\b/, 'self.prev()')
-         .gsub(%r{/(\w+)\(([^)]*)\)}) { "self.parse_#{::Regexp.last_match(1)}(#{::Regexp.last_match(2)}, on_event)" }
-         .gsub(%r{/(\w+)}) { "self.parse_#{::Regexp.last_match(1)}(on_event)" }
-         .gsub(/'(\\.|.)'/, "b'\\1'")  # Convert char literals to byte literals (including escapes)
+      # First, transform call arguments (handles :param, <R>, etc.)
+      # This catches standalone expressions like "<R>" or ":close"
+      result = transform_call_args(str.to_s)
+
+      result
+        .gsub(/\bCOL\b/, 'self.col()')
+        .gsub(/\bPREV\b/, 'self.prev()')
+        .gsub(%r{/(\w+)\(([^)]*)\)}) do
+          func = ::Regexp.last_match(1)
+          args = transform_call_args(::Regexp.last_match(2))
+          "self.parse_#{func}(#{args}, on_event)"
+        end
+        .gsub(%r{/(\w+)}) { "self.parse_#{::Regexp.last_match(1)}(on_event)" }
+        .gsub(/(?<!b)'(\\.|.)'/, "b'\\1'")  # Convert char literals to byte literals (only if not already b'...')
+    end
+
+    # Transform function call arguments.
+    # - :param -> param (parameter references)
+    # - <R> -> b']', <RB> -> b'}', <RP> -> b')', etc. (escape sequences to byte literals)
+    def transform_call_args(args)
+      args.split(',').map do |arg|
+        arg = arg.strip
+        case arg
+        when /^:(\w+)$/           then ::Regexp.last_match(1) # :param -> param
+        when '<R>'                then "b']'"
+        when '<RB>'               then "b'}'"
+        when '<L>'                then "b'['"
+        when '<LB>'               then "b'{'"
+        when '<P>'                then "b'|'"
+        when '<BS>'               then "b'\\\\'"
+        when '<RP>'               then "b')'"  # Right paren
+        when '<LP>'               then "b'('"  # Left paren
+        when /^\d+$/              then arg # numeric literals
+        when /^-?\d+$/            then arg # negative numbers
+        when /^'(.)'$/            then "b'#{::Regexp.last_match(1)}'" # char literal
+        when /^"(.)"$/            then "b'#{::Regexp.last_match(1)}'" # quoted char
+        else arg # pass through (variables, expressions)
+        end
+      end.join(', ')
     end
   end
 
@@ -128,6 +163,7 @@ module Descent
         'name'                   => func.name,
         'return_type'            => func.return_type,
         'params'                 => func.params,
+        'param_types'            => func.param_types.transform_keys(&:to_s).transform_values(&:to_s),
         'locals'                 => func.locals.transform_keys(&:to_s),
         'states'                 => func.states.map { |s| state_to_hash(s) },
         'eof_handler'            => func.eof_handler,
@@ -154,6 +190,7 @@ module Descent
       {
         'chars'          => kase.chars,
         'special_class'  => kase.special_class&.to_s,
+        'param_ref'      => kase.param_ref,
         'condition'      => kase.condition,
         'is_conditional' => kase.conditional?,
         'substate'       => kase.substate,

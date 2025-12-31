@@ -87,24 +87,19 @@
 {% endif %}
 
 {% when "call" %}
-{% comment %} Function call - extract function name and args {% endcomment %}
-{% assign call_value = cmd.args.value %}
-{% if call_value contains "(" %}
-{% assign call_name = call_value | split: "(" | first %}
-{% assign call_args = call_value | split: "(" | last | remove: ")" %}
-{% if call_name == "error" %}
+{% comment %} Function call - use pre-parsed name and call_args from IR {% endcomment %}
+{% if cmd.args.is_error %}
 {% comment %} Built-in /error(ErrorCode) - emit error and return {% endcomment %}
-                    on_event(Event::Error { code: ParseErrorCode::{{ call_args | pascalcase }}, span: self.span() });
-                    return;
+{% if cmd.args.call_args %}
+                    on_event(Event::Error { code: ParseErrorCode::{{ cmd.args.call_args | pascalcase }}, span: self.span() });
 {% else %}
-                    self.parse_{{ call_name }}({{ call_args | rust_expr }}, on_event);
-{% endif %}
-{% elsif call_value == "error" %}
-{% comment %} Built-in /error - emit UnexpectedChar and return {% endcomment %}
                     on_event(Event::Error { code: ParseErrorCode::UnexpectedChar, span: self.span() });
+{% endif %}
                     return;
+{% elsif cmd.args.call_args %}
+                    self.parse_{{ cmd.args.name }}({{ cmd.args.call_args | rust_expr }}, on_event);
 {% else %}
-                    self.parse_{{ call_value }}(on_event);
+                    self.parse_{{ cmd.args.name }}(on_event);
 {% endif %}
 
 {% when "assign" %}

@@ -50,15 +50,19 @@ module Descent
       emits_events     = return_type_info&.bracket? || return_type_info&.content?
 
       locals = infer_locals(func)
-      states = func.states.map { |s| build_state(s) }
+      states = func.states.map { |s| build_state(s, func.params) }
 
       # Infer expected closing delimiter from return cases
       expects_char, emits_content_on_close = infer_expects(states)
+
+      # Infer parameter types from usage (byte if used in |c[:x]|, i32 otherwise)
+      param_types = infer_param_types(func.params, states)
 
       IR::Function.new(
         name:                   func.name,
         return_type:            func.return_type,
         params:                 func.params,
+        param_types:,
         locals:,
         states:,
         eof_handler:            func.eof_handler,
@@ -69,18 +73,20 @@ module Descent
       )
     end
 
-    def build_state(state)
-      cases           = state.cases.map { |c| build_case(c) }
+    def build_state(state, params = [])
+      cases           = state.cases.map { |c| build_case(c, params) }
       scan_chars      = infer_scan_chars(state, cases)
       is_self_looping = cases.any? { |c| c.default? && has_self_transition?(c) }
 
-      # Check if state has a default case (no chars, no condition, no special_class)
+      # Check if state has a default case (no chars, no condition, no special_class, no param_ref)
       has_default = cases.any?(&:default?)
 
       # Check if first case is unconditional (bare action - no char match)
       # This means the state just executes actions without matching any character
+      # Note: param_ref IS a match (against a param value), so it's not unconditional
       first_case = cases.first
-      is_unconditional = first_case && first_case.chars.nil? && first_case.special_class.nil? && first_case.condition.nil?
+      is_unconditional = first_case && first_case.chars.nil? && first_case.special_class.nil? &&
+                         first_case.param_ref.nil? && first_case.condition.nil?
 
       IR::State.new(
         name:            state.name,
@@ -94,13 +100,14 @@ module Descent
       )
     end
 
-    def build_case(kase)
-      chars, special_class = parse_chars(kase.chars)
+    def build_case(kase, params = [])
+      chars, special_class, param_ref = parse_chars(kase.chars, params:)
       commands = kase.commands.map { |c| build_command(c) }
 
       IR::Case.new(
         chars:,
         special_class:,
+        param_ref:,
         condition:     kase.condition,
         substate:      kase.substate,
         commands:
@@ -126,7 +133,8 @@ module Descent
       args = case cmd.type
              when :assign, :add_assign, :sub_assign then cmd.value.is_a?(Hash) ? cmd.value : {}
              when :advance_to, :scan then { value: process_escapes(cmd.value) }
-             when :emit, :call, :call_method, :transition, :error then { value: cmd.value }
+             when :emit, :call_method, :transition, :error then { value: cmd.value }
+             when :call then parse_call_value(cmd.value)
              when :inline_emit_bare, :inline_emit_mark then { type: cmd.value }
              when :inline_emit_literal then cmd.value.is_a?(Hash) ? cmd.value : {}
              when :term then { offset: cmd.value || 0 }
@@ -147,6 +155,8 @@ module Descent
          .gsub('<R>', ']')
          .gsub('<LB>', '{')
          .gsub('<RB>', '}')
+         .gsub('<LP>', '(')
+         .gsub('<RP>', ')')
          .gsub('<P>', '|')
          .gsub('<BS>', '\\')
          .gsub('\\\\', '\\')  # \\ -> \ (escaped backslash)
@@ -154,29 +164,39 @@ module Descent
          .gsub('\\t', "\t")
     end
 
-    # Parse character specification into literal chars and/or special class
-    # Returns [chars_array, special_class_symbol]
+    # Parse character specification into literal chars, special class, and/or param reference.
+    # Returns [chars_array, special_class_symbol, param_ref_string]
     # Examples:
-    #   "abc"           -> [["a", "b", "c"], nil]
-    #   "LETTER"        -> [nil, :letter]
-    #   "LETTER'[.?!"   -> [["'", "[", ".", "?", "!"], :letter]
-    def parse_chars(chars_str)
-      return [nil, nil] if chars_str.nil?
+    #   "abc"           -> [["a", "b", "c"], nil, nil]
+    #   "LETTER"        -> [nil, :letter, nil]
+    #   "LETTER'[.?!"   -> [["'", "[", ".", "?", "!"], :letter, nil]
+    #   ":close"        -> [nil, nil, "close"]  (param reference)
+    #   "a:"            -> [["a", ":"], nil, nil] (literal colon not first)
+    def parse_chars(chars_str, params: [])
+      return [nil, nil, nil] if chars_str.nil?
+
+      # Check for parameter reference: starts with : followed by a valid param name
+      # Rule: `:` must be first char, followed by a known param name
+      if chars_str.start_with?(':')
+        param_name = chars_str[1..]
+        return [nil, nil, param_name] if params.include?(param_name)
+        # Not a known param - fall through to treat as literal chars
+      end
 
       # Check for pure special named class (SCREAMING_CASE: uppercase words separated by underscores)
       # Examples: LETTER, LABEL_CONT, HEX_DIGIT
-      return [nil, chars_str.downcase.to_sym] if chars_str.match?(/^[A-Z]+(?:_[A-Z]+)*$/)
+      return [nil, chars_str.downcase.to_sym, nil] if chars_str.match?(/^[A-Z]+(?:_[A-Z]+)*$/)
 
       # Check for combined: CLASS followed by literal chars (e.g., LETTER'[.?!)
       # Class portion is SCREAMING_CASE, literals start with non-uppercase
       if (match = chars_str.match(/^([A-Z]+(?:_[A-Z]+)*)(.+)$/))
         class_name = match[1].downcase.to_sym
         literal_chars = process_escapes(match[2]).chars
-        return [literal_chars, class_name]
+        return [literal_chars, class_name, nil]
       end
 
       # Parse literal characters with escapes
-      [process_escapes(chars_str).chars, nil]
+      [process_escapes(chars_str).chars, nil, nil]
     end
 
     # Parse return value specification
@@ -203,6 +223,34 @@ module Descent
       else
         {} # Unknown format, use default
       end
+    end
+
+    # Parse a call command value into name and args.
+    # Examples:
+    #   "func"           -> { name: "func", call_args: nil }
+    #   "func(x, y)"     -> { name: "func", call_args: "x, y" }
+    #   "func(<R>)"      -> { name: "func", call_args: "<R>" }
+    #   "func())"        -> { name: "func", call_args: ")" }  (bare paren as arg)
+    #   "error(Code)"    -> { name: "error", call_args: "Code", is_error: true }
+    def parse_call_value(value)
+      return { name: value, call_args: nil } unless value.include?('(')
+
+      # Find the first '(' - everything before is the name
+      paren_pos = value.index('(')
+      name = value[0...paren_pos]
+
+      # Everything after the first '(' up to the last ')' is the args
+      # For "func())" -> args = ")"
+      # For "func(<R>)" -> args = "<R>"
+      rest = value[(paren_pos + 1)..]
+
+      # Strip the final ')' if present - but only ONE trailing paren
+      call_args = rest.end_with?(')') ? rest[0...-1] : rest
+      call_args = nil if call_args.empty?
+
+      result = { name:, call_args: }
+      result[:is_error] = true if name == 'error'
+      result
     end
 
     # Infer SCAN optimization: if a state has a simple self-looping default case
@@ -368,6 +416,26 @@ module Descent
           end
         end
       end
+    end
+
+    # Infer parameter types from usage in states.
+    # Params used in |c[:x]| are bytes (u8), others default to i32.
+    def infer_param_types(params, states)
+      return {} if params.empty?
+
+      # Start with all params as i32 (default)
+      types = params.to_h { |p| [p, :i32] }
+
+      # Find params used in character matches (these become u8)
+      states.each do |state|
+        state.cases.each do |kase|
+          next unless kase.param_ref
+
+          types[kase.param_ref] = :byte if types.key?(kase.param_ref)
+        end
+      end
+
+      types
     end
   end
 end

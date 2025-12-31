@@ -25,11 +25,13 @@ module Descent
     end
 
     # Function with resolved semantics
-    Function = Data.define(:name, :return_type, :params, :locals, :states, :eof_handler, :emits_events,
+    Function = Data.define(:name, :return_type, :params, :param_types, :locals, :states, :eof_handler, :emits_events,
                            :expects_char, :emits_content_on_close, :lineno) do
+      # params: Array of parameter names
+      # param_types: Hash mapping param name -> :byte or :i32 (inferred from usage)
       # expects_char: Single char that must be seen to return (inferred from return cases)
       # emits_content_on_close: Whether TERM appears before return (emit content on unclosed EOF)
-      def initialize(name:, return_type: nil, params: [], locals: {}, states: [], eof_handler: nil,
+      def initialize(name:, return_type: nil, params: [], param_types: {}, locals: {}, states: [], eof_handler: nil,
                      emits_events: false, expects_char: nil, emits_content_on_close: false, lineno: 0)
         super
       end
@@ -50,13 +52,14 @@ module Descent
     end
 
     # Case with resolved actions
-    Case = Data.define(:chars, :special_class, :condition, :substate, :commands) do
+    Case = Data.define(:chars, :special_class, :param_ref, :condition, :substate, :commands) do
       # chars: Array of literal chars to match, or nil for default
       # special_class: Symbol like :letter, :label_cont for special matchers
+      # param_ref: Parameter name to match against (for |c[:param]|), or nil
       # condition: String condition for if-cases, or nil
-      def initialize(chars: nil, special_class: nil, condition: nil, substate: nil, commands: []) = super
+      def initialize(chars: nil, special_class: nil, param_ref: nil, condition: nil, substate: nil, commands: []) = super
 
-      def default?     = chars.nil? && special_class.nil? && condition.nil?
+      def default?     = chars.nil? && special_class.nil? && param_ref.nil? && condition.nil?
       def conditional? = !condition.nil?
     end
 

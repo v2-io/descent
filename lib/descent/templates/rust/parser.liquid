@@ -373,7 +373,7 @@ impl<'a> Parser<'a> {
 
     /// Parse {{ func.name }}{% if func.return_type %} -> {{ func.return_type }}{% endif %}
     {% if func.params.size > 0 %}
-    fn parse_{{ func.name }}<F>(&mut self, {% for param in func.params %}{{ param }}: i32, {% endfor %}on_event: &mut F){% if return_type_info.kind == "internal" %} -> i32{% endif %}
+    fn parse_{{ func.name }}<F>(&mut self, {% for param in func.params %}{{ param }}: {% if func.param_types[param] == "byte" %}u8{% else %}i32{% endif %}, {% endfor %}on_event: &mut F){% if return_type_info.kind == "internal" %} -> i32{% endif %}
     {% else %}
     fn parse_{{ func.name }}<F>(&mut self, on_event: &mut F){% if return_type_info.kind == "internal" %} -> i32{% endif %}
     {% endif %}
@@ -430,7 +430,10 @@ impl<'a> Parser<'a> {
             {% endif %}
                 {% for kase in state.cases %}
                 {% unless kase.is_default %}
-                {% if kase.special_class and kase.chars.size > 0 %}
+                {% if kase.param_ref %}
+                {% comment %} Parameter reference: match against param value {% endcomment %}
+                Some(b) if b == {{ kase.param_ref }} => {
+                {% elsif kase.special_class and kase.chars.size > 0 %}
                 {% comment %} Combined: class + literal chars {% endcomment %}
                 Some(b) if Self::is_{{ kase.special_class }}(b){% for ch in kase.chars %} || b == {{ ch | escape_rust_char }}{% endfor %} => {
                 {% elsif kase.special_class %}
@@ -481,6 +484,8 @@ impl<'a> Parser<'a> {
                 _ => {
                 {% elsif kase.is_conditional %}
                 _ if {{ kase.condition | rust_expr }} => {
+                {% elsif kase.param_ref %}
+                Some(b) if b == {{ kase.param_ref }} => {
                 {% elsif kase.special_class and kase.chars.size > 0 %}
                 Some(b) if Self::is_{{ kase.special_class }}(b){% for ch in kase.chars %} || b == {{ ch | escape_rust_char }}{% endfor %} => {
                 {% elsif kase.special_class %}
@@ -535,6 +540,8 @@ impl<'a> Parser<'a> {
                         {% unless kase.is_default %}
                         {% if kase.is_conditional %}
                         _ if {{ kase.condition | rust_expr }} => {
+                        {% elsif kase.param_ref %}
+                        Some(b) if b == {{ kase.param_ref }} => {
                         {% elsif kase.special_class and kase.chars.size > 0 %}
                         Some(b) if Self::is_{{ kase.special_class }}(b){% for ch in kase.chars %} || b == {{ ch | escape_rust_char }}{% endfor %} => {
                         {% elsif kase.special_class %}
@@ -585,6 +592,8 @@ impl<'a> Parser<'a> {
                         _ => {
                         {% elsif kase.is_conditional %}
                         _ if {{ kase.condition | rust_expr }} => {
+                        {% elsif kase.param_ref %}
+                        Some(b) if b == {{ kase.param_ref }} => {
                         {% elsif kase.special_class and kase.chars.size > 0 %}
                         Some(b) if Self::is_{{ kase.special_class }}(b){% for ch in kase.chars %} || b == {{ ch | escape_rust_char }}{% endfor %} => {
                         {% elsif kase.special_class %}

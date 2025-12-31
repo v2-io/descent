@@ -86,6 +86,22 @@ Types declare what happens when a function returns:
 Functions returning `BRACKET` types automatically emit Start on entry, End on return.
 Functions returning `CONTENT` types automatically MARK on entry, emit content on return.
 
+**Parameterized byte matching:**
+
+Parameters used in `|c[:param]|` become byte (`u8`) type, enabling functions to work
+with different terminators:
+
+```
+; A single function handles [], {}, () by parameterizing the close char
+|function[bracketed:Bracketed] :close
+  |c[:close]   | ->  |return              ; Match against param value
+  |default     | /content(:close)  |>>    ; Pass param to nested calls
+```
+
+Called as: `/bracketed(<R>)` for `]`, `/bracketed(<RB>)` for `}`, `/bracketed(<RP>)` for `)`.
+
+This eliminates duplicate functions that differ only in their terminator character.
+
 ### States
 
 ```
@@ -126,6 +142,8 @@ Each case has: `match | actions | transition`
 | `<R>`  | `]`       |
 | `<LB>` | `{`       |
 | `<RB>` | `}`       |
+| `<LP>` | `(`       |
+| `<RP>` | `)`       |
 
 ### Actions
 

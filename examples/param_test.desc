@@ -1,0 +1,32 @@
+; Test file for parameterized byte terminators
+;
+; This tests the :param syntax in character classes.
+; A param used in |c[:param]| should become u8 type.
+
+|parser param_test
+
+|type[Bracketed] BRACKET
+|type[Content]   CONTENT
+
+|entry-point /document
+
+|function[document]
+  |state[:main]
+    |c[[]        |.bracket | -> | /bracketed(<R>)      |>>
+    |c[{]        |.brace   | -> | /bracketed(<RB>)     |>>
+    |c[(]        |.paren   | -> | /bracketed(<RP>)     |>>
+    |default     |.other   | ->                        |>>
+
+; Parameterized function - :close is a byte param (used in |c[:close]|)
+|function[bracketed:Bracketed] :close
+  |state[:main]
+    |c[:close]   |.done    | ->                        |return
+    |default     |.content | /content(:close)          |>>
+
+; Another param function with both byte and i32 params
+; :term is byte (used in |c[:term]|)
+; :depth is i32 (used in arithmetic)
+|function[content:Content] :term
+  |state[:main]
+    |c[:term]    |.done    |                           |return
+    |default     |.collect | ->                        |>>
