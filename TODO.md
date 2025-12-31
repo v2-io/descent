@@ -2,8 +2,68 @@
 
 ## libudon Integration Issues (BLOCKING)
 
-Issues discovered during libudon integration. Items 1-5 need fixing before libudon can use
-descent-generated parsers.
+Issues discovered during libudon integration.
+
+---
+
+## Session 3 Issues (values.desc feedback)
+
+### 11. CONTENT + Inline Emit = Double Emit - **BUG**
+
+When a CONTENT-type function uses inline emit like `Float(USE_MARK)`, both events are emitted:
+
+```rust
+on_event(Event::Float { ... });    // inline emit
+on_event(Event::Integer { ... });  // CONTENT auto-emit - shouldn't happen!
+```
+
+**Expected:** Inline emit should suppress the auto-emit for the return type.
+
+**Workaround:** Consumer must take only the FIRST event.
+
+### 12. CONTENT EOF Bypasses Inline Emits - **BUG**
+
+At EOF, the `|default` case actions (including inline emits) are bypassed entirely.
+EOF has separate handling that only emits the CONTENT type:
+
+```rust
+if self.eof() {
+    on_event(Event::Integer { ... });  // Only CONTENT type, no inline emit
+    return;
+}
+```
+
+**Expected:** At EOF, the `|default` case should trigger (including inline emits).
+
+**Workaround:** Append a terminator character (e.g., space) to input to trigger default instead of EOF.
+
+### 13. |eof Directive Doesn't Generate Action Code - **BUG**
+
+The `|eof` directive is parsed but doesn't generate the specified action code:
+
+```
+|eof |.end | Integer(USE_MARK) |return
+```
+
+**Expected:** Should generate code that emits Integer at EOF.
+
+**Actual:** EOF case still just returns without the inline emit.
+
+### 14. MARK on State Line Doesn't Work - **NOT IMPLEMENTED**
+
+```
+|state[:main] MARK    ; Expected to call self.mark() on state entry
+```
+
+**Expected:** MARK should be called when entering the state.
+
+**Actual:** No `self.mark()` generated.
+
+**Workaround:** Add `| MARK` in the action column of each entry row.
+
+---
+
+## Session 1 Issues (Items 1-5 FIXED)
 
 ### 1. Duplicate Error Codes - DONE
 Multiple functions returning the same type with `expects_char` generate duplicate enum variants.
@@ -115,7 +175,7 @@ Implementation notes:
 - `XLBL_CONT` adds: `|| ch == '-'`
 - Existing ASCII classes (`LETTER`, `DIGIT`, etc.) remain for byte-level matching
 
-### 8. Parameterized Byte Terminators - **DECIDED**
+### 8. Parameterized Byte Terminators - **IMPLEMENTED**
 
 Many functions are duplicated with only the terminator character differing
 (e.g., `value` vs `value_inline`, different close brackets). Byte parameters
@@ -128,7 +188,7 @@ eliminate this duplication.
   |default     | /value(:close)  |>> :wait
 ```
 
-Called as: `/bracketed(<R>)` or `/bracketed(<RB>)`
+Called as: `/bracketed(<R>)` or `/bracketed(<RB>)` or `/bracketed(<RP>)`
 
 **Rules:**
 - `:param` inside `|c[...]` references a byte parameter
@@ -138,10 +198,14 @@ Called as: `/bracketed(<R>)` or `/bracketed(<RB>)`
 - If you need literal `:` in a character class, don't put it first
   (e.g., `|c[a:]|` not `|c[:a]|`)
 
-**Implementation:**
-- IR builder tracks parameter usage contexts
-- Generator emits appropriate Rust type (`u8` vs `i32`)
-- `|c[:param]|` generates `Some(b) if b == param =>`
+**Implementation:** DONE
+- IR::Case has `param_ref` field for parameter references
+- IR::Function has `param_types` hash to track `u8` vs `i32` params
+- IRBuilder detects `:param` in `|c[:close]|`, infers type from usage
+- Generator transforms `:param` → `param`, `<RP>` → `b')'` in calls
+- Template generates `Some(b) if b == param =>` for param_ref cases
+- Added `<LP>` and `<RP>` escape sequences for `(` and `)`
+- Example: `examples/param_test.desc`
 
 ### 9. Value Type Parsing - **DECIDED**
 
