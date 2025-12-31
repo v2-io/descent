@@ -6,9 +6,46 @@ module Descent
   # Input: Array of Lexer::Token
   # Output: AST::Machine
   class Parser
+    # Structural keywords that end a state or function
+    STRUCTURAL = %w[function type state].freeze
+
+    # Keywords that start a new case within a state
+    CASE_KEYWORDS = %w[c default eof if].freeze
+
+    # Character class names (lowercase words that start cases, not commands)
+    CHAR_CLASSES = %w[letter label_cont digit hex_digit].freeze
+
+    # All tokens that can start a new case (used to know when to stop parsing current case)
+    CASE_STARTERS = (STRUCTURAL + CASE_KEYWORDS + CHAR_CLASSES).freeze
+
     def initialize(tokens)
       @tokens = tokens
       @pos    = 0
+    end
+
+    # Detect if a token tag looks like a command (not a case starter).
+    # Commands can start bare action cases.
+    #
+    # Commands include:
+    # - Function calls: /word or /word(...)
+    # - Arrows: -> or ->[...] or >>
+    # - Uppercase commands: WORD or WORD(...) like MARK, TERM, PREPEND, EMIT
+    # - Specific lowercase: return, err
+    def command_like?(tag)
+      return false if tag.nil?
+
+      # Function call: /word
+      return true if tag.start_with?('/')
+
+      # Arrow commands: -> or >>
+      return true if tag.start_with?('->') || tag.start_with?('>>')
+
+      # Uppercase command: WORD or WORD(...)
+      return true if tag.match?(/^[A-Z]/)
+
+      # Specific lowercase commands (not character classes)
+      base_tag = tag.downcase.split('(').first
+      %w[return err].include?(base_tag)
     end
 
     def parse
@@ -95,44 +132,24 @@ module Descent
       cases       = []
       eof_handler = nil
 
-      # Keywords that should NOT be treated as character classes
-      keywords = %w[return err emit mark term]
-
-      while (t = current) && !%w[function type state].include?(t.tag)
+      while (t = current) && !STRUCTURAL.include?(t.tag)
         case t.tag
+        # Case keywords - specific case types
         when 'c'       then cases << parse_case(t.id)
         when 'default' then cases << parse_case(nil)
         when 'eof'     then eof_handler = parse_eof_handler
         when 'if'      then cases << parse_if_case
-        when '>>'
-          # Bare >> is an else branch (default case with just transition)
-          # Often follows |if[cond] |return as the else case
-          cases << AST::Case.new(
-            chars:    nil,
-            substate: nil,
-            commands: [parse_command(t)],
-            lineno:   t.lineno
-          )
-          advance
-        when /^\/\w+/
-          # Bare function call - unconditional action case (no char match)
-          # e.g., | /text(line_col, parent_col) |return
-          # Don't advance - parse_bare_action_case will consume the function call
-          cases << parse_bare_action_case
-        when /^(PREPEND|MARK|TERM|->)/i
-          # Bare action case starting with a command (not char match, not function call)
-          # e.g., | PREPEND(:prepend) |>> :main
-          # e.g., | MARK |>> :next
-          # Don't advance - parse_bare_action_case will consume the commands
-          cases << parse_bare_action_case
-        when /^[a-z_]+$/
-          if keywords.include?(t.tag)
-            advance # Skip - these are commands, not cases
-          else
-            cases << parse_case(t.tag.upcase) # Character class: letter, label_cont, etc.
-          end
         else
-          advance
+          # Check for character class (lowercase word like 'letter', 'digit')
+          if CHAR_CLASSES.include?(t.tag)
+            cases << parse_case(t.tag.upcase)
+          # Check for command-like tokens that start bare action cases
+          elsif command_like?(t.tag)
+            cases << parse_bare_action_case
+          else
+            # Unknown token - skip it
+            advance
+          end
         end
       end
 
@@ -147,11 +164,7 @@ module Descent
       substate = nil
       commands = []
 
-      # Stop on any tag that could start a new case in parse_state
-      # This includes: function, type, state, c, default, eof, if, and character classes
-      case_starters = %w[function type state c default eof if letter label_cont digit hex_digit]
-
-      while (t = current) && !case_starters.include?(t.tag)
+      while (t = current) && !CASE_STARTERS.include?(t.tag)
         case t.tag
         when '.'
           substate = t.rest.strip
@@ -180,9 +193,7 @@ module Descent
       substate = nil
       commands = []
 
-      case_starters = %w[function type state c default eof if letter label_cont digit hex_digit]
-
-      while (t = current) && !case_starters.include?(t.tag)
+      while (t = current) && !CASE_STARTERS.include?(t.tag)
         case t.tag
         when '.'
           substate = t.rest.strip
@@ -208,11 +219,9 @@ module Descent
       advance
 
       commands = []
-      # Case starters - anything that would start a new case or end the state
-      case_starters = %w[function type state c default eof if letter label_cont]
       last_cmd_type = nil
 
-      while (t = current) && !case_starters.include?(t.tag)
+      while (t = current) && !CASE_STARTERS.include?(t.tag)
         # If previous command was return and current is >>, the >> is an else branch
         # (a new default case), not part of this case's transition
         break if last_cmd_type == :return && t.tag == '>>'
@@ -237,7 +246,7 @@ module Descent
 
       commands = []
 
-      while (t = current) && !%w[function type state c default eof].include?(t.tag)
+      while (t = current) && !CASE_STARTERS.include?(t.tag)
         if t.tag == '.'
           advance # Skip substate marker
         else
