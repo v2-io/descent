@@ -143,7 +143,7 @@ module Descent
       states      = []
       eof_handler = nil
 
-      while (t = current) && !%w[function type].include?(t.tag)
+      while (t = current) && !%w[function type keywords].include?(t.tag)
         case t.tag
         when 'state' then states << parse_state
         when 'eof'   then eof_handler = parse_eof_handler
