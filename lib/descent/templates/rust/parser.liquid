@@ -6,6 +6,9 @@
 //! Call stack = element stack. True recursion handles nesting naturally.
 
 use std::ops::Range;
+{% if keywords.size > 0 %}
+use phf::phf_map;
+{% endif %}
 
 /// Events emitted by the parser.
 #[derive(Debug, Clone, PartialEq)]
@@ -46,6 +49,18 @@ impl<'a> Event<'a> {
         }
     }
 }
+
+{% comment %} Generate phf keyword maps {% endcomment %}
+{% for kw in keywords %}
+/// Keyword lookup map for {{ kw.name }}.
+/// Generated from |keywords[{{ kw.name }}] - O(1) perfect hash lookup.
+static {{ kw.const_name }}: phf::Map<&'static [u8], u8> = phf_map! {
+{% for m in kw.mappings %}
+{% assign idx = forloop.index0 %}
+    b"{{ m.keyword }}" => {{ idx }}u8,
+{% endfor %}
+};
+{% endfor %}
 
 /// Error codes for parse errors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -369,6 +384,51 @@ impl<'a> Parser<'a> {
             }
         }
     }
+
+{% comment %} Generate keyword lookup methods {% endcomment %}
+{% for kw in keywords %}
+    // ========== Keyword Lookup: {{ kw.name }} ==========
+
+    /// Look up accumulated content in {{ kw.name }} keywords.
+    /// Returns true if a keyword matched (event emitted), false otherwise.
+    fn lookup_{{ kw.name }}<F>(&mut self, on_event: &mut F) -> bool
+    where
+        F: FnMut(Event<'a>),
+    {
+        let content = self.term();
+        if let Some(&id) = {{ kw.const_name }}.get(content) {
+            let span = self.span_from_mark();
+            match id {
+{% for m in kw.mappings %}
+{% assign idx = forloop.index0 %}
+                {{ idx }} => on_event(Event::{{ m.event_type }} { content, span }),
+{% endfor %}
+                _ => unreachable!("keyword map contains only valid ids"),
+            }
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Look up and emit keyword, or call fallback function.
+    fn lookup_{{ kw.name }}_or_fallback<F>(&mut self, on_event: &mut F)
+    where
+        F: FnMut(Event<'a>),
+    {
+        if !self.lookup_{{ kw.name }}(on_event) {
+{% if kw.fallback_func %}
+{% if kw.fallback_args %}
+            self.parse_{{ kw.fallback_func }}({{ kw.fallback_args }}, on_event);
+{% else %}
+            self.parse_{{ kw.fallback_func }}(on_event);
+{% endif %}
+{% else %}
+            // No fallback - keyword not found is a no-op
+{% endif %}
+        }
+    }
+{% endfor %}
 
     // ========== Generated Parse Functions ==========
 

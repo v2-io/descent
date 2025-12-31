@@ -79,7 +79,7 @@ module Descent
         when /^-?\d+$/            then arg # negative numbers
         when /^'(.)'$/            then "b'#{::Regexp.last_match(1)}'" # char literal
         when /^"(.)"$/            then "b'#{::Regexp.last_match(1)}'" # quoted char
-        when /^[!;:#*\-_<>\/\\@$%^&+=?,.]$/ then "b'#{arg}'" # Single punctuation → byte literal
+        when %r{^[!;:#*\-_<>/\\@$%^&+=?,.]$} then "b'#{arg}'" # Single punctuation → byte literal
         else arg # pass through (variables, expressions)
         end
       end.join(', ')
@@ -148,8 +148,24 @@ module Descent
         'entry_point'        => @ir.entry_point,
         'types'              => @ir.types.map { |t| type_to_hash(t) },
         'functions'          => @ir.functions.map { |f| function_to_hash(f) },
+        'keywords'           => @ir.keywords.map { |k| keywords_to_hash(k) },
         'custom_error_codes' => @ir.custom_error_codes,
         'trace'              => @trace
+      }
+    end
+
+    def keywords_to_hash(kw)
+      {
+        'name'          => kw.name,
+        'const_name'    => "#{kw.name.upcase}_KEYWORDS",
+        'fallback_func' => kw.fallback_func,
+        'fallback_args' => kw.fallback_args,
+        'mappings'      => kw.mappings.map do |m|
+          {
+            'keyword'    => m[:keyword],
+            'event_type' => m[:event_type]
+          }
+        end
       }
     end
 

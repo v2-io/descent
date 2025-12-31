@@ -6,8 +6,8 @@ module Descent
   # Input: Array of Lexer::Token
   # Output: AST::Machine
   class Parser
-    # Structural keywords that end a state or function
-    STRUCTURAL = %w[function type state].freeze
+    # Structural keywords that end a state, function, or keywords block
+    STRUCTURAL = %w[function type state keywords].freeze
 
     # Keywords that start a new case within a state
     CASE_KEYWORDS = %w[c default eof if].freeze
@@ -53,6 +53,7 @@ module Descent
       entry_point = nil
       types       = []
       functions   = []
+      keywords    = []
 
       while (token = current)
         case token.tag
@@ -64,12 +65,13 @@ module Descent
           advance
         when 'type'     then types << parse_type
         when 'function' then functions << parse_function
+        when 'keywords' then keywords << parse_keywords
         else
           advance # Skip unknown top-level tokens
         end
       end
 
-      AST::Machine.new(name:, entry_point:, types:, functions:)
+      AST::Machine.new(name:, entry_point:, types:, functions:, keywords:)
     end
 
     private
@@ -86,6 +88,49 @@ module Descent
       advance
 
       AST::TypeDecl.new(name:, kind:, lineno: token.lineno)
+    end
+
+    # Parse keywords block for phf perfect hash lookup
+    # Syntax: |keywords[name] :fallback /function(args)
+    #           | keyword => EventType
+    #           | keyword => EventType
+    def parse_keywords
+      token    = current
+      name     = token.id
+      rest     = token.rest
+      lineno   = token.lineno
+      advance
+
+      # Parse fallback function from rest (e.g., ":fallback /bare_string" or "/bare_string")
+      fallback = nil
+      if rest =~ %r{:fallback\s+(/\w+(?:\([^)]*\))?)}
+        fallback = ::Regexp.last_match(1)
+      elsif rest =~ %r{^(/\w+(?:\([^)]*\))?)}
+        fallback = ::Regexp.last_match(1)
+      end
+
+      mappings = []
+
+      # Parse keyword mappings: | keyword => EventType
+      while (t = current) && !STRUCTURAL.include?(t.tag) && !t.tag.start_with?('/')
+        # Empty tag with rest containing "keyword => EventType"
+        if t.tag == '' && t.rest.include?('=>')
+          keyword, event_type = t.rest.split('=>', 2).map(&:strip)
+          mappings << { keyword:, event_type: } if keyword && event_type
+          advance
+        # Tag is the keyword, rest contains "=> EventType"
+        elsif t.rest =~ /^=>\s*(\w+)/
+          keyword    = t.tag.strip
+          event_type = ::Regexp.last_match(1)
+          mappings << { keyword:, event_type: }
+          advance
+        else
+          # Unknown format - skip
+          advance
+        end
+      end
+
+      AST::Keywords.new(name:, fallback:, mappings:, lineno:)
     end
 
     def parse_function
@@ -283,6 +328,7 @@ module Descent
       when /^TERM\((-?\d+)\)$/i       then [:term, ::Regexp.last_match(1).to_i]
       when /^TERM$/i                  then [:term, 0]
       when /^MARK$/i                  then [:mark, nil]
+      when /^KEYWORDS\((\w+)\)$/i     then [:keywords_lookup, ::Regexp.last_match(1)]
       when /^PREPEND\(([^)]*)\)$/i
         content = ::Regexp.last_match(1).strip
         if content.empty?
@@ -310,6 +356,7 @@ module Descent
       when /^MARK\b/i             then [:mark, nil]
       when /^TERM\((-?\d+)\)/i    then [:term, ::Regexp.last_match(1).to_i]
       when /^TERM\b/i             then [:term, 0]
+      when /^KEYWORDS\((\w+)\)/i  then [:keywords_lookup, ::Regexp.last_match(1)]
       when /^PREPEND\(([^)]*)\)/i
         content = ::Regexp.last_match(1).strip
         if content.empty?

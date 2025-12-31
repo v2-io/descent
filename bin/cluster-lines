@@ -43,7 +43,7 @@ def nearest_neighbor_sort(lines)
   return lines if lines.length <= 2
 
   # Precompute distances (expensive but worth it for repeated lookups)
-  n = lines.length
+  n    = lines.length
   dist = Array.new(n) { Array.new(n, 0) }
   (0...n).each do |i|
     ((i + 1)...n).each do |j|
@@ -55,10 +55,10 @@ def nearest_neighbor_sort(lines)
 
   # Nearest neighbor from index 0
   visited = Set.new([0])
-  order = [0]
+  order   = [0]
 
   while visited.size < n
-    current = order.last
+    current   = order.last
     best_next = nil
     best_dist = Float::INFINITY
 
@@ -81,9 +81,7 @@ end
 # Read lines, preserving original content
 lines = $stdin.readlines.map(&:chomp)
 
-if lines.empty?
-  exit 0
-end
+exit 0 if lines.empty?
 
 # Sort to minimize adjacent distance
 sorted = nearest_neighbor_sort(lines)

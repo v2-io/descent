@@ -579,37 +579,54 @@ test/
 - Explicit tests for streaming edge cases
 - Tests the *template's runtime code*, not individual grammars
 
-## Future Enhancements
+## Implemented Features
 
-### Keyword Matching with Perfect Hash (phf)
+### Keyword Matching with Perfect Hash (phf) - IMPLEMENTED (0.2.9)
 
-For keyword sets like `true`/`false`/`null`/`nil`, the current approach requires
-verbose state-per-character functions. Could integrate [rust-phf](https://github.com/rust-phf/rust-phf)
-for O(1) compile-time perfect hash lookup.
+For keyword sets like `true`/`false`/`null`/`nil`, use phf perfect hash for O(1
+compile-time lookup instead of verbose state-per-character functions.
 
-**Proposed syntax:**
+**Syntax:**
 ```
-|keywords :fallback /bare_string
+|keywords[name] :fallback /fallback_function
   | true   => BoolTrue
   | false  => BoolFalse
   | null   => Nil
   | nil    => Nil
 ```
 
-**Generates:**
-```rust
-static BARE_KEYWORDS: phf::Map<&'static [u8], EventKind> = phf_map! {
-    b"true" => EventKind::BoolTrue,
-    b"false" => EventKind::BoolFalse,
-    // ...
-};
+**Usage in parsing:**
+```
+|function[value]
+  |state[:main]
+    |LABEL_CONT |.cont  | ->                         |>>
+    |default    |.done  | TERM | KEYWORDS(name)      |return
 ```
 
-Benefits:
+**Generates:**
+```rust
+static NAME_KEYWORDS: phf::Map<&'static [u8], u8> = phf_map! {
+    b"true" => 0u8,
+    b"false" => 1u8,
+    b"null" => 2u8,
+    b"nil" => 3u8,
+};
+
+fn lookup_name<F>(&mut self, on_event: &mut F) -> bool { ... }
+fn lookup_name_or_fallback<F>(&mut self, on_event: &mut F) { ... }
+```
+
+**Example:** See `examples/keywords.desc`
+
+**Benefits:**
 - Single probe lookup, no state machine
 - Works on `&[u8]` directly
 - Scales to large keyword sets (gperf-style)
 - Eliminates `kw_true`, `kw_false`, etc. boilerplate
+
+---
+
+## Future Enhancements
 
 ### Static Analysis
 The IR provides enough structure for useful static analysis:

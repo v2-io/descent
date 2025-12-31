@@ -228,6 +228,10 @@
 {% assign error_code = cmd.args.value | pascalcase %}
                     on_event(Event::Error { code: ParseErrorCode::{{ error_code }}, span: self.span() });
 
+{% when "keywords_lookup" %}
+{% comment %} Look up accumulated content in keyword map, call fallback if not found {% endcomment %}
+                    self.lookup_{{ cmd.args.name }}_or_fallback(on_event);
+
 {% when "conditional" %}
 {% comment %} Inline conditional: if/else chain {% endcomment %}
 {% for clause in cmd.args.clauses %}

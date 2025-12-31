@@ -10,8 +10,18 @@ module Descent
   # - Local variable declarations with types
   module IR
     # Top-level parser definition
-    Parser = Data.define(:name, :entry_point, :types, :functions, :custom_error_codes) do
-      def initialize(name:, entry_point:, types: [], functions: [], custom_error_codes: []) = super
+    Parser = Data.define(:name, :entry_point, :types, :functions, :keywords, :custom_error_codes) do
+      def initialize(name:, entry_point:, types: [], functions: [], keywords: [], custom_error_codes: []) = super
+    end
+
+    # Keywords for perfect hash (phf) lookup
+    # Generates static phf::Map for O(1) keyword matching
+    Keywords = Data.define(:name, :fallback_func, :fallback_args, :mappings, :lineno) do
+      # name: identifier (e.g., "bare" generates BARE_KEYWORDS)
+      # fallback_func: function to call when no keyword matches
+      # fallback_args: arguments to pass to fallback
+      # mappings: Array of {keyword: "string", event_type: "TypeName"}
+      def initialize(name:, fallback_func: nil, fallback_args: nil, mappings: [], lineno: 0) = super
     end
 
     # Resolved type information

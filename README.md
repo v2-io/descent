@@ -209,6 +209,30 @@ Single-line guards only (no block structure):
 | `LINE`   | Current line (1-indexed)             |
 | `PREV`   | Previous byte (0 at start of input)  |
 
+### Keywords (phf Perfect Hash)
+
+For keyword matching (like `true`/`false`/`null`), use phf perfect hash for O(1) lookup:
+
+```
+|keywords[bare] :fallback /identifier
+  | true   => BoolTrue
+  | false  => BoolFalse
+  | null   => Nil
+  | nil    => Nil
+
+|function[value]
+  |state[:main]
+    |LABEL_CONT |.cont  | ->                    |>>
+    |default    |.done  | TERM | KEYWORDS(bare) |return
+```
+
+- `|keywords[name]` defines a keyword map
+- `:fallback /function` specifies what to call if no match
+- `| keyword => EventType` maps keywords to event types
+- `KEYWORDS(name)` in actions triggers the lookup
+
+Generates efficient phf_map! with O(1) compile-time perfect hash lookup.
+
 ## Automatic Optimizations
 
 ### SCAN Inference

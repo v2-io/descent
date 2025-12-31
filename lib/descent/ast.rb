@@ -7,8 +7,8 @@ module Descent
   # These represent the direct parse result before semantic analysis.
   module AST
     # Top-level machine definition
-    Machine = Data.define(:name, :entry_point, :types, :functions) do
-      def initialize(name:, entry_point: nil, types: [], functions: []) = super
+    Machine = Data.define(:name, :entry_point, :types, :functions, :keywords) do
+      def initialize(name:, entry_point: nil, types: [], functions: [], keywords: []) = super
     end
 
     # Type declaration: |type[Name] KIND
@@ -52,6 +52,17 @@ module Descent
     # A clause within a conditional
     Clause = Data.define(:condition, :commands) do
       def initialize(condition: nil, commands: []) = super
+    end
+
+    # Keywords block for phf perfect hash lookup
+    # Example: |keywords :fallback /bare_string
+    #            | true  => BoolTrue
+    #            | false => BoolFalse
+    Keywords = Data.define(:name, :fallback, :mappings, :lineno) do
+      # name: identifier for the keyword map (e.g., "bare" generates BARE_KEYWORDS)
+      # fallback: function to call when no keyword matches (e.g., "/bare_string")
+      # mappings: Array of {keyword: "string", event_type: "TypeName"}
+      def initialize(name:, fallback: nil, mappings: [], lineno: 0) = super
     end
   end
 end

@@ -1,0 +1,37 @@
+; Keywords example - demonstrates phf perfect hash keyword lookup
+;
+; Keywords are useful for parsing language keywords (true, false, null)
+; where O(1) lookup via perfect hash is more efficient than state machines.
+
+|parser keywords
+
+|type[BoolTrue]  CONTENT  ; true literal
+|type[BoolFalse] CONTENT  ; false literal
+|type[Nil]       CONTENT  ; null/nil literal
+|type[Name]      CONTENT  ; fallback - bare identifier
+
+|entry-point /document
+
+; Define keyword map with fallback function
+|keywords[bare] :fallback /name
+  | true   => BoolTrue
+  | false  => BoolFalse
+  | null   => Nil
+  | nil    => Nil
+
+|function[document]
+  |state[:main]
+    |LETTER     |.start    | /value          |>>
+    |c[ \n\t]   |.ws       | ->              |>>
+    |default    |.other    | ->              |>>
+
+; Accumulate identifier and look up in keywords
+|function[value]
+  |state[:main]
+    |LABEL_CONT |.cont     | ->              |>>
+    |default    |.done     | TERM | KEYWORDS(bare) |return
+
+; Fallback: just emit the name as-is
+|function[name:Name]
+  |state[:main]
+    |default    |.done     |return

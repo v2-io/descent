@@ -15,6 +15,7 @@ module Descent
     def build
       types     = build_types(@ast.types)
       functions = @ast.functions.map { |f| build_function(f, types) }
+      keywords  = @ast.keywords.map { |k| build_keywords(k) }
 
       # Collect custom error codes from /error(code) calls
       custom_error_codes = collect_custom_error_codes(functions)
@@ -27,11 +28,36 @@ module Descent
         entry_point:        @ast.entry_point,
         types:,
         functions:,
+        keywords:,
         custom_error_codes:
       )
     end
 
     private
+
+    # Transform AST Keywords to IR Keywords
+    def build_keywords(kw)
+      # Parse the fallback function call (e.g., "/bare_string" or "/bare_string(arg)")
+      fallback_func = nil
+      fallback_args = nil
+
+      if kw.fallback
+        if kw.fallback =~ %r{^/(\w+)\(([^)]*)\)$}
+          fallback_func = ::Regexp.last_match(1)
+          fallback_args = ::Regexp.last_match(2)
+        elsif kw.fallback =~ %r{^/(\w+)$}
+          fallback_func = ::Regexp.last_match(1)
+        end
+      end
+
+      IR::Keywords.new(
+        name:          kw.name,
+        fallback_func:,
+        fallback_args:,
+        mappings:      kw.mappings,
+        lineno:        kw.lineno
+      )
+    end
 
     def build_types(type_decls)
       type_decls.map do |t|
@@ -181,6 +207,7 @@ module Descent
              when :term then { offset: cmd.value || 0 }
              when :prepend then { literal: process_escapes(cmd.value) }
              when :prepend_param then { param_ref: cmd.value }
+             when :keywords_lookup then { name: cmd.value }
              when :return then parse_return_value(cmd.value)
              else
                {}
@@ -495,9 +522,7 @@ module Descent
         func.states.each do |state|
           state.cases.each do |kase|
             kase.commands.each do |cmd|
-              if cmd.type == :prepend_param
-                prepend_params[func.name] = cmd.args[:param_ref]
-              end
+              prepend_params[func.name] = cmd.args[:param_ref] if cmd.type == :prepend_param
             end
           end
         end
