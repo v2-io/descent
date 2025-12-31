@@ -221,8 +221,9 @@
                     on_event(Event::{{ cmd.args.type }} { content: self.term(), span: self.span_from_mark() });
 
 {% when "inline_emit_literal" %}
-{% comment %} Inline emit with literal: TypeName(literal) {% endcomment %}
-                    on_event(Event::{{ cmd.args.type }} { content: b"{{ cmd.args.literal }}", span: self.span() });
+{% comment %} Inline emit with literal: TypeName(literal) - strip $ sigil if present {% endcomment %}
+{% assign literal = cmd.args.literal | remove_first: '$' %}
+                    on_event(Event::{{ cmd.args.type }} { content: b"{{ literal }}", span: self.span() });
 
 {% when "error" %}
 {% assign error_code = cmd.args.value | pascalcase %}
