@@ -1,0 +1,107 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Sorts lines to minimize Levenshtein distance between adjacent lines.
+# Useful for finding similar/duplicate lines in .desc files.
+#
+# Usage: cat file.desc | cluster-lines
+#        cluster-lines < file.desc
+#        grep "pattern" file.desc | cluster-lines
+
+require 'set'
+
+# Levenshtein distance - O(n*m) but good enough for line-length strings
+def levenshtein(a, b)
+  return b.length if a.empty?
+  return a.length if b.empty?
+
+  # Use shorter string as inner loop for cache efficiency
+  a, b = b, a if a.length > b.length
+
+  prev = (0..a.length).to_a
+  curr = []
+
+  b.chars.each_with_index do |b_char, j|
+    curr[0] = j + 1
+    a.chars.each_with_index do |a_char, i|
+      cost = a_char == b_char ? 0 : 1
+      curr[i + 1] = [
+        curr[i] + 1,      # insert
+        prev[i + 1] + 1,  # delete
+        prev[i] + cost    # substitute
+      ].min
+    end
+    prev, curr = curr, prev
+  end
+
+  prev[a.length]
+end
+
+# Nearest neighbor heuristic for TSP
+# Start from first line, always pick closest unvisited line next
+def nearest_neighbor_sort(lines)
+  return lines if lines.length <= 2
+
+  # Precompute distances (expensive but worth it for repeated lookups)
+  n = lines.length
+  dist = Array.new(n) { Array.new(n, 0) }
+  (0...n).each do |i|
+    ((i + 1)...n).each do |j|
+      d = levenshtein(lines[i], lines[j])
+      dist[i][j] = d
+      dist[j][i] = d
+    end
+  end
+
+  # Nearest neighbor from index 0
+  visited = Set.new([0])
+  order = [0]
+
+  while visited.size < n
+    current = order.last
+    best_next = nil
+    best_dist = Float::INFINITY
+
+    (0...n).each do |j|
+      next if visited.include?(j)
+
+      if dist[current][j] < best_dist
+        best_dist = dist[current][j]
+        best_next = j
+      end
+    end
+
+    order << best_next
+    visited << best_next
+  end
+
+  order.map { |i| lines[i] }
+end
+
+# Read lines, preserving original content
+lines = $stdin.readlines.map(&:chomp)
+
+if lines.empty?
+  exit 0
+end
+
+# Sort to minimize adjacent distance
+sorted = nearest_neighbor_sort(lines)
+
+# Output with distance annotations
+prev = nil
+sorted.each do |line|
+  if prev
+    dist = levenshtein(prev, line)
+    puts "#{dist.to_s.rjust(3)}| #{line}"
+  else
+    puts "   | #{line}"
+  end
+  prev = line
+end
+
+# Summary stats
+if lines.length > 1
+  total_dist = sorted.each_cons(2).sum { |a, b| levenshtein(a, b) }
+  warn "\n--- #{lines.length} lines, total distance: #{total_dist}, avg: #{(total_dist.to_f / (lines.length - 1)).round(1)} ---"
+end
