@@ -96,34 +96,101 @@ May be specific to patterns in udon.desc - needs investigation with actual file.
 
 ---
 
-### 7. Unicode Identifiers - **DISCUSS WITH JOSEPH FIRST**
+### 7. Unicode Identifiers - **DECIDED**
 `is_letter()` in generated code uses `b.is_ascii_alphabetic()`. UDON spec allows Unicode
 XID_Start/XID_Continue for element names.
 
-Options:
-- Use `unicode-ident` crate (fast, exactly XID_Start/XID_Continue per UAX#31)
-- Requires UTF-8 decoding on-demand (current parser is byte-based)
+**Decision:** Use `unicode-ident` crate with these character class names:
 
-### 8. Value Type Parsing - **DISCUSS WITH JOSEPH FIRST**
-descent emits `BareValue` with raw content. UDON needs to distinguish Int, Float, Rational,
-Complex, Bool, Nil from bare strings.
+| Class | Meaning |
+|-------|---------|
+| `XID_START` | Unicode XID_Start (can start identifier) |
+| `XID_CONT` | Unicode XID_Continue (can continue identifier) |
+| `XLBL_START` | = XID_START (same start rules for labels) |
+| `XLBL_CONT` | XID_Continue + hyphen (for kebab-case labels) |
 
-Recommendation: Keep in libudon, not descent.
-- descent emits `BareValue { content }` - just raw bytes
-- libudon post-processes with Rust libraries (`fast-float`, `lexical-core`)
-- Keeps grammar simple, leverages battle-tested parsers
+Implementation notes:
+- Requires UTF-8 decoding on-demand (single codepoint, not full validation)
+- Use `unicode_ident::is_xid_start(ch)` / `is_xid_continue(ch)`
+- `XLBL_CONT` adds: `|| ch == '-'`
+- Existing ASCII classes (`LETTER`, `DIGIT`, etc.) remain for byte-level matching
 
-### 9. Multi-Chunk Streaming - **DISCUSS WITH JOSEPH FIRST**
-Current parser is single-buffer only (`&'a [u8]`). UDON needs streaming for LLM use case:
-- Feed partial chunks
-- Resume when more data arrives
-- Handle tokens split across chunk boundaries
+### 8. Parameterized Byte Terminators - **DECIDED**
 
-Options:
-- Internal buffering (simpler for caller, memory cost)
-- Resumable state machine (zero-copy, complex)
+Many functions are duplicated with only the terminator character differing
+(e.g., `value` vs `value_inline`, different close brackets). Byte parameters
+eliminate this duplication.
 
-This is a larger architectural discussion.
+**Syntax:**
+```
+|function[bracketed] :close
+  |c[:close]   | ->  |return        ; :close references the param
+  |default     | /value(:close)  |>> :wait
+```
+
+Called as: `/bracketed(<R>)` or `/bracketed(<RB>)`
+
+**Rules:**
+- `:param` inside `|c[...]` references a byte parameter
+- Type inferred from usage:
+  - Used in `|c[:x]|` → `u8`
+  - Used in arithmetic/conditions → `i32`
+- If you need literal `:` in a character class, don't put it first
+  (e.g., `|c[a:]|` not `|c[:a]|`)
+
+**Implementation:**
+- IR builder tracks parameter usage contexts
+- Generator emits appropriate Rust type (`u8` vs `i32`)
+- `|c[:param]|` generates `Some(b) if b == param =>`
+
+### 9. Value Type Parsing - **DECIDED**
+
+Numeric type detection is handled in `.desc` files (see `libudon/generator/values.desc`).
+Keywords (true, false, null, nil) await phf integration (see "Keyword Matching with
+Perfect Hash" in Future Enhancements).
+
+**Approach:**
+- Numeric parsing: descent handles via state machine in `.desc`
+- Keyword lookup: phf perfect hash (O(1)) - pending implementation
+- Complex post-processing (if needed): libudon with `lexical-core`
+
+### 10. Multi-Chunk Streaming - **DECIDED**
+
+Current parser is single-buffer only (`&'a [u8]`). UDON needs streaming for LLM use case.
+
+**Decision:** Resumable State Machine (Option 2)
+
+**API:**
+```rust
+loop {
+    match parser.parse(chunk, on_event) {
+        ParseResult::Complete => break,
+        ParseResult::NeedMoreData => {
+            chunk = get_next_chunk();  // Caller controls flow
+        }
+    }
+}
+```
+
+**Design:**
+- Zero-copy for 99% of input (tokens within chunks)
+- Small internal buffer (~256 bytes) for cross-boundary tokens only
+- Parser state already captured in `State` enum
+- Add `mark_pos` / `term_pos` to saved state for resume
+- When hitting end of chunk mid-token, return `NeedMoreData`
+- Resume by prepending buffered bytes to next chunk
+
+**Backpressure:**
+- Blocking callback model (sufficient for LLM streaming)
+- Intra-chunk: synchronous callback blocks → parser waits
+- Inter-chunk: caller controls when to feed next chunk
+- No explicit pause signal needed
+
+**Implementation steps:**
+1. Add `ParseResult` enum with `Complete` / `NeedMoreData` variants
+2. Add small buffer for partial tokens at chunk boundary
+3. Save/restore parser position state across chunks
+4. Handle MARK/TERM spans that cross boundaries
 
 ---
 
@@ -345,10 +412,14 @@ pub enum ParseErrorCode {
 
 ### Partially Implemented
 - MARK/TERM: parsed, auto-MARK for CONTENT works, explicit MARK/TERM working
-- Character ranges: `|c[0-9]`, `|c[a-z]` not yet supported (use DIGIT, LETTER classes)
 
 ### Not Yet Implemented
-- Character ranges: `|c[0-9]` → `b'0'..=b'9'`
+- Character ranges: `|c[0-9]` → `b'0'..=b'9'`, `|c[a-f]` → `b'a'..=b'f'`
+  - Currently parses as literal chars (broken)
+  - `values.desc` depends on this
+- Additional character classes: `DIGIT`, `HEX_DIGIT`
+  - Only `LETTER` and `LABEL_CONT` currently implemented
+  - Document all classes in CLAUDE.md
 - C template
 
 ### Recently Implemented
@@ -404,6 +475,36 @@ test/
 - Tests the *template's runtime code*, not individual grammars
 
 ## Future Enhancements
+
+### Keyword Matching with Perfect Hash (phf)
+
+For keyword sets like `true`/`false`/`null`/`nil`, the current approach requires
+verbose state-per-character functions. Could integrate [rust-phf](https://github.com/rust-phf/rust-phf)
+for O(1) compile-time perfect hash lookup.
+
+**Proposed syntax:**
+```
+|keywords :fallback /bare_string
+  | true   => BoolTrue
+  | false  => BoolFalse
+  | null   => Nil
+  | nil    => Nil
+```
+
+**Generates:**
+```rust
+static BARE_KEYWORDS: phf::Map<&'static [u8], EventKind> = phf_map! {
+    b"true" => EventKind::BoolTrue,
+    b"false" => EventKind::BoolFalse,
+    // ...
+};
+```
+
+Benefits:
+- Single probe lookup, no state machine
+- Works on `&[u8]` directly
+- Scales to large keyword sets (gperf-style)
+- Eliminates `kw_true`, `kw_false`, etc. boilerplate
 
 ### Static Analysis
 The IR provides enough structure for useful static analysis:
