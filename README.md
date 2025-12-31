@@ -160,7 +160,12 @@ Actions are pipe-separated, execute left-to-right:
 | /function(args)       ; Call with arguments
 | var = value           ; Assignment
 | var += 1              ; Increment
+| PREPEND(literal)      ; Emit literal as Text event
+| PREPEND(:param)       ; Emit parameter value as Text (no-op if empty)
 ```
+
+`PREPEND()` with empty content is a no-op, as is `PREPEND(:param)` when the
+parameter value is 0.
 
 ### Inline Literal Events
 

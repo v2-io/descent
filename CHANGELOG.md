@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Parameters used in char matches become `u8` type automatically
   - Enables single functions to handle multiple bracket types ([], {}, ())
 - **Escape sequences**: `<LP>` for `(` and `<RP>` for `)` in function arguments
+- **PREPEND with parameter references**: `PREPEND(:param)` emits parameter value as Text event
+  - `PREPEND()` with empty content is a no-op
+  - `PREPEND(:param)` where param is 0 is also a no-op (runtime check)
+  - Parameters used in PREPEND are inferred as `u8` type
 
 ### Fixed
 - **Double emit bug (#11)**: CONTENT functions with inline emits no longer emit twice

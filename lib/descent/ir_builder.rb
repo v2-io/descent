@@ -177,6 +177,7 @@ module Descent
              when :inline_emit_literal then cmd.value.is_a?(Hash) ? cmd.value : {}
              when :term then { offset: cmd.value || 0 }
              when :prepend then { literal: process_escapes(cmd.value) }
+             when :prepend_param then { param_ref: cmd.value }
              when :return then parse_return_value(cmd.value)
              else
                {}
@@ -457,19 +458,26 @@ module Descent
     end
 
     # Infer parameter types from usage in states.
-    # Params used in |c[:x]| are bytes (u8), others default to i32.
+    # Params used in |c[:x]| or PREPEND(:x) are bytes (u8), others default to i32.
     def infer_param_types(params, states)
       return {} if params.empty?
 
       # Start with all params as i32 (default)
       types = params.to_h { |p| [p, :i32] }
 
-      # Find params used in character matches (these become u8)
+      # Find params used in character matches or PREPEND (these become u8)
       states.each do |state|
         state.cases.each do |kase|
-          next unless kase.param_ref
+          # Check param_ref in character matches
+          types[kase.param_ref] = :byte if kase.param_ref && types.key?(kase.param_ref)
 
-          types[kase.param_ref] = :byte if types.key?(kase.param_ref)
+          # Check param_ref in PREPEND commands
+          kase.commands.each do |cmd|
+            if cmd.type == :prepend_param && cmd.args[:param_ref]
+              param = cmd.args[:param_ref]
+              types[param] = :byte if types.key?(param)
+            end
+          end
         end
       end
 

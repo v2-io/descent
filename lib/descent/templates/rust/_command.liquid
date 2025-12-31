@@ -49,6 +49,12 @@
 {% comment %} Emit literal as text (prepends to logical content stream) {% endcomment %}
                     on_event(Event::Text { content: b"{{ cmd.args.literal }}", span: self.span() });
 
+{% when "prepend_param" %}
+{% comment %} Emit parameter value as text (no-op if param is 0/empty) {% endcomment %}
+                    if {{ cmd.args.param_ref }} != 0 {
+                        on_event(Event::Text { content: &[{{ cmd.args.param_ref }}], span: self.span() });
+                    }
+
 {% when "return" %}
 {% comment %} Emit appropriate event based on return type, then return {% endcomment %}
 {% if cmd.args.return_value %}

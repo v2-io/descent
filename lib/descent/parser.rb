@@ -268,7 +268,15 @@ module Descent
       when /^TERM\((-?\d+)\)$/i       then [:term, ::Regexp.last_match(1).to_i]
       when /^TERM$/i                  then [:term, 0]
       when /^MARK$/i                  then [:mark, nil]
-      when /^PREPEND\(([^)]+)\)$/i    then [:prepend, ::Regexp.last_match(1)]
+      when /^PREPEND\(([^)]*)\)$/i
+        content = ::Regexp.last_match(1).strip
+        if content.empty?
+          [:noop, nil]
+        elsif content.start_with?(':')
+          [:prepend_param, content[1..]] # Strip leading colon
+        else
+          [:prepend, content]
+        end
       when /^([A-Z]\w*)\(USE_MARK\)$/  then [:inline_emit_mark, ::Regexp.last_match(1)]
       when /^([A-Z]\w*)\(([^)]+)\)$/   then [:inline_emit_literal, { type: ::Regexp.last_match(1), literal: ::Regexp.last_match(2) }]
       when /^([A-Z]\w*)$/              then [:inline_emit_bare, ::Regexp.last_match(1)]
@@ -287,7 +295,15 @@ module Descent
       when /^MARK\b/i             then [:mark, nil]
       when /^TERM\((-?\d+)\)/i    then [:term, ::Regexp.last_match(1).to_i]
       when /^TERM\b/i             then [:term, 0]
-      when /^PREPEND\(([^)]+)\)/i then [:prepend, ::Regexp.last_match(1)]
+      when /^PREPEND\(([^)]*)\)/i
+        content = ::Regexp.last_match(1).strip
+        if content.empty?
+          [:noop, nil]
+        elsif content.start_with?(':')
+          [:prepend_param, content[1..]] # Strip leading colon
+        else
+          [:prepend, content]
+        end
       when /^return\b\s*(.*)$/i   then [:return, ::Regexp.last_match(1).strip]
       when /^->\s*$/              then [:advance, nil]
       when /^->\s*\[([^\]]+)\]$/  then [:advance_to, ::Regexp.last_match(1)]
