@@ -52,7 +52,8 @@
 {% when "prepend_param" %}
 {% comment %} Emit parameter value as text (no-op if param is 0/empty) {% endcomment %}
                     if {{ cmd.args.param_ref }} != 0 {
-                        on_event(Event::Text { content: &[{{ cmd.args.param_ref }}], span: self.span() });
+                        let buf = [{{ cmd.args.param_ref }}];
+                        on_event(Event::Text { content: &buf, span: self.span() });
                     }
 
 {% when "return" %}

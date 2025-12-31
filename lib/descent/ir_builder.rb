@@ -408,14 +408,13 @@ module Descent
       commands.each do |cmd|
         case cmd.type
         when :error
-          # /error(code) - collect the code
+          # Explicit :error command
           code = cmd.args[:value] || cmd.args['value']
           codes << code if code && !code.empty?
         when :call
-          # /error(code) is also parsed as a call sometimes
-          value = cmd.args[:value] || cmd.args['value']
-          if value&.start_with?('error(')
-            code = value[/error\(([^)]+)\)/, 1]
+          # /error(code) is parsed as :call with is_error: true
+          if cmd.args[:is_error]
+            code = cmd.args[:call_args]
             codes << code if code && !code.empty?
           end
         when :conditional

@@ -382,6 +382,15 @@ impl<'a> Parser<'a> {
 - **IR Builder**: Semantic analysis, SCAN inference, validation
 - **Generator**: Renders IR through Liquid templates
 
+**Adding new commands**: The parser uses `command_like?()` to detect command tokens
+generically (uppercase words, `/function`, `->`, `>>`). To add a new command like `RESET`:
+
+1. `parser.rb`: Add to `classify_command()` - what type is it?
+2. `ir_builder.rb`: Add to command transformation - what args does it have?
+3. `_command.liquid`: Add rendering - what Rust code does it generate?
+
+No changes needed to case detection or structural parsing.
+
 ## Targets
 
 | Target | Status | Output |
