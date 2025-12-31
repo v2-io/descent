@@ -59,6 +59,7 @@ module Descent
     # Transform function call arguments.
     # - :param -> param (parameter references)
     # - <R> -> b']', <RB> -> b'}', <RP> -> b')', etc. (escape sequences to byte literals)
+    # - Bare quotes: " -> b'"', ' -> b'\''
     def transform_call_args(args)
       args.split(',').map do |arg|
         arg = arg.strip
@@ -72,6 +73,8 @@ module Descent
         when '<BS>'               then "b'\\\\'"
         when '<RP>'               then "b')'"  # Right paren
         when '<LP>'               then "b'('"  # Left paren
+        when '"'                  then "b'\"'" # Bare double quote
+        when "'"                  then "b'\\''" # Bare single quote (escaped)
         when /^\d+$/              then arg # numeric literals
         when /^-?\d+$/            then arg # negative numbers
         when /^'(.)'$/            then "b'#{::Regexp.last_match(1)}'" # char literal

@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **EOF bypasses inline emits (#12)**: Use `|eof` directive for explicit EOF behavior
 - **`|eof` not generating code (#13)**: The `|eof` directive now properly generates
   action code including inline emits
+- **Quote characters in function parameters**: Bare `"` and `'` now correctly convert
+  to `b'"'` and `b'\''` when passed as function arguments
 
 ### Changed
 - EOF handling documentation updated to reflect explicit `|eof` support
