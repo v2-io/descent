@@ -153,7 +153,8 @@ module Descent
         param_ref:,
         condition:     kase.condition,
         substate:      kase.substate,
-        commands:
+        commands:,
+        lineno:        kase.lineno
       )
     end
 

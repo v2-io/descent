@@ -15,16 +15,11 @@ module Descent
 
     def tokenize
       tokens = []
-      lineno = 1
-
-      # Track line numbers as we go
-      line_offsets = [0]
-      @content.each_char.with_index do |c, i|
-        line_offsets << (i + 1) if c == "\n"
-      end
 
       # Strip comments BEFORE splitting on pipes to avoid corrupted parsing
-      # when a comment contains a pipe character
+      # when a comment contains a pipe character.
+      # Note: strip_comments preserves line structure (each original line maps
+      # to exactly one stripped line), so we can count newlines to get line numbers.
       content_without_comments = strip_comments(@content)
 
       # Split on pipes, tracking position
@@ -36,10 +31,13 @@ module Descent
       split_on_pipes(content_without_comments).each do |part|
         next if part.strip.empty?
 
-        # Find line number for this part (use original content for position tracking)
+        # Find position in stripped content
         found_pos = content_without_comments.index(part, current_pos) || current_pos
-        line = line_offsets.bsearch_index { |off| off > found_pos } || line_offsets.size
-        lineno = line
+
+        # Count newlines before this position to get line number (1-indexed).
+        # This works because strip_comments preserves line count - each original
+        # line becomes exactly one line in stripped content.
+        lineno = content_without_comments[0...found_pos].count("\n") + 1
 
         parts << [part.rstrip, lineno]
         current_pos = found_pos + part.length

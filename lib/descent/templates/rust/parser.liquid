@@ -129,6 +129,35 @@ impl<'a> Parser<'a> {
         self.input.get(self.pos).copied()
     }
 
+{% if trace %}
+    /// Format a byte for trace display (shows printable chars or escape codes).
+    fn trace_byte(b: Option<u8>) -> String {
+        match b {
+            None => "EOF".to_string(),
+            Some(b'\n') => "'\\n'".to_string(),
+            Some(b'\t') => "'\\t'".to_string(),
+            Some(b'\r') => "'\\r'".to_string(),
+            Some(b' ') => "' '".to_string(),
+            Some(b) if b.is_ascii_graphic() => format!("'{}'", b as char),
+            Some(b) => format!("0x{:02x}", b),
+        }
+    }
+
+    /// Format accumulated content for trace display (truncated).
+    fn trace_content(&self) -> String {
+        let content = self.term();
+        if content.is_empty() {
+            return "[]".to_string();
+        }
+        let s = std::str::from_utf8(content).unwrap_or("<binary>");
+        if s.len() > 32 {
+            format!("[{:?}...]", &s[..32])
+        } else {
+            format!("[{:?}]", s)
+        }
+    }
+{% endif %}
+
     #[inline(always)]
     fn eof(&self) -> bool {
         self.pos >= self.input.len()
@@ -450,7 +479,7 @@ impl<'a> Parser<'a> {
     where
         F: FnMut(Event<'a>),
     {
-        {% if trace %}eprintln!("TRACE: enter {{ func.name }}");{% endif %}
+        {% if trace %}eprintln!("TRACE: L{{ func.lineno }} ENTER {{ func.name }} | byte={} pos={}", Self::trace_byte(self.peek()), self.pos);{% endif %}
 
         {% comment %} BRACKET types: emit Start on entry {% endcomment %}
         {% if return_type_info.kind == "bracket" %}
@@ -515,6 +544,7 @@ impl<'a> Parser<'a> {
                 {% else %}
                 Some(_) => {
                 {% endif %}
+                    {% if trace %}eprintln!("TRACE: L{{ kase.lineno }} {{ func.name }}:{{ state.name }}{% if kase.substate %}.{{ kase.substate }}{% endif %} | byte={} term={} pos={}", Self::trace_byte(self.peek()), self.trace_content(), self.pos);{% endif %}
                     {% for cmd in kase.commands %}
                     {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info %}
                     {% endfor %}
@@ -522,6 +552,7 @@ impl<'a> Parser<'a> {
                 {% endunless %}
                 {% endfor %}
                 None => {
+                    {% if trace %}eprintln!("TRACE: L{{ state.lineno }} {{ func.name }}:{{ state.name }} EOF | term={} pos={}", self.trace_content(), self.pos);{% endif %}
                     {% comment %} EOF handling - check for explicit |eof handler first {% endcomment %}
                     {% if state.eof_handler.size > 0 %}
                     {% for cmd in state.eof_handler %}
@@ -548,6 +579,7 @@ impl<'a> Parser<'a> {
             {% else %}
             {% comment %} Non-scannable: check EOF first, then match {% endcomment %}
             if self.eof() {
+                {% if trace %}eprintln!("TRACE: L{{ state.lineno }} {{ func.name }}:{{ state.name }} EOF | term={} pos={}", self.trace_content(), self.pos);{% endif %}
                 {% if state.eof_handler.size > 0 %}
                 {% comment %} Fix #13: Explicit |eof handler - use its commands {% endcomment %}
                 {% for cmd in state.eof_handler %}
@@ -590,6 +622,7 @@ impl<'a> Parser<'a> {
                 {% else %}
                 Some(_) => {
                 {% endif %}
+                    {% if trace %}eprintln!("TRACE: L{{ kase.lineno }} {{ func.name }}:{{ state.name }}{% if kase.substate %}.{{ kase.substate }}{% endif %} | byte={} term={} pos={}", Self::trace_byte(self.peek()), self.trace_content(), self.pos);{% endif %}
                     {% for cmd in kase.commands %}
                     {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info %}
                     {% endfor %}
@@ -598,6 +631,7 @@ impl<'a> Parser<'a> {
                 {% unless state.has_default %}
                 {% comment %} Add default arm if state has no explicit default case {% endcomment %}
                 _ => {
+                    {% if trace %}eprintln!("TRACE: {{ func.name }}:{{ state.name }} UNHANDLED | byte={} pos={}", Self::trace_byte(self.peek()), self.pos);{% endif %}
                     {% if return_type_info.kind == "internal" %}return 0;{% else %}return;{% endif %}
                 }
                 {% endunless %}
@@ -646,6 +680,7 @@ impl<'a> Parser<'a> {
                         {% else %}
                         Some(_) => {
                         {% endif %}
+                            {% if trace %}eprintln!("TRACE: L{{ kase.lineno }} {{ func.name }}:{{ state.name }}{% if kase.substate %}.{{ kase.substate }}{% endif %} | byte={} term={} pos={}", Self::trace_byte(self.peek()), self.trace_content(), self.pos);{% endif %}
                             {% for cmd in kase.commands %}
                             {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info, states: func.states %}
                             {% endfor %}
@@ -653,6 +688,7 @@ impl<'a> Parser<'a> {
                         {% endunless %}
                         {% endfor %}
                         None => {
+                            {% if trace %}eprintln!("TRACE: L{{ state.lineno }} {{ func.name }}:{{ state.name }} EOF | term={} pos={}", self.trace_content(), self.pos);{% endif %}
                             {% comment %} EOF handling - check for explicit |eof handler first {% endcomment %}
                             {% if state.eof_handler.size > 0 %}
                             {% for cmd in state.eof_handler %}
@@ -679,6 +715,7 @@ impl<'a> Parser<'a> {
                     {% else %}
                     {% comment %} Non-scannable: check EOF first {% endcomment %}
                     if self.eof() {
+                        {% if trace %}eprintln!("TRACE: L{{ state.lineno }} {{ func.name }}:{{ state.name }} EOF | term={} pos={}", self.trace_content(), self.pos);{% endif %}
                         {% if state.eof_handler.size > 0 %}
                         {% for cmd in state.eof_handler %}
                         {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info, states: func.states %}
@@ -718,6 +755,7 @@ impl<'a> Parser<'a> {
                         {% else %}
                         Some(_) => {
                         {% endif %}
+                            {% if trace %}eprintln!("TRACE: L{{ kase.lineno }} {{ func.name }}:{{ state.name }}{% if kase.substate %}.{{ kase.substate }}{% endif %} | byte={} term={} pos={}", Self::trace_byte(self.peek()), self.trace_content(), self.pos);{% endif %}
                             {% for cmd in kase.commands %}
                             {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info, states: func.states %}
                             {% endfor %}
@@ -726,6 +764,7 @@ impl<'a> Parser<'a> {
                         {% unless state.has_default %}
                         {% comment %} Add default arm if state has no explicit default case {% endcomment %}
                         _ => {
+                            {% if trace %}eprintln!("TRACE: {{ func.name }}:{{ state.name }} UNHANDLED | byte={} pos={}", Self::trace_byte(self.peek()), self.pos);{% endif %}
                             {% if return_type_info.kind == "internal" %}return 0;{% else %}return;{% endif %}
                         }
                         {% endunless %}

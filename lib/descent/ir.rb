@@ -63,12 +63,13 @@ module Descent
     end
 
     # Case with resolved actions
-    Case = Data.define(:chars, :special_class, :param_ref, :condition, :substate, :commands) do
+    Case = Data.define(:chars, :special_class, :param_ref, :condition, :substate, :commands, :lineno) do
       # chars: Array of literal chars to match, or nil for default
       # special_class: Symbol like :letter, :label_cont for special matchers
       # param_ref: Parameter name to match against (for |c[:param]|), or nil
       # condition: String condition for if-cases, or nil
-      def initialize(chars: nil, special_class: nil, param_ref: nil, condition: nil, substate: nil, commands: []) = super
+      # lineno: Source line number from .desc file (for trace output)
+      def initialize(chars: nil, special_class: nil, param_ref: nil, condition: nil, substate: nil, commands: [], lineno: 0) = super
 
       def default?     = chars.nil? && special_class.nil? && param_ref.nil? && condition.nil?
       def conditional? = !condition.nil?

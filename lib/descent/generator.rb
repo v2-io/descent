@@ -190,7 +190,8 @@ module Descent
         'emits_events'           => func.emits_events,
         'expects_char'           => func.expects_char,
         'emits_content_on_close' => func.emits_content_on_close,
-        'prepend_values'         => func.prepend_values.transform_keys(&:to_s)
+        'prepend_values'         => func.prepend_values.transform_keys(&:to_s),
+        'lineno'                 => func.lineno
       }
     end
 
@@ -203,7 +204,8 @@ module Descent
         'scannable'        => state.scannable?,
         'is_self_looping'  => state.is_self_looping,
         'has_default'      => state.has_default,
-        'is_unconditional' => state.is_unconditional
+        'is_unconditional' => state.is_unconditional,
+        'lineno'           => state.lineno
       }
     end
 
@@ -216,7 +218,8 @@ module Descent
         'is_conditional' => kase.conditional?,
         'substate'       => kase.substate,
         'commands'       => kase.commands.map { |c| command_to_hash(c) },
-        'is_default'     => kase.default?
+        'is_default'     => kase.default?,
+        'lineno'         => kase.lineno
       }
     end
 
