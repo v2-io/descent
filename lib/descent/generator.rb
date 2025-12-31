@@ -79,6 +79,7 @@ module Descent
         when /^-?\d+$/            then arg # negative numbers
         when /^'(.)'$/            then "b'#{::Regexp.last_match(1)}'" # char literal
         when /^"(.)"$/            then "b'#{::Regexp.last_match(1)}'" # quoted char
+        when /^[!;:#*\-_<>\/\\@$%^&+=?,.]$/ then "b'#{arg}'" # Single punctuation → byte literal
         else arg # pass through (variables, expressions)
         end
       end.join(', ')
