@@ -64,7 +64,7 @@ module Descent
         seen_types[type.name] = type
 
         # Check for valid kind
-        unless %i[bracket content internal].include?(type.kind)
+        unless [:bracket, :content, :internal].include?(type.kind)
           error "Unknown type kind '#{type.kind}' for #{type.name}",
                 location: loc
         end

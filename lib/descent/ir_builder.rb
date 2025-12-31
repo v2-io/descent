@@ -20,8 +20,8 @@ module Descent
       custom_error_codes = collect_custom_error_codes(functions)
 
       IR::Parser.new(
-        name:        @ast.name,
-        entry_point: @ast.entry_point,
+        name:               @ast.name,
+        entry_point:        @ast.entry_point,
         types:,
         functions:,
         custom_error_codes:
@@ -99,14 +99,14 @@ module Descent
       eof_commands = mark_returns_after_inline_emits(eof_commands) if eof_commands
 
       IR::State.new(
-        name:            state.name,
+        name:             state.name,
         cases:,
-        eof_handler:     eof_commands,
+        eof_handler:      eof_commands,
         scan_chars:,
         is_self_looping:,
         has_default:,
         is_unconditional:,
-        lineno:          state.lineno
+        lineno:           state.lineno
       )
     end
 
@@ -161,7 +161,7 @@ module Descent
             clauses: cmd.clauses&.map do |c|
               {
                 'condition' => c.condition,
-                'commands' => c.commands.map { |cc| build_command(cc) }
+                'commands'  => c.commands.map { |cc| build_command(cc) }
               }
             end
           }
@@ -229,7 +229,7 @@ module Descent
       # Check for combined: CLASS followed by literal chars (e.g., LETTER'[.?!)
       # Class portion is SCREAMING_CASE, literals start with non-uppercase
       if (match = chars_str.match(/^([A-Z]+(?:_[A-Z]+)*)(.+)$/))
-        class_name = match[1].downcase.to_sym
+        class_name    = match[1].downcase.to_sym
         literal_chars = process_escapes(match[2]).chars
         return [literal_chars, class_name, nil]
       end
@@ -250,12 +250,10 @@ module Descent
       return {} if value.nil? || value.empty?
 
       case value
-      when /^([A-Z]\w*)\(USE_MARK\)$/
-        { emit_type: ::Regexp.last_match(1), emit_mode: :mark }
+      when /^([A-Z]\w*)\(USE_MARK\)$/ then { emit_type: ::Regexp.last_match(1), emit_mode: :mark }
       when /^([A-Z]\w*)\(([^)]+)\)$/
         { emit_type: ::Regexp.last_match(1), emit_mode: :literal, literal: process_escapes(::Regexp.last_match(2)) }
-      when /^([A-Z]\w*)$/
-        { emit_type: ::Regexp.last_match(1), emit_mode: :bare }
+      when /^([A-Z]\w*)$/ then { emit_type: ::Regexp.last_match(1), emit_mode: :bare }
       when /^[a-z_]\w*$/
         # Variable name - for INTERNAL types returning a computed value
         { return_value: value }
@@ -276,7 +274,7 @@ module Descent
 
       # Find the first '(' - everything before is the name
       paren_pos = value.index('(')
-      name = value[0...paren_pos]
+      name      = value[0...paren_pos]
 
       # Everything after the first '(' up to the last ')' is the args
       # For "func())" -> args = ")"

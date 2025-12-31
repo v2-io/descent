@@ -34,12 +34,12 @@ def dump_ast(ast)
   puts
   puts 'Functions:'
   ast.functions.each do |f|
-    puts "  #{f.name}#{f.return_type ? ":#{f.return_type}" : ''} #{f.params.map { |p| ":#{p}" }.join(' ')}"
+    puts "  #{f.name}#{":#{f.return_type}" if f.return_type} #{f.params.map { |p| ":#{p}" }.join(' ')}"
     f.states.each do |s|
       puts "    state[:#{s.name}]"
       s.cases.each do |c|
         chars_desc = c.chars.nil? ? 'default' : "c[#{c.chars}]"
-        puts "      #{chars_desc}#{c.substate ? " .#{c.substate}" : ''}"
+        puts "      #{chars_desc}#{" .#{c.substate}" if c.substate}"
         c.commands.each do |cmd|
           puts "        #{cmd.type}: #{cmd.value.inspect}"
         end
@@ -64,7 +64,7 @@ def dump_ir(ir)
   puts
   puts 'Functions:'
   ir.functions.each do |f|
-    puts "  #{f.name}#{f.return_type ? ":#{f.return_type}" : ''} #{f.params.map { |p| ":#{p}" }.join(' ')}"
+    puts "  #{f.name}#{":#{f.return_type}" if f.return_type} #{f.params.map { |p| ":#{p}" }.join(' ')}"
     puts "    emits_events: #{f.emits_events}"
     puts "    expects_char: #{f.expects_char.inspect}" if f.expects_char
     puts "    emits_content_on_close: #{f.emits_content_on_close}" if f.emits_content_on_close
@@ -84,7 +84,7 @@ def dump_ir(ir)
                      else
                        'c[???]'
                      end
-        puts "      #{chars_desc}#{c.substate ? " .#{c.substate}" : ''}"
+        puts "      #{chars_desc}#{" .#{c.substate}" if c.substate}"
         c.commands.each do |cmd|
           puts "        #{cmd.type}: #{cmd.args.inspect}"
         end
@@ -125,17 +125,15 @@ end
 input  = File.read(file)
 tokens = Descent::Lexer.new(input).tokenize
 
-if mode == :tokens || mode == :all
-  dump_tokens(tokens)
-end
+dump_tokens(tokens) if [:tokens, :all].include?(mode)
 
-if mode == :ast || mode == :ir || mode == :all
+if [:ast, :ir, :all].include?(mode)
   ast = Descent::Parser.new(tokens).parse
-  dump_ast(ast) if mode == :ast || mode == :all
+  dump_ast(ast) if [:ast, :all].include?(mode)
 end
 
-if mode == :ir || mode == :all
+if [:ir, :all].include?(mode)
   ast ||= Descent::Parser.new(tokens).parse
-  ir = Descent::IRBuilder.new(ast).build
+  ir  = Descent::IRBuilder.new(ast).build
   dump_ir(ir)
 end

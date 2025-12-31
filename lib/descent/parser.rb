@@ -218,7 +218,7 @@ module Descent
       condition = token.id
       advance
 
-      commands = []
+      commands      = []
       last_cmd_type = nil
 
       while (t = current) && !CASE_STARTERS.include?(t.tag)

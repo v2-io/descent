@@ -135,8 +135,8 @@ module Descent
       result
         .gsub(/^[ \t]+$/, '')                                 # Remove whitespace-only lines
         .gsub(/\n{2,}/, "\n")                                 # Collapse all blank lines
-        .gsub(/^(\/\/.*)\n(use |pub |impl )/, "\\1\n\n\\2")   # Blank before use/pub/impl
-        .gsub(/(\})\n([ \t]*(?:\/\/|#\[|pub |fn ))/, "\\1\n\n\\2")  # Blank after } before new item
+        .gsub(%r{^(//.*)\n(use |pub |impl )}, "\\1\n\n\\2")   # Blank before use/pub/impl
+        .gsub(%r{(\})\n([ \t]*(?://|#\[|pub |fn ))}, "\\1\n\n\\2")  # Blank after } before new item
     end
 
     private
@@ -178,9 +178,9 @@ module Descent
 
     def state_to_hash(state)
       {
-        'name'            => state.name,
-        'cases'           => state.cases.map { |c| case_to_hash(c) },
-        'eof_handler'     => state.eof_handler&.map { |c| command_to_hash(c) } || [],
+        'name'             => state.name,
+        'cases'            => state.cases.map { |c| case_to_hash(c) },
+        'eof_handler'      => state.eof_handler&.map { |c| command_to_hash(c) } || [],
         'scan_chars'       => state.scan_chars,
         'scannable'        => state.scannable?,
         'is_self_looping'  => state.is_self_looping,

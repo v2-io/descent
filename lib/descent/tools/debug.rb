@@ -53,12 +53,12 @@ def run
       puts
       puts 'Functions:'
       ast_result.functions.each do |f|
-        puts "  #{f.name}#{f.return_type ? ":#{f.return_type}" : ''} #{f.params.map { |p| ":#{p}" }.join(' ')}"
+        puts "  #{f.name}#{":#{f.return_type}" if f.return_type} #{f.params.map { |p| ":#{p}" }.join(' ')}"
         f.states.each do |s|
           puts "    state[:#{s.name}]"
           s.cases.each do |c|
             chars_desc = c.chars.nil? ? 'default' : "c[#{c.chars}]"
-            puts "      #{chars_desc}#{c.substate ? " .#{c.substate}" : ''}"
+            puts "      #{chars_desc}#{" .#{c.substate}" if c.substate}"
             c.commands.each { |cmd| puts "        #{cmd.type}: #{cmd.value.inspect}" }
           end
         end
@@ -83,7 +83,7 @@ def run
       puts
       puts 'Functions:'
       ir_result.functions.each do |f|
-        puts "  #{f.name}#{f.return_type ? ":#{f.return_type}" : ''} #{f.params.map { |p| ":#{p}" }.join(' ')}"
+        puts "  #{f.name}#{":#{f.return_type}" if f.return_type} #{f.params.map { |p| ":#{p}" }.join(' ')}"
         puts "    emits_events: #{f.emits_events}"
         puts "    expects_char: #{f.expects_char.inspect}" if f.expects_char
         puts "    locals: #{f.locals.inspect}" unless f.locals.empty?
@@ -102,7 +102,7 @@ def run
                          else
                            'c[???]'
                          end
-            puts "      #{chars_desc}#{c.substate ? " .#{c.substate}" : ''}"
+            puts "      #{chars_desc}#{" .#{c.substate}" if c.substate}"
             c.commands.each { |cmd| puts "        #{cmd.type}: #{cmd.args.inspect}" }
           end
         end

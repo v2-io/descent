@@ -9,9 +9,9 @@ class HarnessTest < Minitest::Test
 
   def setup
     # Ensure harness is built
-    unless File.exist?(File.join(HARNESS_DIR, 'target', 'release', 'run_parser'))
-      system('cargo', 'build', '--release', chdir: HARNESS_DIR)
-    end
+    return if File.exist?(File.join(HARNESS_DIR, 'target', 'release', 'run_parser'))
+
+    system('cargo', 'build', '--release', chdir: HARNESS_DIR)
   end
 
   def test_minimal_parser

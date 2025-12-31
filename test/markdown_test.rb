@@ -7,26 +7,20 @@ class MarkdownTest < Minitest::Test
 
   def setup
     @content = File.read(MARKDOWN_DESC)
-    @tokens = Descent::Lexer.new(@content, source_file: MARKDOWN_DESC).tokenize
-    @ast = Descent::Parser.new(@tokens).parse
-    @ir = Descent::IRBuilder.new(@ast).build
+    @tokens  = Descent::Lexer.new(@content, source_file: MARKDOWN_DESC).tokenize
+    @ast     = Descent::Parser.new(@tokens).parse
+    @ir      = Descent::IRBuilder.new(@ast).build
   end
 
   # ============================================================
   # Basic parsing tests
   # ============================================================
 
-  def test_parses_without_error
-    assert @ir, 'IR should be built successfully'
-  end
+  def test_parses_without_error = assert @ir, 'IR should be built successfully'
 
-  def test_parser_name
-    assert_equal 'markdown', @ir.name
-  end
+  def test_parser_name = assert_equal 'markdown', @ir.name
 
-  def test_entry_point
-    assert_equal '/document', @ir.entry_point
-  end
+  def test_entry_point = assert_equal '/document', @ir.entry_point
 
   # ============================================================
   # Type declarations
@@ -118,7 +112,7 @@ class MarkdownTest < Minitest::Test
   # ============================================================
 
   def test_emphasis_has_prev_checks
-    emphasis_fn = @ir.functions.find { |f| f.name == 'emphasis' }
+    emphasis_fn      = @ir.functions.find { |f| f.name == 'emphasis' }
     check_star_state = emphasis_fn.states.find { |s| s.name == 'check_star' }
 
     # Should have conditional cases checking PREV
@@ -132,7 +126,7 @@ class MarkdownTest < Minitest::Test
   end
 
   def test_strong_has_prev_checks
-    strong_fn = @ir.functions.find { |f| f.name == 'strong' }
+    strong_fn        = @ir.functions.find { |f| f.name == 'strong' }
     check_star_state = strong_fn.states.find { |s| s.name == 'check_star' }
 
     conditionals = check_star_state.cases.select(&:conditional?)
@@ -144,7 +138,7 @@ class MarkdownTest < Minitest::Test
   # ============================================================
 
   def test_inline_emits_literal_stars
-    inline_fn = @ir.functions.find { |f| f.name == 'inline' }
+    inline_fn  = @ir.functions.find { |f| f.name == 'inline' }
     after_star = inline_fn.states.find { |s| s.name == 'after_star' }
 
     # Find the case that handles non-left-flanking *
@@ -181,7 +175,7 @@ class MarkdownTest < Minitest::Test
   def test_emph_text_has_scan_optimization
     # emph_text has 3 exit chars (`, *, \n) - fits memchr3
     emph_text_fn = @ir.functions.find { |f| f.name == 'emph_text' }
-    main_state = emph_text_fn.states.find { |s| s.name == 'main' }
+    main_state   = emph_text_fn.states.find { |s| s.name == 'main' }
 
     assert main_state.scannable?, 'emph_text:main should be scannable'
     assert_includes main_state.scan_chars, '`'
@@ -192,7 +186,7 @@ class MarkdownTest < Minitest::Test
   def test_text_stops_at_inline_delimiters
     # text has 5 exit chars (`, *, _, ~, \n) - exceeds memchr3 limit
     # but still correctly identifies exit characters
-    text_fn = @ir.functions.find { |f| f.name == 'text' }
+    text_fn    = @ir.functions.find { |f| f.name == 'text' }
     main_state = text_fn.states.find { |s| s.name == 'main' }
 
     exit_chars = main_state.cases.reject(&:default?).map { |c| c.chars&.first }.compact
@@ -205,7 +199,7 @@ class MarkdownTest < Minitest::Test
 
   def test_code_span_has_scan_optimization
     code_span_fn = @ir.functions.find { |f| f.name == 'code_span' }
-    main_state = code_span_fn.states.find { |s| s.name == 'main' }
+    main_state   = code_span_fn.states.find { |s| s.name == 'main' }
 
     assert main_state.scannable?, 'code_span:main should be scannable'
     assert_includes main_state.scan_chars, '`'
@@ -217,8 +211,8 @@ class MarkdownTest < Minitest::Test
 
   def test_generates_rust_without_error
     rust_code = Descent.generate(MARKDOWN_DESC, target: :rust)
-    assert rust_code.is_a?(String)
-    assert rust_code.length > 1000, 'Generated code should be substantial'
+    assert_kind_of String, rust_code
+    assert_operator rust_code.length, :>, 1000, 'Generated code should be substantial'
   end
 
   def test_generated_rust_has_event_enum

@@ -57,15 +57,15 @@ module Descent
     # This correctly handles cases like |c[|] where the pipe is a literal
     # Also handles |c[LETTER'[.?!] where [ inside is literal, not a delimiter
     def split_on_pipes(content)
-      parts = []
-      current = +''
+      parts      = []
+      current    = +''
       in_bracket = false
 
       content.each_char do |c|
         case c
         when '['
           # Only first [ opens the bracket context - nested [ are literal
-          in_bracket = true unless in_bracket
+          in_bracket ||= true
           current << c
         when ']'
           # ] always closes the bracket context (only one level)
@@ -162,7 +162,7 @@ module Descent
             else
               raw_tag.downcase
             end
-      id      = part[/\[([^\]]*)\]/, 1] || ''
+      id = part[/\[([^\]]*)\]/, 1] || ''
       # For function calls, strip the full call including parens
       rest = if raw_tag.match?(%r{^/\w+\(})
                part.sub(%r{^/\w+\([^)]*\)}, '').sub(/\[[^\]]*\]/, '').strip

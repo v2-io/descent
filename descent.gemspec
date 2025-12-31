@@ -37,6 +37,6 @@ Gem::Specification.new do |spec|
   spec.executables   = ['descent']
   spec.require_paths = ['lib']
 
-  spec.add_dependency 'liquid', '~> 5.0'
   spec.add_dependency 'devex'
+  spec.add_dependency 'liquid', '~> 5.0'
 end
