@@ -1,5 +1,53 @@
 # descent TODO
 
+## Design Discussions Needed
+
+### Byte Literal Syntax Inconsistency
+
+**Problem:** The DSL has accumulated multiple ways to express byte/character literals
+without a coherent grammar. This creates confusion and potential bugs.
+
+**Current state (ad-hoc accretion):**
+
+| Context | Syntax | Result |
+|---------|--------|--------|
+| Escape sequences | `<P>`, `<R>`, `<RB>` | Required for DSL-reserved chars |
+| Quoted char | `'!'` | Works in call args |
+| Double quoted | `"!"` | Works in call args |
+| Bare punctuation | `!` | Now auto-converts in call args (0.2.8) |
+| Magic zero | `0` | Means "no value" for PREPEND |
+| In PREPEND | `PREPEND(!)` | Works (inside parens) |
+| In PREPEND | `PREPEND(|)` | BROKEN - pipe terminates command |
+
+**Risks:**
+- `/func(x)` could mean variable `x` or byte literal `b'x'` depending on context
+- No clear rule for when quoting is required
+- Escape sequences only exist for some reserved chars
+- Different contexts have different parsing rules
+
+**Potential solutions:**
+
+1. **Single canonical syntax**: Require `'x'` everywhere for byte literals
+   - Pro: Unambiguous, familiar from other languages
+   - Con: More verbose, breaking change
+
+2. **Escape sequences for everything**: `<BANG>`, `<SEMI>`, `<STAR>`, etc.
+   - Pro: Consistent with existing `<P>`, `<R>`
+   - Con: Very verbose, many to memorize
+
+3. **Document current behavior**: Accept the inconsistency, document clearly
+   - Pro: No breaking changes
+   - Con: Confusing, error-prone
+
+4. **Byte literal prefix**: `b!`, `b|`, `b;` (like Rust's `b'x'` but terser)
+   - Pro: Explicit, not too verbose
+   - Con: New syntax to learn
+
+**Discussion needed:** What's the right balance of explicitness vs terseness for a
+DSL meant to be concise? Should we accept some ambiguity for brevity?
+
+---
+
 ## libudon Integration Issues (BLOCKING)
 
 Issues discovered during libudon integration.
