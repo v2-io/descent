@@ -50,10 +50,49 @@
                     on_event(Event::Text { content: b"{{ cmd.args.literal }}", span: self.span() });
 
 {% when "prepend_param" %}
-{% comment %} Emit parameter value as text (no-op if param is 0/empty) {% endcomment %}
+{% comment %} Emit parameter value as text (no-op if param is 0/empty). Uses static slices for lifetime safety. {% endcomment %}
                     if {{ cmd.args.param_ref }} != 0 {
-                        let buf = [{{ cmd.args.param_ref }}];
-                        on_event(Event::Text { content: &buf, span: self.span() });
+                        let content: &'static [u8] = match {{ cmd.args.param_ref }} {
+                            b'|' => b"|",
+                            b'!' => b"!",
+                            b';' => b";",
+                            b':' => b":",
+                            b'#' => b"#",
+                            b'*' => b"*",
+                            b'-' => b"-",
+                            b'_' => b"_",
+                            b'[' => b"[",
+                            b']' => b"]",
+                            b'{' => b"{",
+                            b'}' => b"}",
+                            b'(' => b"(",
+                            b')' => b")",
+                            b'<' => b"<",
+                            b'>' => b">",
+                            b'/' => b"/",
+                            b'\\' => b"\\",
+                            b'\'' => b"'",
+                            b'"' => b"\"",
+                            b'`' => b"`",
+                            b'~' => b"~",
+                            b'@' => b"@",
+                            b'$' => b"$",
+                            b'%' => b"%",
+                            b'^' => b"^",
+                            b'&' => b"&",
+                            b'+' => b"+",
+                            b'=' => b"=",
+                            b'?' => b"?",
+                            b',' => b",",
+                            b'.' => b".",
+                            b' ' => b" ",
+                            b'\t' => b"\t",
+                            b'\n' => b"\n",
+                            _ => b"",
+                        };
+                        if !content.is_empty() {
+                            on_event(Event::Text { content, span: self.span() });
+                        }
                     }
 
 {% when "return" %}
