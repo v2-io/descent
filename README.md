@@ -124,8 +124,10 @@ Each case has: `match | actions | transition`
 |c[\n]          | actions    |>>          ; Match newline (self-loop)
 |c[ \t]         | actions    |return      ; Match space or tab
 |c[abc]         | actions    |>> :next    ; Match any of a, b, c
-|LETTER         | actions    |>> :name    ; Match Unicode letter
+|LETTER         | actions    |>> :name    ; Match ASCII letter (a-z, A-Z)
 |LABEL_CONT     | actions    |>>          ; Match letter/digit/_/-
+|DIGIT          | actions    |>> :num     ; Match ASCII digit (0-9)
+|HEX_DIGIT      | actions    |>> :hex     ; Match hex digit (0-9, a-f, A-F)
 |default        | actions    |>> :other   ; Fallback case
 ```
 
@@ -218,9 +220,9 @@ character cases become SCAN targets for SIMD-accelerated bulk scanning.
 
 The generator detects this and uses `memchr` to scan for `\n` and `|` in bulk.
 
-### EOF Inference
+### EOF Handling
 
-No explicit `|eof` handlers needed. The generator infers EOF behavior:
+By default, the generator infers EOF behavior:
 
 1. If `MARK` is active → finalize accumulation
 2. If `EXPECTS(x)` declared → emit unclosed error
@@ -228,6 +230,19 @@ No explicit `|eof` handlers needed. The generator infers EOF behavior:
    - `BRACKET` → emit End event
    - `CONTENT` → emit content event
    - `INTERNAL` / void → just return
+
+For explicit control, use the `|eof` directive:
+
+```
+|function[number:Number]
+  |state[:main]
+    |DIGIT      |.digit   | ->                           |>>
+    |default    |.done    | TERM | Integer(USE_MARK)     |return
+    |eof        |.eof     | TERM | Integer(USE_MARK)     |return
+```
+
+This is useful when EOF should emit a different type than the function's return type,
+or when you need specific actions at EOF (like inline emits).
 
 ## Example: Line Parser
 

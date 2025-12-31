@@ -8,7 +8,7 @@ Issues discovered during libudon integration.
 
 ## Session 3 Issues (values.desc feedback)
 
-### 11. CONTENT + Inline Emit = Double Emit - **BUG**
+### 11. CONTENT + Inline Emit = Double Emit - **FIXED**
 
 When a CONTENT-type function uses inline emit like `Float(USE_MARK)`, both events are emitted:
 
@@ -17,37 +17,30 @@ on_event(Event::Float { ... });    // inline emit
 on_event(Event::Integer { ... });  // CONTENT auto-emit - shouldn't happen!
 ```
 
-**Expected:** Inline emit should suppress the auto-emit for the return type.
+**Fix:** Added `mark_returns_after_inline_emits` in IR builder that detects inline emits
+preceding bare returns and marks them with `suppress_auto_emit: true`. Template checks
+this flag and skips CONTENT auto-emit.
 
-**Workaround:** Consumer must take only the FIRST event.
-
-### 12. CONTENT EOF Bypasses Inline Emits - **BUG**
+### 12. CONTENT EOF Bypasses Inline Emits - **FIXED**
 
 At EOF, the `|default` case actions (including inline emits) are bypassed entirely.
-EOF has separate handling that only emits the CONTENT type:
 
-```rust
-if self.eof() {
-    on_event(Event::Integer { ... });  // Only CONTENT type, no inline emit
-    return;
-}
-```
+**Fix:** Use explicit `|eof` directive to specify EOF behavior with inline emits.
+Example: `|eof |.end | TERM | Integer(USE_MARK) |return`
 
-**Expected:** At EOF, the `|default` case should trigger (including inline emits).
+### 13. |eof Directive Generates Action Code - **FIXED**
 
-**Workaround:** Append a terminator character (e.g., space) to input to trigger default instead of EOF.
-
-### 13. |eof Directive Doesn't Generate Action Code - **BUG**
-
-The `|eof` directive is parsed but doesn't generate the specified action code:
+The `|eof` directive now generates the specified action code:
 
 ```
 |eof |.end | Integer(USE_MARK) |return
 ```
 
-**Expected:** Should generate code that emits Integer at EOF.
-
-**Actual:** EOF case still just returns without the inline emit.
+**Fix:**
+1. IR builder now transforms eof_handler commands from AST to IR (was passing through untransformed)
+2. Generator converts eof_handler commands to hashes (was passing IR objects directly)
+3. Template checks `state.eof_handler` and `func.eof_handler` before using default EOF behavior
+4. Same `suppress_auto_emit` fix applied to eof_handler commands
 
 ### 14. MARK on State Line Doesn't Work - **NOT IMPLEMENTED**
 
@@ -481,12 +474,12 @@ pub enum ParseErrorCode {
 - Character ranges: `|c[0-9]` → `b'0'..=b'9'`, `|c[a-f]` → `b'a'..=b'f'`
   - Currently parses as literal chars (broken)
   - `values.desc` depends on this
-- Additional character classes: `DIGIT`, `HEX_DIGIT`
-  - Only `LETTER` and `LABEL_CONT` currently implemented
-  - Document all classes in CLAUDE.md
 - C template
 
 ### Recently Implemented
+- [x] Character classes: `DIGIT`, `HEX_DIGIT` added (using Rust's is_ascii_digit/is_ascii_hexdigit)
+- [x] |eof directive: Generates specified action code at EOF
+- [x] Inline emit + return: No longer double-emits for CONTENT types
 - [x] Return with value: `|return TypeName`, `|return TypeName(USE_MARK)`
 - [x] Built-in /error: `/error`, `/error(CustomError)`
 - [x] Combined char classes: `|c[LETTER'[.?!*+]` - match class OR literal chars

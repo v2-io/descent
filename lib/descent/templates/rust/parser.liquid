@@ -190,6 +190,16 @@ impl<'a> Parser<'a> {
         b.is_ascii_alphanumeric() || b == b'_' || b == b'-'
     }
 
+    #[inline(always)]
+    fn is_digit(b: u8) -> bool {
+        b.is_ascii_digit()
+    }
+
+    #[inline(always)]
+    fn is_hex_digit(b: u8) -> bool {
+        b.is_ascii_hexdigit()
+    }
+
     // ========== SCAN Methods (SIMD-accelerated via memchr) ==========
 
     /// Scan forward to find first occurrence of b1, returns matched byte or None for EOF.
@@ -452,7 +462,16 @@ impl<'a> Parser<'a> {
                 {% endunless %}
                 {% endfor %}
                 None => {
-                    {% comment %} EOF handling with EXPECTS inference {% endcomment %}
+                    {% comment %} EOF handling - check for explicit |eof handler first {% endcomment %}
+                    {% if state.eof_handler.size > 0 %}
+                    {% for cmd in state.eof_handler %}
+                    {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info %}
+                    {% endfor %}
+                    {% elsif func.eof_handler.size > 0 %}
+                    {% for cmd in func.eof_handler %}
+                    {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info %}
+                    {% endfor %}
+                    {% else %}
                     {% if return_type_info.kind == "content" %}
                     on_event(Event::{{ func.return_type }} { content: self.term(), span: self.span_from_mark() });
                     {% endif %}
@@ -462,12 +481,25 @@ impl<'a> Parser<'a> {
                     on_event(Event::{{ func.return_type }}End { span: self.span() });
                     {% endif %}
                     {% if return_type_info.kind == "internal" %}return 0;{% else %}return;{% endif %}
+                    {% endif %}
                 }
                 _ => unreachable!("scan_to only returns target chars"),
             }
             {% else %}
             {% comment %} Non-scannable: check EOF first, then match {% endcomment %}
             if self.eof() {
+                {% if state.eof_handler.size > 0 %}
+                {% comment %} Fix #13: Explicit |eof handler - use its commands {% endcomment %}
+                {% for cmd in state.eof_handler %}
+                {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info %}
+                {% endfor %}
+                {% elsif func.eof_handler.size > 0 %}
+                {% comment %} Function-level |eof handler {% endcomment %}
+                {% for cmd in func.eof_handler %}
+                {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info %}
+                {% endfor %}
+                {% else %}
+                {% comment %} Default EOF behavior based on return type {% endcomment %}
                 {% if return_type_info.kind == "content" %}
                 on_event(Event::{{ func.return_type }} { content: self.term(), span: self.span_from_mark() });
                 {% endif %}
@@ -477,6 +509,7 @@ impl<'a> Parser<'a> {
                 on_event(Event::{{ func.return_type }}End { span: self.span() });
                 {% endif %}
                 {% if return_type_info.kind == "internal" %}return 0;{% else %}return;{% endif %}
+                {% endif %}
             }
             match self.peek() {
                 {% for kase in state.cases %}
@@ -560,7 +593,16 @@ impl<'a> Parser<'a> {
                         {% endunless %}
                         {% endfor %}
                         None => {
-                            {% comment %} EOF handling with EXPECTS inference {% endcomment %}
+                            {% comment %} EOF handling - check for explicit |eof handler first {% endcomment %}
+                            {% if state.eof_handler.size > 0 %}
+                            {% for cmd in state.eof_handler %}
+                            {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info, states: func.states %}
+                            {% endfor %}
+                            {% elsif func.eof_handler.size > 0 %}
+                            {% for cmd in func.eof_handler %}
+                            {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info, states: func.states %}
+                            {% endfor %}
+                            {% else %}
                             {% if return_type_info.kind == "content" %}
                             on_event(Event::{{ func.return_type }} { content: self.term(), span: self.span_from_mark() });
                             {% endif %}
@@ -570,12 +612,22 @@ impl<'a> Parser<'a> {
                             on_event(Event::{{ func.return_type }}End { span: self.span() });
                             {% endif %}
                             {% if return_type_info.kind == "internal" %}return 0;{% else %}return;{% endif %}
+                            {% endif %}
                         }
                         _ => unreachable!("scan_to only returns target chars"),
                     }
                     {% else %}
                     {% comment %} Non-scannable: check EOF first {% endcomment %}
                     if self.eof() {
+                        {% if state.eof_handler.size > 0 %}
+                        {% for cmd in state.eof_handler %}
+                        {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info, states: func.states %}
+                        {% endfor %}
+                        {% elsif func.eof_handler.size > 0 %}
+                        {% for cmd in func.eof_handler %}
+                        {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info, states: func.states %}
+                        {% endfor %}
+                        {% else %}
                         {% if return_type_info.kind == "content" %}
                         on_event(Event::{{ func.return_type }} { content: self.term(), span: self.span_from_mark() });
                         {% endif %}
@@ -585,6 +637,7 @@ impl<'a> Parser<'a> {
                         on_event(Event::{{ func.return_type }}End { span: self.span() });
                         {% endif %}
                         {% if return_type_info.kind == "internal" %}return 0;{% else %}return;{% endif %}
+                        {% endif %}
                     }
                     match self.peek() {
                         {% for kase in state.cases %}

@@ -58,6 +58,11 @@ module Descent
       # Infer parameter types from usage (byte if used in |c[:x]|, i32 otherwise)
       param_types = infer_param_types(func.params, states)
 
+      # Transform function-level eof_handler commands from AST to IR
+      # Apply the same inline emit fix as for case commands
+      func_eof_commands = func.eof_handler&.commands&.map { |c| build_command(c) }
+      func_eof_commands = mark_returns_after_inline_emits(func_eof_commands) if func_eof_commands
+
       IR::Function.new(
         name:                   func.name,
         return_type:            func.return_type,
@@ -65,7 +70,7 @@ module Descent
         param_types:,
         locals:,
         states:,
-        eof_handler:            func.eof_handler,
+        eof_handler:            func_eof_commands,
         emits_events:,
         expects_char:,
         emits_content_on_close:,
@@ -88,10 +93,15 @@ module Descent
       is_unconditional = first_case && first_case.chars.nil? && first_case.special_class.nil? &&
                          first_case.param_ref.nil? && first_case.condition.nil?
 
+      # Transform eof_handler commands from AST to IR
+      # Apply the same inline emit fix as for case commands
+      eof_commands = state.eof_handler&.commands&.map { |c| build_command(c) }
+      eof_commands = mark_returns_after_inline_emits(eof_commands) if eof_commands
+
       IR::State.new(
         name:            state.name,
         cases:,
-        eof_handler:     state.eof_handler,
+        eof_handler:     eof_commands,
         scan_chars:,
         is_self_looping:,
         has_default:,
@@ -104,6 +114,10 @@ module Descent
       chars, special_class, param_ref = parse_chars(kase.chars, params:)
       commands = kase.commands.map { |c| build_command(c) }
 
+      # Fix #11: If inline emit precedes a bare return, mark return to suppress auto-emit
+      # This prevents CONTENT functions from emitting twice (once for inline, once for auto)
+      commands = mark_returns_after_inline_emits(commands)
+
       IR::Case.new(
         chars:,
         special_class:,
@@ -112,6 +126,30 @@ module Descent
         substate:      kase.substate,
         commands:
       )
+    end
+
+    # Mark return commands that follow inline emits to suppress auto-emit.
+    # When a case has: | Float(USE_MARK) |return
+    # The inline emit already emits, so return should NOT auto-emit.
+    def mark_returns_after_inline_emits(commands)
+      has_inline_emit = false
+
+      commands.map do |cmd|
+        case cmd.type
+        when :inline_emit_bare, :inline_emit_mark, :inline_emit_literal
+          has_inline_emit = true
+          cmd
+        when :return
+          if has_inline_emit && cmd.args[:emit_type].nil? && cmd.args[:return_value].nil?
+            # Bare return after inline emit - suppress auto-emit
+            IR::Command.new(type: :return, args: cmd.args.merge(suppress_auto_emit: true))
+          else
+            cmd
+          end
+        else
+          cmd
+        end
+      end
     end
 
     def build_command(cmd)

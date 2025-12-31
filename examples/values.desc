@@ -1,0 +1,140 @@
+; Example: JSON-like value parser
+;
+; Demonstrates:
+; - DIGIT and HEX_DIGIT character classes
+; - |eof directive for explicit EOF handling
+; - Inline emits with USE_MARK (no double-emit bug)
+; - Parameterized byte terminators
+
+|parser values
+
+|type[Object]   BRACKET
+|type[Array]    BRACKET
+|type[String]   CONTENT
+|type[Number]   CONTENT
+|type[Integer]  CONTENT
+|type[Float]    CONTENT
+|type[Null]     CONTENT
+|type[BoolTrue] CONTENT
+|type[BoolFalse] CONTENT
+
+|entry-point /document
+
+|function[document]
+  |state[:main]
+    |c[{]       |.obj     | -> | /object        |>>
+    |c[[]       |.arr     | -> | /array         |>>
+    |c["]       |.str     | -> | /string        |>>
+    |DIGIT      |.num     | /number            |>>
+    |c[-]       |.neg     | /number            |>>
+    |c[n]       |.null    | /null              |>>
+    |c[t]       |.true    | /true              |>>
+    |c[f]       |.false   | /false             |>>
+    |c[ \t\n]   |.ws      | ->                 |>>
+    |default    |.done    |                    |return
+
+; Object: { key: value, ... }
+|function[object:Object]
+  |state[:main]
+    |c[}]       |.close   | ->                 |return
+    |c["]       |.key     | -> | /string       |>> :colon
+    |c[ \t\n]   |.ws      | ->                 |>>
+    |default    |.err     | /error(UnexpectedChar) |return
+
+  |state[:colon]
+    |c[:]       |.colon   | -> | /document     |>> :comma
+    |c[ \t\n]   |.ws      | ->                 |>>
+    |default    |.err     | /error(ExpectedColon) |return
+
+  |state[:comma]
+    |c[,]       |.comma   | ->                 |>> :main
+    |c[}]       |.close   | ->                 |return
+    |c[ \t\n]   |.ws      | ->                 |>>
+    |default    |.err     | /error(ExpectedComma) |return
+
+; Array: [ value, ... ]
+|function[array:Array]
+  |state[:main]
+    |c[]]       |.close   | ->                 |return
+    |c[ \t\n]   |.ws      | ->                 |>>
+    |default    |.value   | /document          |>> :comma
+
+  |state[:comma]
+    |c[,]       |.comma   | ->                 |>> :main
+    |c[]]       |.close   | ->                 |return
+    |c[ \t\n]   |.ws      | ->                 |>>
+    |default    |.err     | /error(ExpectedComma) |return
+
+; String: "..."
+|function[string:String]
+  |state[:main]
+    |c["]       |.close   | ->                 |return
+    |c[<BS>]    |.esc     | -> | ->            |>>
+    |default    |.char    | ->                 |>>
+    |eof        |.eof     | /error(UnclosedString) |return
+
+; Number: integer or float
+; Uses DIGIT class and inline emits to distinguish types
+|function[number:Number]
+  |state[:int]
+    |DIGIT      |.digit   | ->                 |>>
+    |c[.]       |.dot     | ->                 |>> :frac
+    |c[eE]      |.exp     | ->                 |>> :exp
+    ; Inline emit Integer, then bare return - no double emit!
+    |default    |.done    | TERM | Integer(USE_MARK) |return
+    |eof        |.eof     | TERM | Integer(USE_MARK) |return
+
+  |state[:frac]
+    |DIGIT      |.digit   | ->                 |>>
+    |c[eE]      |.exp     | ->                 |>> :exp
+    |default    |.done    | TERM | Float(USE_MARK) |return
+    |eof        |.eof     | TERM | Float(USE_MARK) |return
+
+  |state[:exp]
+    |c[+-]      |.sign    | ->                 |>> :exp_digits
+    |DIGIT      |.digit   | ->                 |>> :exp_digits
+    |default    |.err     | /error(InvalidNumber) |return
+
+  |state[:exp_digits]
+    |DIGIT      |.digit   | ->                 |>>
+    |default    |.done    | TERM | Float(USE_MARK) |return
+    |eof        |.eof     | TERM | Float(USE_MARK) |return
+
+; Null literal
+|function[null:Null]
+  |state[:main]
+    |c[u]       |.u       | ->                 |>> :l1
+    |default    |.err     | /error(InvalidNull) |return
+  |state[:l1]
+    |c[l]       |.l       | ->                 |>> :l2
+    |default    |.err     | /error(InvalidNull) |return
+  |state[:l2]
+    |c[l]       |.l       | ->                 |return
+    |default    |.err     | /error(InvalidNull) |return
+
+; True literal
+|function[true:BoolTrue]
+  |state[:main]
+    |c[r]       |.r       | ->                 |>> :u
+    |default    |.err     | /error(InvalidBool) |return
+  |state[:u]
+    |c[u]       |.u       | ->                 |>> :e
+    |default    |.err     | /error(InvalidBool) |return
+  |state[:e]
+    |c[e]       |.e       | ->                 |return
+    |default    |.err     | /error(InvalidBool) |return
+
+; False literal
+|function[false:BoolFalse]
+  |state[:main]
+    |c[a]       |.a       | ->                 |>> :l
+    |default    |.err     | /error(InvalidBool) |return
+  |state[:l]
+    |c[l]       |.l       | ->                 |>> :s
+    |default    |.err     | /error(InvalidBool) |return
+  |state[:s]
+    |c[s]       |.s       | ->                 |>> :e
+    |default    |.err     | /error(InvalidBool) |return
+  |state[:e]
+    |c[e]       |.e       | ->                 |return
+    |default    |.err     | /error(InvalidBool) |return

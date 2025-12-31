@@ -166,7 +166,7 @@ module Descent
         'param_types'            => func.param_types.transform_keys(&:to_s).transform_values(&:to_s),
         'locals'                 => func.locals.transform_keys(&:to_s),
         'states'                 => func.states.map { |s| state_to_hash(s) },
-        'eof_handler'            => func.eof_handler,
+        'eof_handler'            => func.eof_handler&.map { |c| command_to_hash(c) } || [],
         'emits_events'           => func.emits_events,
         'expects_char'           => func.expects_char,
         'emits_content_on_close' => func.emits_content_on_close
@@ -177,7 +177,7 @@ module Descent
       {
         'name'            => state.name,
         'cases'           => state.cases.map { |c| case_to_hash(c) },
-        'eof_handler'     => state.eof_handler,
+        'eof_handler'     => state.eof_handler&.map { |c| command_to_hash(c) } || [],
         'scan_chars'       => state.scan_chars,
         'scannable'        => state.scannable?,
         'is_self_looping'  => state.is_self_looping,

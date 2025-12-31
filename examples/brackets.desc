@@ -1,0 +1,51 @@
+; Example: Parameterized bracket matching
+;
+; Demonstrates parameterized byte terminators - a single function
+; handles [], {}, and () by taking the closing char as a parameter.
+;
+; Key features:
+; - |c[:param]| matches against parameter value
+; - Parameters used in char matches become u8 type
+; - /function(:close) passes the byte to nested calls
+; - Escape sequences: <R>=], <RB>=}, <RP>=)
+
+|parser brackets
+
+|type[Bracket] BRACKET
+|type[Text]    CONTENT
+
+|entry-point /document
+
+|function[document]
+  |state[:main]
+    |c[[]       |.sq      | -> | /bracketed(<R>)   |>>
+    |c[{]       |.br      | -> | /bracketed(<RB>)  |>>
+    |c[(]       |.pr      | -> | /bracketed(<RP>)  |>>
+    |c[\n]      |.nl      | ->                     |>>
+    |default    |.text    | /text                  |>>
+
+; Single parameterized function handles all bracket types
+; :close parameter is u8 (used in character match)
+|function[bracketed:Bracket] :close
+  |state[:main]
+    |c[:close]  |.done    | ->                     |return
+    |c[[]       |.sq      | -> | /bracketed(<R>)   |>>
+    |c[{]       |.br      | -> | /bracketed(<RB>)  |>>
+    |c[(]       |.pr      | -> | /bracketed(<RP>)  |>>
+    |default    |.text    | /text_in(:close)       |>>
+    |eof        |.eof     | /error(UnclosedBracket) |return
+
+; Text within brackets, parameterized terminator
+|function[text_in:Text] :term
+  |state[:main]
+    |c[:term]   |.done    |                        |return
+    |c[<L><LB><LP>] |.open |                        |return
+    |default    |.char    | ->                     |>>
+    |eof        |.eof     | TERM                   |return
+
+; Top-level text (no terminator parameter)
+|function[text:Text]
+  |state[:main]
+    |c[<L><LB><LP>\n] |.done |                     |return
+    |default    |.char    | ->                     |>>
+    |eof        |.eof     | TERM                   |return
