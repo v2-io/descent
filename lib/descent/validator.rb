@@ -147,10 +147,9 @@ module Descent
         case cmd.type
         when :call
           # Check if called function exists
-          # Extract function name from call value (might include args like "element(COL)")
-          called = cmd.args[:value] || cmd.args['value']
-          func_name = called&.split('(')&.first
-          unless function_exists?(func_name)
+          # IR builder stores name in :name field (not :value)
+          func_name = cmd.args[:name] || cmd.args['name']
+          unless func_name && function_exists?(func_name)
             warn "Call to undefined function '#{func_name}'",
                  location: loc
           end
