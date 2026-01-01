@@ -126,7 +126,7 @@ This eliminates duplicate functions that differ only in their terminator charact
     |default    |.anon     |                 |>> :content
 
   |state[:after]
-    |c[\n]      |.eol      | ->              |>> :children
+    |c['\n']      |.eol      | ->              |>> :children
     |default    |.inline   | /text(col)      |>> :children
 ```
 
@@ -136,8 +136,8 @@ Each case has: `match | actions | transition`
 
 ```
 |c[x]           | actions    |>> :state   ; Match single char
-|c[\n]          | actions    |>>          ; Match newline (self-loop)
-|c[ \t]         | actions    |return      ; Match space or tab
+|c['\n']        | actions    |>>          ; Match newline (self-loop)
+|c[' \t']       | actions    |return      ; Match space or tab (quoted)
 |c[abc]         | actions    |>> :next    ; Match any of a, b, c
 |c[<0-9>]       | actions    |>> :digit   ; Match digit (using class syntax)
 |c[<LETTER '_'>]| actions    |>> :ident   ; Match letter or underscore
@@ -147,6 +147,11 @@ Each case has: `match | actions | transition`
 |HEX_DIGIT      | actions    |>> :hex     ; Match hex digit (0-9, a-f, A-F)
 |default        | actions    |>> :other   ; Fallback case
 ```
+
+**Note:** Characters outside `/A-Za-z0-9_-/` must be quoted in `c[...]`:
+- `c['"']` for double quote, `c['#']` for hash, `c['.']` for dot
+- `c[<P>]` or `c['|']` for pipe (DSL delimiter)
+- `c[<L>]` or `c['[']` for brackets (DSL delimiters)
 
 ### Character, String, and Class Literals
 
@@ -258,8 +263,8 @@ For emitting events directly with literal or accumulated content:
 
 Examples:
 ```
-|c[?]        | Attr(?) | BoolTrue | ->   |return   ; Emit Attr "?", BoolTrue
-|c[[]        | Attr($id) | /value        |>> :next ; Emit Attr "$id", parse value
+|c['?']      | Attr(?) | BoolTrue | ->   |return   ; Emit Attr "?", BoolTrue
+|c[<L>]      | Attr($id) | /value        |>> :next ; Emit Attr "$id", parse value
 |default     | TERM | Text(USE_MARK)     |return   ; Emit Text with accumulated
 ```
 
@@ -321,7 +326,7 @@ character cases become SCAN targets for SIMD-accelerated bulk scanning.
 
 ```
 |state[:prose]
-  |c[\n]      |.eol      | ...           |>> :next
+  |c['\n']      |.eol      | ...           |>> :next
   |c[<P>]     |.pipe     | ...           |>> :check
   |default    |.collect  | ->            |>>      ; ← triggers auto-SCAN
 ```
@@ -364,12 +369,12 @@ or when you need specific actions at EOF (like inline emits).
 
 |function[document]
   |state[:main]
-    |c[\n]      |.blank    | ->           |>>
+    |c['\n']      |.blank    | ->           |>>
     |default    |.start    | /line        |>>
 
 |function[line:Text]
   |state[:main]
-    |c[\n]      |.eol      | ->           |return
+    |c['\n']      |.eol      | ->           |return
     |default    |.collect  | ->           |>>
 ```
 
@@ -392,7 +397,7 @@ What the generator infers:
 
 |function[document]
   |state[:main]
-    |c[\n]      |.blank    | ->              |>>
+    |c['\n']      |.blank    | ->              |>>
     |c[<P>]     |.pipe     | -> | /element(0)|>>
     |default    |.text     | /text(0)        |>>
 
@@ -402,12 +407,12 @@ What the generator infers:
     |default    |.anon     |                 |>> :content
 
   |state[:after]
-    |c[\n]      |.eol      | ->              |>> :children
+    |c['\n']      |.eol      | ->              |>> :children
     |default    |.text     | /text(col)      |>> :children
 
   |state[:children]
-    |c[\n]      |.blank    | ->              |>>
-    |c[ \t]     |.ws       | ->              |>> :check
+    |c['\n']      |.blank    | ->              |>>
+    |c[' \t']     |.ws       | ->              |>> :check
     |default    |.dedent   |return
 
   |state[:check]
@@ -422,7 +427,7 @@ What the generator infers:
 
 |function[text:Text] :col
   |state[:main]
-    |c[\n]      |.eol      |return
+    |c['\n']      |.eol      |return
     |default    |.collect  | ->              |>>
 ```
 

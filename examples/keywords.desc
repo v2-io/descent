@@ -22,7 +22,7 @@
 |function[document]
   |state[:main]
     |LETTER     |.start    | /value          |>>
-    |c[ \n\t]   |.ws       | ->              |>>
+    |c[' \n\t']   |.ws       | ->              |>>
     |default    |.other    | ->              |>>
 
 ; Accumulate identifier and look up in keywords

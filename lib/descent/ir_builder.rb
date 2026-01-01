@@ -143,6 +143,7 @@ module Descent
     end
 
     def build_case(kase, params = [])
+      validate_char_syntax(kase.chars, kase.lineno) if kase.chars
       chars, special_class, param_ref = parse_chars(kase.chars, params:)
       commands = kase.commands.map { |c| build_command(c) }
 
@@ -237,9 +238,20 @@ module Descent
       IR::Command.new(type: cmd.type, args:)
     end
 
-    # Process character escapes in a string
+    # Process character escapes in a string.
+    # Handles:
+    #   - Escape sequences: <P> -> |, <L> -> [, etc.
+    #   - Quoted strings: '|' -> |, 'abc' -> abc
+    #   - Backslash escapes: \n -> newline, \t -> tab
     def process_escapes(str)
       return str if str.nil?
+
+      # First, handle quoted strings: 'content' or "content" -> content
+      if str.match?(/^'.*'$/) && str.length >= 2
+        str = parse_quoted_string(str[1...-1])
+      elsif str.match?(/^".*"$/) && str.length >= 2
+        str = str[1...-1] # Strip double quotes (no escape processing for now)
+      end
 
       str.gsub('<L>', '[')
          .gsub('<R>', ']')
@@ -248,6 +260,8 @@ module Descent
          .gsub('<LP>', '(')
          .gsub('<RP>', ')')
          .gsub('<P>', '|')
+         .gsub('<SQ>', "'")
+         .gsub('<DQ>', '"')
          .gsub('<BS>', '\\')
          .gsub('\\\\', '\\')  # \\ -> \ (escaped backslash)
          .gsub('\\n', "\n")
@@ -278,6 +292,111 @@ module Descent
       'DQ' => '"',
       'BS' => '\\'
     }.freeze
+
+    # Characters that MUST be quoted or use predefined class names in c[...]
+    # These cause lexer/parser issues if used bare
+    MUST_QUOTE_CHARS = {
+      "'" => '<SQ>',      # Single quote - causes unterminated quote issues
+      '|' => '<P>',       # Pipe - DSL delimiter
+      '[' => '<L>',       # Open bracket - DSL delimiter
+      ']' => '<R>',       # Close bracket - DSL delimiter
+      ' ' => "' ' or <WS>" # Space - invisible, easy to miss
+    }.freeze
+
+    # Characters that SHOULD be quoted for clarity (warnings, not errors)
+    SHOULD_QUOTE_CHARS = {
+      '{'  => '<LB>',
+      '}'  => '<RB>',
+      '('  => '<LP>',
+      ')'  => '<RP>',
+      '"'  => '<DQ>',
+      '\\' => '<BS>'
+    }.freeze
+
+    # Validate character syntax in c[...] before parsing.
+    # Raises ValidationError for fatal issues.
+    #
+    # Valid syntax:
+    #   - c[<...>]     - class syntax (space-separated tokens inside)
+    #   - c['...']     - quoted string/char
+    #   - c[:param]    - parameter reference
+    #   - c[CLASS]     - predefined class (LETTER, DIGIT, etc.)
+    #   - c[abc]       - bare alphanumeric/underscore/hyphen chars only
+    #
+    # Invalid:
+    #   - c["]         - special chars must be quoted: c['"']
+    #   - c[ ]         - spaces must be quoted: c[' ']
+    #   - c[|]         - DSL chars must use escapes: c[<P>] or c['|']
+    def validate_char_syntax(chars_str, lineno)
+      return if chars_str.nil? || chars_str.empty?
+
+      # Already using proper class syntax - <...> wrapper around everything
+      return if chars_str.start_with?('<') && chars_str.end_with?('>')
+
+      # Properly quoted string - validated by string parsing
+      return if chars_str.start_with?("'") && chars_str.end_with?("'") && chars_str.length >= 2
+
+      # Check for parameter reference (starts with : followed by valid identifier)
+      return if chars_str.match?(/^:[a-z_]\w*$/i)
+
+      # Check for pure special class (SCREAMING_CASE like LETTER, DIGIT, LABEL_CONT)
+      return if chars_str.match?(/^[A-Z]+(?:_[A-Z]+)*$/)
+
+      # Check for <TOKEN> escape sequences used OUTSIDE of a proper <...> class wrapper
+      if chars_str.match?(/<[A-Z]+>/)
+        raise ValidationError, "Line #{lineno}: Escape sequence like <SQ>, <P> etc. found outside " \
+                               "class wrapper in c[#{chars_str}]. " \
+                               "Wrap everything in a class: c[<...>] not c[THING <ESC> ...]"
+      end
+
+      # Check for combined class + chars (e.g., LETTER'[.?!)
+      if chars_str.match?(/^[A-Z]+(?:_[A-Z]+)*'/)
+        class_name = chars_str.match(/^([A-Z_]+)/)[1]
+        raise ValidationError, "Line #{lineno}: Invalid character syntax in c[#{chars_str}]. " \
+                               "Bare quote after class name is ambiguous. " \
+                               "Use class syntax instead: c[<#{class_name} ...>]"
+      end
+
+      # Check for unterminated quotes
+      quote_count = chars_str.count("'")
+      if quote_count.odd?
+        raise ValidationError, "Line #{lineno}: Unterminated quote in c[#{chars_str}]. " \
+                               "Single quotes must be paired. " \
+                               "To match a literal quote, use c[<SQ>] or c['\\'']"
+      end
+
+      # Check for any character outside /A-Za-z0-9_-/ that isn't quoted
+      # These must be in single quotes or use escape sequences
+      chars_str.each_char.with_index do |ch, i|
+        next if ch.match?(/[A-Za-z0-9_-]/)
+        next if ch == "'" # Quote chars are handled by quote pairing check
+        next if ch == '\\' # Escape sequences handled separately
+
+        # Check if this char is inside quotes
+        quote_depth = chars_str[0...i].count("'")
+        next if quote_depth.odd? # Inside quotes, OK
+
+        # Special chars outside quotes - error
+        suggestion = case ch
+                     when '|' then "c[<P>] or c['|']"
+                     when '[' then "c[<L>] or c['[']"
+                     when ']' then "c[<R>] or c[']']"
+                     when '{' then "c[<LB>] or c['{']"
+                     when '}' then "c[<RB>] or c['}']"
+                     when '(' then "c[<LP>] or c['(']"
+                     when ')' then "c[<RP>] or c[')']"
+                     when '"' then "c[<DQ>] or c['\"']"
+                     when '\\' then "c[<BS>] or c['\\\\']"
+                     when ' ' then "c[<WS>] or c[' ']"
+                     when "\t" then "c['\\t']"
+                     when "\n" then "c['\\n']"
+                     else "c['#{ch}']"
+                     end
+
+        raise ValidationError, "Line #{lineno}: Unquoted '#{ch.inspect[1...-1]}' in c[#{chars_str}]. " \
+                               "Characters outside /A-Za-z0-9_-/ must be quoted. Use #{suggestion}"
+      end
+    end
 
     # Parse character specification into literal chars, special class, and/or param reference.
     # Returns [chars_array, special_class_symbol, param_ref_string]
@@ -691,6 +810,20 @@ module Descent
           # Check param_ref in character matches - needs u8 for comparison
           types[kase.param_ref] = :byte if kase.param_ref && types.key?(kase.param_ref)
 
+          # Check conditions for param == 'char' comparisons
+          # e.g., |if[prepend == '|'] means prepend should be u8
+          if kase.condition
+            params.each do |param|
+              # Look for patterns like: param == 'x', param == 0, 'x' == param
+              next unless (kase.condition.match?(/\b#{Regexp.escape(param)}\s*[!=]=\s*'/) ||
+                 kase.condition.match?(/'\s*[!=]=\s*#{Regexp.escape(param)}\b/) ||
+                 kase.condition.match?(/\b#{Regexp.escape(param)}\s*[!=]=\s*0\b/) ||
+                 kase.condition.match?(/\b0\s*[!=]=\s*#{Regexp.escape(param)}\b/)) && types.key?(param)
+
+              types[param] = :byte
+            end
+          end
+
           # Check param_ref in PREPEND commands - needs &'static [u8] for prepending
           kase.commands.each do |cmd|
             if cmd.type == :prepend_param && cmd.args[:param_ref]
@@ -796,43 +929,43 @@ module Descent
           new_cases = state.cases.map do |kase|
             new_commands = transform_commands_args(kase.commands, func_by_name)
             IR::Case.new(
-              chars: kase.chars,
+              chars:         kase.chars,
               special_class: kase.special_class,
-              param_ref: kase.param_ref,
-              condition: kase.condition,
-              substate: kase.substate,
-              commands: new_commands,
-              lineno: kase.lineno
+              param_ref:     kase.param_ref,
+              condition:     kase.condition,
+              substate:      kase.substate,
+              commands:      new_commands,
+              lineno:        kase.lineno
             )
           end
 
           new_eof = transform_commands_args(state.eof_handler || [], func_by_name)
 
           IR::State.new(
-            name: state.name,
-            cases: new_cases,
-            eof_handler: new_eof.empty? ? nil : new_eof,
-            scan_chars: state.scan_chars,
-            is_self_looping: state.is_self_looping,
-            has_default: state.has_default,
+            name:             state.name,
+            cases:            new_cases,
+            eof_handler:      new_eof.empty? ? nil : new_eof,
+            scan_chars:       state.scan_chars,
+            is_self_looping:  state.is_self_looping,
+            has_default:      state.has_default,
             is_unconditional: state.is_unconditional,
-            lineno: state.lineno
+            lineno:           state.lineno
           )
         end
 
         IR::Function.new(
-          name: func.name,
-          return_type: func.return_type,
-          params: func.params,
-          param_types: func.param_types,
-          locals: func.locals,
-          states: new_states,
-          eof_handler: func.eof_handler,
-          emits_events: func.emits_events,
-          expects_char: func.expects_char,
+          name:                   func.name,
+          return_type:            func.return_type,
+          params:                 func.params,
+          param_types:            func.param_types,
+          locals:                 func.locals,
+          states:                 new_states,
+          eof_handler:            func.eof_handler,
+          emits_events:           func.emits_events,
+          expects_char:           func.expects_char,
           emits_content_on_close: func.emits_content_on_close,
-          prepend_values: func.prepend_values,
-          lineno: func.lineno
+          prepend_values:         func.prepend_values,
+          lineno:                 func.lineno
         )
       end
     end
@@ -866,8 +999,8 @@ module Descent
     def transform_args_for_target(args_str, target_func)
       return args_str if args_str.nil? || target_func.params.empty?
 
-      args = args_str.split(',').map(&:strip)
-      params = target_func.params
+      args        = args_str.split(',').map(&:strip)
+      params      = target_func.params
       param_types = target_func.param_types
 
       args.zip(params).map do |arg, param|
@@ -875,10 +1008,8 @@ module Descent
 
         param_type = param_types[param]
         case param_type
-        when :bytes
-          transform_arg_to_bytes(arg)
-        when :byte
-          transform_arg_to_byte(arg)
+        when :bytes then transform_arg_to_bytes(arg)
+        when :byte  then transform_arg_to_byte(arg)
         else
           arg # :i32 or unknown, pass through
         end
@@ -928,7 +1059,7 @@ module Descent
       when /^'(.)'$/              then "b'#{::Regexp.last_match(1)}'"
       when /^"(.)"$/              then "b'#{::Regexp.last_match(1)}'"
       when /^:(\w+)$/             then ::Regexp.last_match(1) # Param ref
-      when /^\d+$/                then arg # Numeric literal
+      when /^\d+$/                then "#{arg}u8" # Numeric literal as u8
       when /^.$/ then "b'#{arg}'" # Single char
       else
         arg # Pass through unknown

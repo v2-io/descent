@@ -22,53 +22,53 @@
 
 |function[document]
   |state[:main]
-    |c[{]       |.obj     | -> | /object        |>>
-    |c[[]       |.arr     | -> | /array         |>>
-    |c["]       |.str     | -> | /string        |>>
+    |c[<LB>]    |.obj     | -> | /object        |>>
+    |c[<L>]     |.arr     | -> | /array         |>>
+    |c['"']       |.str     | -> | /string        |>>
     |DIGIT      |.num     | /number            |>>
     |c[-]       |.neg     | /number            |>>
     |c[n]       |.null    | /null              |>>
     |c[t]       |.true    | /true              |>>
     |c[f]       |.false   | /false             |>>
-    |c[ \t\n]   |.ws      | ->                 |>>
+    |c[' \t\n']   |.ws      | ->                 |>>
     |default    |.done    |                    |return
 
 ; Object: { key: value, ... }
 |function[object:Object]
   |state[:main]
-    |c[}]       |.close   | ->                 |return
-    |c["]       |.key     | -> | /string       |>> :colon
-    |c[ \t\n]   |.ws      | ->                 |>>
+    |c['}']       |.close   | ->                 |return
+    |c['"']       |.key     | -> | /string       |>> :colon
+    |c[' \t\n']   |.ws      | ->                 |>>
     |default    |.err     | /error(UnexpectedChar) |return
 
   |state[:colon]
-    |c[:]       |.colon   | -> | /document     |>> :comma
-    |c[ \t\n]   |.ws      | ->                 |>>
+    |c[':']       |.colon   | -> | /document     |>> :comma
+    |c[' \t\n']   |.ws      | ->                 |>>
     |default    |.err     | /error(ExpectedColon) |return
 
   |state[:comma]
-    |c[,]       |.comma   | ->                 |>> :main
-    |c[}]       |.close   | ->                 |return
-    |c[ \t\n]   |.ws      | ->                 |>>
+    |c[',']       |.comma   | ->                 |>> :main
+    |c['}']       |.close   | ->                 |return
+    |c[' \t\n']   |.ws      | ->                 |>>
     |default    |.err     | /error(ExpectedComma) |return
 
 ; Array: [ value, ... ]
 |function[array:Array]
   |state[:main]
     |c[]]       |.close   | ->                 |return
-    |c[ \t\n]   |.ws      | ->                 |>>
+    |c[' \t\n']   |.ws      | ->                 |>>
     |default    |.value   | /document          |>> :comma
 
   |state[:comma]
-    |c[,]       |.comma   | ->                 |>> :main
+    |c[',']       |.comma   | ->                 |>> :main
     |c[]]       |.close   | ->                 |return
-    |c[ \t\n]   |.ws      | ->                 |>>
+    |c[' \t\n']   |.ws      | ->                 |>>
     |default    |.err     | /error(ExpectedComma) |return
 
 ; String: "..."
 |function[string:String]
   |state[:main]
-    |c["]       |.close   | ->                 |return
+    |c['"']       |.close   | ->                 |return
     |c[<BS>]    |.esc     | -> | ->            |>>
     |default    |.char    | ->                 |>>
     |eof        |.eof     | /error(UnclosedString) |return
@@ -78,7 +78,7 @@
 |function[number:Number]
   |state[:int]
     |DIGIT      |.digit   | ->                 |>>
-    |c[.]       |.dot     | ->                 |>> :frac
+    |c['.']       |.dot     | ->                 |>> :frac
     |c[eE]      |.exp     | ->                 |>> :exp
     ; Inline emit Integer, then bare return - no double emit!
     |default    |.done    | TERM | Integer(USE_MARK) |return
@@ -91,7 +91,7 @@
     |eof        |.eof     | TERM | Float(USE_MARK) |return
 
   |state[:exp]
-    |c[+-]      |.sign    | ->                 |>> :exp_digits
+    |c['+-']      |.sign    | ->                 |>> :exp_digits
     |DIGIT      |.digit   | ->                 |>> :exp_digits
     |default    |.err     | /error(InvalidNumber) |return
 

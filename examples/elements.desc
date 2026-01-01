@@ -20,7 +20,7 @@
 |function[document]
   |state[:main]
     |c[\n]      |.blank    | ->              |>>
-    |c[ \t]     |.ws       | ->              |>>
+    |c[' \t']     |.ws       | ->              |>>
     |c[<P>]     |.pipe     | -> | /element(0)|>>
     |default    |.text     | /text(0)        |>>
 
@@ -31,26 +31,26 @@
 |function[element:Element] :col
   |state[:identity]
     |letter     |.name     | /name           |>> :after_name
-    |c[']       |.quoted   | -> | /name      |>> :after_name
+    |c[<SQ>]    |.quoted   | -> | /name      |>> :after_name
     |default    |.anon     |                 |>> :content
 
   |state[:after_name]
     |c[\n]      |.eol      | ->              |>> :children
-    |c[ \t]     |.ws       | ->              |>> :content
+    |c[' \t']     |.ws       | ->              |>> :content
     |default    |.inline   | /text(col)      |>> :children
 
   |state[:content]
     |c[\n]      |.eol      | ->              |>> :children
-    |c[ \t]     |.ws       | ->              |>>
+    |c[' \t']     |.ws       | ->              |>>
     |default    |.text     | /text(col)      |>> :children
 
   |state[:children]
     |c[\n]      |.blank    | ->              |>>
-    |c[ \t]     |.ws       | ->              |>> :check
+    |c[' \t']     |.ws       | ->              |>> :check
     |default    |.dedent   |return
 
   |state[:check]
-    |c[ \t]     |.ws       | ->               |>>
+    |c[' \t']     |.ws       | ->               |>>
     |if[COL <= col]        |return
     |c[<P>]     |.child    | -> | /element(COL) |>> :children
     |default    |.text     | /text(COL)        |>> :children

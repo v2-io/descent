@@ -51,26 +51,43 @@ module Descent
       tokens
     end
 
-    # Split content on pipes, but not on pipes inside bracket-delimited IDs
+    # Split content on pipes, but not on pipes inside bracket-delimited IDs or quotes
     # This correctly handles cases like |c[|] where the pipe is a literal
     # Also handles |c[LETTER'[.?!] where [ inside is literal, not a delimiter
+    # Also handles '/sameline_text(elem_col, '|')' where | is in quotes
     def split_on_pipes(content)
       parts      = []
       current    = +''
       in_bracket = false
+      in_quote   = nil # nil, or the quote character (' or ")
+      prev_char  = nil
 
       content.each_char do |c|
         case c
+        when "'"
+          current << c
+          if in_quote == "'" && prev_char != '\\'
+            in_quote = nil  # Close single quote (unless escaped)
+          elsif in_quote.nil?
+            in_quote = "'"  # Open single quote
+          end
+        when '"'
+          current << c
+          if in_quote == '"' && prev_char != '\\'
+            in_quote = nil  # Close double quote (unless escaped)
+          elsif in_quote.nil?
+            in_quote = '"'  # Open double quote
+          end
         when '['
           # Only first [ opens the bracket context - nested [ are literal
-          in_bracket ||= true
+          in_bracket ||= true unless in_quote
           current << c
         when ']'
           # ] always closes the bracket context (only one level)
           current << c
-          in_bracket = false
+          in_bracket = false unless in_quote
         when '|'
-          if in_bracket
+          if in_bracket || in_quote
             current << c
           else
             parts << current unless current.empty?
@@ -79,32 +96,83 @@ module Descent
         else
           current << c
         end
+        prev_char = c
       end
       parts << current unless current.empty?
       parts
     end
 
-    # Strip comments from content, preserving semicolons inside brackets
+    # Strip comments from content, preserving semicolons inside brackets and quotes
     def strip_comments(content)
       content.lines.map do |line|
         depth = 0
+        in_quote = nil
+        prev_char = nil
         comment_start = nil
+
         line.each_char.with_index do |c, i|
-          case c
-          when '[' then depth += 1
-          when ']' then depth -= 1
-          when ';'
-            if depth == 0
-              comment_start = i
-              break
+          # Track quote state (respecting escapes)
+          if c == "'" && prev_char != '\\' && in_quote != '"'
+            in_quote = in_quote == "'" ? nil : "'"
+          elsif c == '"' && prev_char != '\\' && in_quote != "'"
+            in_quote = in_quote == '"' ? nil : '"'
+          elsif !in_quote
+            case c
+            when '[' then depth += 1
+            when ']' then depth -= 1
+            when ';'
+              if depth == 0
+                comment_start = i
+                break
+              end
             end
           end
+          prev_char = c
         end
         comment_start ? line[0...comment_start].rstrip + "\n" : line
       end.join
     end
 
     private
+
+    # Extract the content inside [...] from a part string, respecting single quotes.
+    # Returns [content, end_position] or ['', nil] if no brackets found.
+    # This handles cases like c[']'] where ] inside quotes shouldn't close the bracket.
+    # Only single quotes are quote delimiters in c[...] - double quotes are literals.
+    def extract_bracketed_id(part)
+      start_pos = part.index('[')
+      return ['', nil] unless start_pos
+
+      i        = start_pos + 1
+      depth    = 1
+      in_quote = false
+      content  = +''
+
+      while i < part.length && depth > 0
+        c = part[i]
+
+        case c
+        when "'"
+          content << c
+          in_quote = !in_quote
+        when '['
+          content << c
+          depth += 1 unless in_quote
+        when ']'
+          if in_quote
+            content << c
+          else
+            depth -= 1
+            content << c if depth > 0 # Don't include final ]
+          end
+        else
+          content << c
+        end
+        i += 1
+      end
+
+      [content, depth == 0 ? i : nil]
+    end
 
     def parse_part(part, lineno)
       # Parse: TAG[ID] REST
@@ -160,12 +228,17 @@ module Descent
             else
               raw_tag.downcase
             end
-      id = part[/\[([^\]]*)\]/, 1] || ''
+
+      # Extract ID from brackets, respecting quotes (so c[']'] works correctly)
+      id, id_end_pos = extract_bracketed_id(part)
+
       # For function calls, strip the full call including parens
       rest = if raw_tag.match?(%r{^/\w+\(})
-               part.sub(%r{^/\w+\([^)]*\)}, '').sub(/\[[^\]]*\]/, '').strip
+               after_tag = part.sub(%r{^/\w+\([^)]*\)}, '')
+               id_end_pos ? after_tag[(after_tag.index('[') + id.length + 2)..].to_s.strip : after_tag.strip
              else
-               part.sub(/^(\.|[^ \[]+)/, '').sub(/\[[^\]]*\]/, '').strip
+               after_tag = part.sub(/^(\.|[^ \[]+)/, '')
+               id_end_pos ? after_tag[(after_tag.index('[') + id.length + 2)..].to_s.strip : after_tag.strip
              end
 
       # For parser name and similar, take only first word/line

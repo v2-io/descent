@@ -56,6 +56,19 @@ module Descent
         end
         .gsub(%r{/(\w+)}) { "self.parse_#{::Regexp.last_match(1)}(on_event)" }
         .gsub(/(?<!b)'(\\.|.)'/, "b'\\1'")  # Convert char literals to byte literals (only if not already b'...')
+        # Escape sequences embedded in expressions (not just standalone args)
+        .gsub('<P>', "b'|'")
+        .gsub('<R>', "b']'")
+        .gsub('<L>', "b'['")
+        .gsub('<RB>', "b'}'")
+        .gsub('<LB>', "b'{'")
+        .gsub('<RP>', "b')'")
+        .gsub('<LP>', "b'('")
+        .gsub('<BS>', "b'\\\\'")
+        .gsub('<SQ>', "b'\\''")
+        .gsub('<DQ>', "b'\"'")
+        .gsub('<NL>', "b'\\n'")
+        .gsub('<WS>', "b' '")
     end
 
     # Transform function call arguments.

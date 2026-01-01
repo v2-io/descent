@@ -12,9 +12,9 @@
 
 |function[document]
   |state[:main]
-    |c[[]        |.bracket | -> | /bracketed(<R>)      |>>
-    |c[{]        |.brace   | -> | /bracketed(<RB>)     |>>
-    |c[(]        |.paren   | -> | /bracketed(<RP>)     |>>
+    |c[<L>]      |.bracket | -> | /bracketed(<R>)      |>>
+    |c[<LB>]     |.brace   | -> | /bracketed(<RB>)     |>>
+    |c[<LP>]     |.paren   | -> | /bracketed(<RP>)     |>>
     |default     |.other   | ->                        |>>
 
 ; Parameterized function - :close is a byte param (used in |c[:close]|)

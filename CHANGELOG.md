@@ -5,6 +5,51 @@ All notable changes to descent will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.5] - 2024-12-31
+
+### Fixed
+- **PREPEND quote stripping**: `PREPEND('|')` now correctly generates `b"|"` (1 byte)
+  instead of `b"'|'"` (3 bytes). Quoted literals are properly unquoted before embedding.
+- **Lexer bracket extraction**: `c[']']` now works correctly - the lexer respects
+  single quotes when extracting bracket content, so `]` inside quotes doesn't close.
+
+### Changed
+- **Stricter character validation**: Characters outside `/A-Za-z0-9_-/` in `c[...]`
+  must now be quoted. This catches common errors and enforces consistent syntax:
+  - `c["]` is invalid, use `c['"']`
+  - `c[#]` is invalid, use `c['#']`
+  - `c[abc]` is valid (alphanumeric)
+  - `c[-_]` is valid (hyphen and underscore allowed bare)
+- **Escape sequences outside class wrapper**: Using `<SQ>`, `<P>` etc. outside a
+  `<...>` class wrapper now raises a clear error suggesting proper syntax.
+
+## [0.6.3] - 2024-12-31
+
+### Fixed
+- **Semicolon in quoted strings**: `PREPEND(';')` no longer treats the semicolon
+  as a comment start. The lexer now tracks quotes when stripping comments.
+- **Pipe in quoted arguments**: Function calls like `/func('|')` now parse correctly.
+  The lexer tracks quotes when splitting on pipe delimiters.
+
+### Changed
+- **Validation for character syntax**: Added comprehensive validation for `c[...]`
+  patterns to catch unterminated quotes, bare special characters, and invalid
+  legacy syntax before parsing.
+
+## [0.6.2] - 2024-12-31
+
+### Fixed
+- **Conditionals in SCAN branches**: Character literals and escape sequences like
+  `<P>` now work correctly in conditional expressions (e.g., `|if[PREV == <P>]`).
+- **Escape sequences in expressions**: `rust_expr` filter now transforms embedded
+  escape sequences like `<P>` to `b'|'` in all expression contexts.
+
+## [0.6.1] - 2024-12-31
+
+### Added
+- **LINE variable**: Access current line number (1-indexed) in expressions.
+  Transforms to `self.line as i32` in generated Rust code.
+
 ## [0.6.0] - 2024-12-31
 
 ### Changed
