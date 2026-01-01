@@ -245,10 +245,18 @@ Empty chars array produced invalid `Some()` instead of valid pattern.
 Fix: Added `{% elsif kase.chars.size > 1 %}` check before the for loop,
 with fallback to `Some(_)` for edge cases with no chars.
 
-### Unreachable Code After Return
-Could not reproduce with current test examples. The structure of generated code
-uses `return;` inside match arms which should not produce unreachable code.
-May be specific to patterns in udon.desc - needs investigation with actual file.
+### Unreachable Code After Return - FIXED (0.6.13)
+
+**Problem:** `|if[cond] |return` followed by `| -> |>> :state` generated code where
+the bare action case commands were appended to the if-case, causing unreachable
+code warnings.
+
+**Root cause:** `parse_if_case` in parser.rb only broke on `>>` tokens, not on
+other command-like tokens. After `return`, any command-like token (like `->`)
+should start a new bare action case.
+
+**Fix:** Changed break condition from `t.tag == '>>'` to `command_like?(t.tag)`
+so that any command-like token after a return starts a new case.
 
 ---
 
