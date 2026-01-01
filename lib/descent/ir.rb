@@ -35,15 +35,17 @@ module Descent
     end
 
     # Function with resolved semantics
-    Function = Data.define(:name, :return_type, :params, :param_types, :locals, :states, :eof_handler, :emits_events,
-                           :expects_char, :emits_content_on_close, :prepend_values, :lineno) do
+    Function = Data.define(:name, :return_type, :params, :param_types, :locals, :states, :eof_handler, :entry_actions,
+                           :emits_events, :expects_char, :emits_content_on_close, :prepend_values, :lineno) do
       # params: Array of parameter names
       # param_types: Hash mapping param name -> :byte or :i32 (inferred from usage)
+      # entry_actions: Commands to execute on function entry (e.g., variable initialization)
       # expects_char: Single char that must be seen to return (inferred from return cases)
       # emits_content_on_close: Whether TERM appears before return (emit content on unclosed EOF)
       # prepend_values: Hash mapping param name -> Array of byte values that could be passed (for PREPEND)
       def initialize(name:, return_type: nil, params: [], param_types: {}, locals: {}, states: [], eof_handler: nil,
-                     emits_events: false, expects_char: nil, emits_content_on_close: false, prepend_values: {}, lineno: 0)
+                     entry_actions: [], emits_events: false, expects_char: nil, emits_content_on_close: false,
+                     prepend_values: {}, lineno: 0)
         super
       end
 

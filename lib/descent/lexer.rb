@@ -1,6 +1,18 @@
 # frozen_string_literal: true
 
 module Descent
+  # Error raised when lexer encounters invalid syntax
+  class LexerError < StandardError
+    attr_reader :lineno, :source_file
+
+    def initialize(message, lineno: nil, source_file: nil)
+      @lineno      = lineno
+      @source_file = source_file
+      location     = [source_file, lineno].compact.join(':')
+      super(location.empty? ? message : "#{location}: #{message}")
+    end
+  end
+
   # Tokenizes .desc files (pipe-delimited UDON format).
   #
   # Input: Raw file content
@@ -55,14 +67,20 @@ module Descent
     # This correctly handles cases like |c[|] where the pipe is a literal
     # Also handles |c[LETTER'[.?!] where [ inside is literal, not a delimiter
     # Also handles '/sameline_text(elem_col, '|')' where | is in quotes
+    #
+    # Raises LexerError on unterminated quotes or brackets.
     def split_on_pipes(content)
-      parts      = []
-      current    = +''
-      in_bracket = false
-      in_quote   = nil # nil, or the quote character (' or ")
-      prev_char  = nil
+      parts            = []
+      current          = +''
+      in_bracket       = false
+      in_quote         = nil # nil, or the quote character (' or ")
+      prev_char        = nil
+      lineno           = 1
+      quote_start_line = nil
 
       content.each_char do |c|
+        lineno += 1 if c == "\n"
+
         case c
         when "'"
           current << c
@@ -70,6 +88,7 @@ module Descent
             in_quote = nil  # Close single quote (unless escaped)
           elsif in_quote.nil?
             in_quote = "'"  # Open single quote
+            quote_start_line = lineno
           end
         when '"'
           current << c
@@ -77,6 +96,7 @@ module Descent
             in_quote = nil  # Close double quote (unless escaped)
           elsif in_quote.nil?
             in_quote = '"'  # Open double quote
+            quote_start_line = lineno
           end
         when '['
           # Only first [ opens the bracket context - nested [ are literal
@@ -98,6 +118,16 @@ module Descent
         end
         prev_char = c
       end
+
+      # Validate: no unterminated quotes or brackets
+      if in_quote
+        raise LexerError.new(
+          "Unterminated #{in_quote == "'" ? 'single' : 'double'} quote - opened but never closed",
+          lineno:      quote_start_line,
+          source_file: @source_file
+        )
+      end
+
       parts << current unless current.empty?
       parts
     end
@@ -182,23 +212,48 @@ module Descent
       #
       # Comments start with ; and go to end of line (or end of part)
 
-      # Strip comments (but not semicolons inside brackets)
-      # A comment starts with ; only if not inside []
-      part = part.lines.map do |line|
-        # Find first ; that's not inside brackets
-        depth = 0
+      # Strip comments (but not semicolons inside brackets, parens, or quotes)
+      # A comment starts with ; only if not inside [], (), or ''
+      part = part.lines.map.with_index do |line, line_idx|
+        # Find first ; that's not inside brackets, parens, or quotes
+        bracket_depth = 0
+        paren_depth = 0
+        in_quote = false
+        quote_start_col = nil
         comment_start = nil
-        line.each_char.with_index do |c, i|
-          case c
-          when '[' then depth += 1
-          when ']' then depth -= 1
-          when ';'
-            if depth == 0
-              comment_start = i
-              break
+        i = 0
+        while i < line.length
+          c = line[i]
+          if in_quote
+            in_quote = false if c == "'" && (i == 0 || line[i - 1] != '\\')
+          else
+            case c
+            when "'"
+              in_quote = true
+              quote_start_col = i
+            when '[' then bracket_depth += 1
+            when ']' then bracket_depth -= 1
+            when '(' then paren_depth += 1
+            when ')' then paren_depth -= 1
+            when ';'
+              if bracket_depth == 0 && paren_depth == 0
+                comment_start = i
+                break
+              end
             end
           end
+          i += 1
         end
+
+        # Validate: unterminated quote within this part
+        if in_quote
+          raise LexerError.new(
+            "Unterminated single quote at column #{quote_start_col + 1}",
+            lineno:      lineno + line_idx,
+            source_file: @source_file
+          )
+        end
+
         comment_start ? line[0...comment_start].rstrip : line.rstrip
       end.join("\n").strip
 

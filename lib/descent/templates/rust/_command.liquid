@@ -172,6 +172,6 @@
                     }
 
 {% else %}
-                    // Unknown command: {{ cmd.type }}
+                    compile_error!("Unknown command type passed to template: {{ cmd.type }}");
 
 {% endcase %}

@@ -51,6 +51,21 @@ module Descent
       %w[return err mark term].include?(base_tag)
     end
 
+    # Check if a token represents an inline command at function level.
+    # This includes assignments like `result = 0` and commands like MARK.
+    def inline_command_token?(token)
+      tag  = token.tag
+      rest = token.rest
+
+      # Commands we already recognize
+      return true if command_like?(tag)
+
+      # Assignment: tag is variable name, rest starts with = or += or -=
+      return true if rest&.match?(/^\s*[+-]?=/)
+
+      false
+    end
+
     def parse
       name        = nil
       entry_point = nil
@@ -70,7 +85,8 @@ module Descent
         when 'function' then functions << parse_function
         when 'keywords' then keywords << parse_keywords
         else
-          advance # Skip unknown top-level tokens
+          raise ParseError, "Line #{token.lineno}: Unknown top-level declaration '#{token.tag}'. " \
+                            "Expected: parser, entry-point, type, function, or keywords"
         end
       end
 
@@ -142,24 +158,34 @@ module Descent
       lineno      = token.lineno
       advance
 
-      states      = []
-      eof_handler = nil
+      states        = []
+      eof_handler   = nil
+      entry_actions = [] # Commands to execute on function entry (e.g., | result = 0)
 
       while (t = current) && !%w[function type keywords].include?(t.tag)
         case t.tag
         when 'state' then states << parse_state
         when 'eof'   then eof_handler = parse_eof_handler
+        when 'if'    then entry_actions << parse_conditional # Function-level guard condition
         else
-          advance # Skip inline commands at function level for now
+          # Check if this is an inline command (assignment, MARK, etc.)
+          if inline_command_token?(t)
+            entry_actions << parse_command(t)
+            advance
+          else
+            raise ParseError, "Line #{t.lineno}: Unexpected token '#{t.tag}' inside function. " \
+                              "Expected: state, eof, if, or inline command (like 'var = expr' or 'MARK')"
+          end
         end
       end
 
       AST::Function.new(
-        name:        name.gsub('-', '_'),
-        return_type: rtype,
+        name:          name.gsub('-', '_'),
+        return_type:   rtype,
         params:,
         states:,
         eof_handler:,
+        entry_actions:,
         lineno:
       )
     end
@@ -380,7 +406,9 @@ module Descent
       when /^([A-Z]\w*)\(USE_MARK\)$/  then [:inline_emit_mark, ::Regexp.last_match(1)]
       when /^([A-Z]\w*)\(([^)]+)\)$/   then [:inline_emit_literal, { type: ::Regexp.last_match(1), literal: ::Regexp.last_match(2) }]
       when /^([A-Z]\w*)$/              then [:inline_emit_bare, ::Regexp.last_match(1)]
-      else                             [:raw, cmd]
+      else
+        raise ParseError, "Unrecognized command: '#{cmd}'. " \
+                          "Expected: MARK, TERM, PREPEND, return, ->, /call, assignment, or TypeName"
       end
     end
 

@@ -225,6 +225,7 @@ module Descent
         'locals'                 => func.locals.transform_keys(&:to_s),
         'states'                 => func.states.map { |s| state_to_hash(s) },
         'eof_handler'            => func.eof_handler&.map { |c| command_to_hash(c) } || [],
+        'entry_actions'          => func.entry_actions&.map { |c| command_to_hash(c) } || [],
         'emits_events'           => func.emits_events,
         'expects_char'           => func.expects_char,
         'emits_content_on_close' => func.emits_content_on_close,

@@ -390,6 +390,9 @@ module Descent
       func_eof_commands = func.eof_handler&.commands&.map { |c| build_command(c) }
       func_eof_commands = mark_returns_after_inline_emits(func_eof_commands) if func_eof_commands
 
+      # Transform entry_actions (initialization commands on function entry)
+      entry_actions = func.entry_actions&.map { |c| build_command(c) } || []
+
       IR::Function.new(
         name:                   func.name,
         return_type:            func.return_type,
@@ -398,6 +401,7 @@ module Descent
         locals:,
         states:,
         eof_handler:            func_eof_commands,
+        entry_actions:,
         emits_events:,
         expects_char:,
         emits_content_on_close:,
@@ -528,8 +532,9 @@ module Descent
              when :prepend_param then { param_ref: cmd.value }
              when :keywords_lookup then { name: cmd.value }
              when :return then parse_return_value(cmd.value)
+             when :advance, :mark, :noop then {}
              else
-               {}
+               raise ValidationError, "Unknown command type: #{cmd.type.inspect}"
              end
 
       IR::Command.new(type: cmd.type, args:)
@@ -1019,6 +1024,12 @@ module Descent
     def infer_locals(func)
       locals = {}
 
+      # Check entry_actions for variable declarations
+      func.entry_actions&.each do |cmd|
+        collect_locals_from_commands([cmd], locals)
+      end
+
+      # Check state cases for variable usage
       func.states.each do |state|
         state.cases.each do |kase|
           collect_locals_from_commands(kase.commands, locals)

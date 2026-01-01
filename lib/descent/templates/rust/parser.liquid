@@ -582,6 +582,11 @@ impl<'a> Parser<'a> {
         let mut {{ local[0] }}: i32 = 0;
         {% endfor %}
 
+        {% comment %} Entry actions (variable initialization on function entry) {% endcomment %}
+        {% for cmd in func.entry_actions %}
+        {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info, states: func.states %}
+        {% endfor %}
+
         {% comment %} State machine {% endcomment %}
         {% if func.states.size == 0 %}
         {% comment %} No states - immediate return (stateless function) {% endcomment %}
