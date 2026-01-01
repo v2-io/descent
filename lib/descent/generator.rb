@@ -241,8 +241,8 @@ module Descent
         # Check assignment expressions
         check_expression(args['expr'], usage) if %w[assign add_assign sub_assign].include?(cmd['type'])
 
-        # Check for set_term usage (TERM with offset)
-        usage[:set_term] = true if cmd['type'] == 'term' && args['offset']&.to_i != 0
+        # Check for set_term usage (any TERM command uses set_term)
+        usage[:set_term] = true if cmd['type'] == 'term'
       end
 
       # Check case conditions
@@ -339,21 +339,46 @@ module Descent
     end
 
     def function_to_hash(func)
+      # Extract initial values from entry_actions for locals
+      # This allows template to initialize locals directly instead of "= 0" then assignment
+      local_init_values = extract_local_init_values(func.entry_actions || [])
+
+      # Filter out pure assignments from entry_actions (they become initializers)
+      # Keep conditionals and non-assignment commands
+      filtered_entry_actions = (func.entry_actions || []).reject do |cmd|
+        cmd.type == :assign && local_init_values.key?(cmd.args[:var])
+      end
+
       {
         'name'                   => func.name,
         'return_type'            => func.return_type,
         'params'                 => func.params,
         'param_types'            => func.param_types.transform_keys(&:to_s).transform_values(&:to_s),
         'locals'                 => func.locals.transform_keys(&:to_s),
+        'local_init_values'      => local_init_values,
         'states'                 => func.states.map { |s| state_to_hash(s) },
         'eof_handler'            => func.eof_handler&.map { |c| command_to_hash(c) } || [],
-        'entry_actions'          => func.entry_actions&.map { |c| command_to_hash(c) } || [],
+        'entry_actions'          => filtered_entry_actions.map { |c| command_to_hash(c) },
         'emits_events'           => func.emits_events,
         'expects_char'           => func.expects_char,
         'emits_content_on_close' => func.emits_content_on_close,
         'prepend_values'         => func.prepend_values.transform_keys(&:to_s),
         'lineno'                 => func.lineno
       }
+    end
+
+    # Extract initial values for locals from entry_actions assignments
+    def extract_local_init_values(entry_actions)
+      init_values = {}
+      entry_actions.each do |cmd|
+        next unless cmd.type == :assign
+
+        var  = cmd.args[:var]
+        expr = cmd.args[:expr]
+        # Only use simple literals as initializers
+        init_values[var] = expr if var && expr&.match?(/^-?\d+$/)
+      end
+      init_values
     end
 
     def state_to_hash(state)

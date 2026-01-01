@@ -5,6 +5,24 @@ All notable changes to descent will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.13] - 2026-01-01
+
+### Fixed
+- **BRACKET End event on inline emit**: BRACKET type functions now correctly emit
+  their End event on return even when preceded by inline emits like `RawContent(USE_MARK)`.
+  Previously `suppress_auto_emit` incorrectly skipped the End event for BRACKET types.
+- **If-case break after return**: `|if[cond] |return` followed by `| -> |>> :state` now
+  correctly generates two separate match arms. Previously the bare action case commands
+  were appended to the if-case, causing unreachable code warnings.
+- **Entry actions preserved**: Function-level entry actions like `| val = 5` are now
+  correctly preserved through IR transformations (prepend_values, type coercion).
+- **Local variable initialization**: Locals with entry action assignments now initialize
+  directly with the value (`let mut val: i32 = 5;`) instead of init-then-assign,
+  eliminating "value assigned is never read" warnings.
+- **set_term helper emission**: `TERM` commands now correctly trigger emission of the
+  `set_term` helper method regardless of offset value. Previously `TERM(0)` failed to
+  compile because the helper wasn't generated.
+
 ## [0.6.12] - 2026-01-01
 
 ### Changed

@@ -609,9 +609,10 @@ impl<'a> Parser<'a> {
         self.mark();
         {% endif %}
 
-        {% comment %} Local variables {% endcomment %}
+        {% comment %} Local variables - use initial value from entry_actions if available {% endcomment %}
         {% for local in func.locals %}
-        let mut {{ local[0] }}: i32 = 0;
+        {% assign init_val = func.local_init_values[local[0]] | default: "0" %}
+        let mut {{ local[0] }}: i32 = {{ init_val }};
         {% endfor %}
 
         {% comment %} Entry actions (variable initialization on function entry) {% endcomment %}

@@ -294,9 +294,9 @@ module Descent
       last_cmd_type = nil
 
       while (t = current) && !CASE_STARTERS.include?(t.tag)
-        # If previous command was return and current is >>, the >> is an else branch
-        # (a new default case), not part of this case's transition
-        break if last_cmd_type == :return && t.tag == '>>'
+        # After return, any command-like token starts a new case (bare action case).
+        # The return is final - nothing should follow in the same case.
+        break if last_cmd_type == :return && command_like?(t.tag)
 
         if t.tag == '.'
           advance # Skip substate marker

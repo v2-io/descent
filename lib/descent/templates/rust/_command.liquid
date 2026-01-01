@@ -74,8 +74,10 @@
 {% elsif return_type_info.kind == "internal" %}
 {% comment %} INTERNAL type with no explicit return value - return 0 as default {% endcomment %}
                     return 0;
-{% elsif cmd.args.suppress_auto_emit %}
-{% comment %} Fix #11: Inline emit already happened, skip auto-emit {% endcomment %}
+{% elsif cmd.args.suppress_auto_emit and return_type_info.kind == "content" %}
+{% comment %} Fix #11: Inline emit already happened for CONTENT type - skip auto-emit.
+              Note: BRACKET types ALWAYS emit End event regardless of inline emits,
+              because End is structural, not a content event. {% endcomment %}
                     return;
 {% elsif return_type_info.kind == "content" %}
                     on_event(Event::{{ func.return_type }} { content: self.term(), span: self.span_from_mark() });
