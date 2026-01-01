@@ -783,6 +783,222 @@ impl<'a> Parser<'a> {
 {% endfor %}
 }
 
+// ============================================================================
+// Streaming Parser (multi-chunk support)
+// ============================================================================
+
+/// Result of parsing a chunk in streaming mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParseResult {
+    /// Parsing completed successfully (EOF reached).
+    Complete,
+    /// More data needed - provide another chunk.
+    NeedMoreData,
+}
+
+/// Event with owned content for streaming across chunk boundaries.
+#[derive(Debug, Clone, PartialEq)]
+pub enum StreamEvent {
+{% for type in types %}
+{% if type.kind == "bracket" %}
+    {{ type.name }}Start { span: Range<usize> },
+    {{ type.name }}End { span: Range<usize> },
+{% elsif type.kind == "content" %}
+    {{ type.name }} { content: Vec<u8>, span: Range<usize> },
+{% endif %}
+{% endfor %}
+    Error { code: ParseErrorCode, span: Range<usize> },
+}
+
+impl StreamEvent {
+    /// Convert from borrowed Event to owned StreamEvent.
+    fn from_event(event: Event<'_>, offset: usize) -> Self {
+        match event {
+{% for type in types %}
+{% if type.kind == "bracket" %}
+            Event::{{ type.name }}Start { span } => {
+                StreamEvent::{{ type.name }}Start { span: (span.start + offset)..(span.end + offset) }
+            }
+            Event::{{ type.name }}End { span } => {
+                StreamEvent::{{ type.name }}End { span: (span.start + offset)..(span.end + offset) }
+            }
+{% elsif type.kind == "content" %}
+            Event::{{ type.name }} { content, span } => {
+                StreamEvent::{{ type.name }} {
+                    content: content.to_vec(),
+                    span: (span.start + offset)..(span.end + offset),
+                }
+            }
+{% endif %}
+{% endfor %}
+            Event::Error { code, span } => {
+                StreamEvent::Error { code, span: (span.start + offset)..(span.end + offset) }
+            }
+        }
+    }
+}
+
+/// Streaming parser for chunk-by-chunk input.
+///
+/// Wraps the single-buffer `Parser` to handle input arriving in chunks.
+/// Buffers incomplete content across chunk boundaries.
+///
+/// # Example
+///
+/// ```ignore
+/// let mut parser = StreamingParser::new();
+/// loop {
+///     match parser.parse(chunk, |event| handle(event)) {
+///         ParseResult::Complete => break,
+///         ParseResult::NeedMoreData => {
+///             chunk = get_next_chunk();
+///             if chunk.is_empty() {
+///                 parser.finish(|event| handle(event));
+///                 break;
+///             }
+///         }
+///     }
+/// }
+/// ```
+pub struct StreamingParser {
+    /// Buffer for incomplete content at chunk boundaries.
+    buffer: Vec<u8>,
+    /// Maximum buffer size before error (default 4KB).
+    max_buffer: usize,
+    /// Global byte offset for span calculation.
+    global_offset: usize,
+    /// Line number (persists across chunks).
+    line: u32,
+    /// Column number (persists across chunks).
+    column: u32,
+}
+
+impl Default for StreamingParser {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl StreamingParser {
+    /// Create a new streaming parser with default settings.
+    pub fn new() -> Self {
+        Self::with_max_buffer(4096)
+    }
+
+    /// Create a streaming parser with custom buffer limit.
+    pub fn with_max_buffer(max_buffer: usize) -> Self {
+        Self {
+            buffer: Vec::new(),
+            max_buffer,
+            global_offset: 0,
+            line: 1,
+            column: 1,
+        }
+    }
+
+    /// Parse a chunk of input, emitting events for complete lines.
+    ///
+    /// Uses line-oriented streaming: only parses complete lines (ending in `\n`).
+    /// Incomplete lines are buffered until more data arrives.
+    ///
+    /// Returns `NeedMoreData` if the chunk ends mid-line.
+    /// Call `finish()` after the last chunk to handle any remaining content.
+    pub fn parse<F>(&mut self, chunk: &[u8], mut on_event: F) -> ParseResult
+    where
+        F: FnMut(StreamEvent),
+    {
+        // Append new chunk to buffer
+        self.buffer.extend_from_slice(chunk);
+
+        if self.buffer.is_empty() {
+            return ParseResult::NeedMoreData;
+        }
+
+        // Check buffer size limit
+        if self.buffer.len() > self.max_buffer {
+            on_event(StreamEvent::Error {
+                code: ParseErrorCode::UnexpectedEof, // Buffer overflow
+                span: self.global_offset..self.global_offset,
+            });
+            self.buffer.clear();
+            return ParseResult::Complete;
+        }
+
+        // Find last complete line (ending with \n)
+        let last_newline = self.buffer.iter().rposition(|&b| b == b'\n');
+
+        let parse_end = match last_newline {
+            Some(pos) => pos + 1, // Include the newline
+            None => return ParseResult::NeedMoreData, // No complete line yet
+        };
+
+        // Extract complete lines to parse
+        let to_parse: Vec<u8> = self.buffer.drain(..parse_end).collect();
+        let offset = self.global_offset;
+
+        // Parse complete lines
+        let mut inner = Parser::new(&to_parse);
+        inner.line = self.line;
+        inner.column = self.column;
+
+        inner.parse(|event| {
+            on_event(StreamEvent::from_event(event, offset));
+        });
+
+        // Update state
+        self.global_offset += to_parse.len();
+        for &b in &to_parse {
+            if b == b'\n' {
+                self.line += 1;
+                self.column = 1;
+            } else {
+                self.column += 1;
+            }
+        }
+
+        ParseResult::NeedMoreData
+    }
+
+    /// Signal end of input and handle any remaining buffered content.
+    ///
+    /// This triggers EOF handling for any incomplete constructs.
+    pub fn finish<F>(mut self, mut on_event: F)
+    where
+        F: FnMut(StreamEvent),
+    {
+        if self.buffer.is_empty() {
+            return;
+        }
+
+        // Parse remaining buffer - this will hit EOF
+        let input = std::mem::take(&mut self.buffer);
+        let offset = self.global_offset;
+
+        let mut inner = Parser::new(&input);
+        inner.line = self.line;
+        inner.column = self.column;
+
+        inner.parse(|event| {
+            on_event(StreamEvent::from_event(event, offset));
+        });
+    }
+
+    /// Returns the current global byte offset.
+    pub fn offset(&self) -> usize {
+        self.global_offset
+    }
+
+    /// Returns the current line number.
+    pub fn line(&self) -> u32 {
+        self.line
+    }
+
+    /// Returns the current column number.
+    pub fn column(&self) -> u32 {
+        self.column
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
