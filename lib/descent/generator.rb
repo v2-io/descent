@@ -43,6 +43,8 @@ module Descent
 
       # First, transform call arguments (handles :param, <R>, etc.)
       # This catches standalone expressions like "<R>" or ":close"
+      # Note: <> (empty) is NOT transformed here - it's handled by type-aware
+      # transform_call_args_by_type in ir_builder.rb for :bytes params only
       result = transform_call_args(str.to_s)
 
       result
@@ -80,6 +82,7 @@ module Descent
         arg = arg.strip
         case arg
         when /^:(\w+)$/           then ::Regexp.last_match(1) # :param -> param
+        when '<>'                 then 'b""' # Empty byte slice
         when '<R>'                then "b']'"
         when '<RB>'               then "b'}'"
         when '<L>'                then "b'['"
@@ -88,6 +91,8 @@ module Descent
         when '<BS>'               then "b'\\\\'"
         when '<RP>'               then "b')'"  # Right paren
         when '<LP>'               then "b'('"  # Left paren
+        when '<SQ>'               then "b'\\''" # Single quote
+        when '<DQ>'               then "b'\"'" # Double quote
         when '"'                  then "b'\"'" # Bare double quote
         when "'"                  then "b'\\''" # Bare single quote (escaped)
         when /^\d+$/              then arg # numeric literals

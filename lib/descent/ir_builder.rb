@@ -837,9 +837,91 @@ module Descent
       types
     end
 
+    # Infer param types from call-site values AND propagate from callees.
+    # If a function is called with bytes-like values (<>, <P>, '|'), that param becomes :bytes.
+    # If bar calls foo(:x) and foo's param is :bytes, then bar's :x should be :bytes.
+    def propagate_param_types(functions)
+      func_by_name = functions.to_h { |f| [f.name, f] }
+
+      # First pass: infer types from literal values at call sites
+      functions.each do |func|
+        func.states.each do |state|
+          state.cases.each do |kase|
+            kase.commands.each do |cmd|
+              next unless cmd.type == :call && cmd.args[:call_args]
+
+              target = func_by_name[cmd.args[:name]]
+              next unless target
+
+              args = cmd.args[:call_args].split(',').map(&:strip)
+              args.zip(target.params).each do |arg, target_param|
+                next unless target_param
+
+                # If arg looks like a bytes value, mark target param as :bytes
+                if bytes_like_value?(arg) && target.param_types[target_param] != :bytes
+                  target.param_types[target_param] = :bytes
+                end
+              end
+            end
+          end
+        end
+      end
+
+      # Second pass: propagate types from callees to callers (iterative)
+      changed = true
+      while changed
+        changed = false
+        functions.each do |func|
+          func.states.each do |state|
+            state.cases.each do |kase|
+              kase.commands.each do |cmd|
+                next unless cmd.type == :call && cmd.args[:call_args]
+
+                target = func_by_name[cmd.args[:name]]
+                next unless target
+
+                args = cmd.args[:call_args].split(',').map(&:strip)
+                args.zip(target.params).each do |arg, target_param|
+                  next unless target_param
+
+                  # If arg is a param reference (:x) and target param is :bytes,
+                  # our param should also be :bytes
+                  if arg.match?(/^:(\w+)$/)
+                    our_param = arg[1..]
+                    target_type = target.param_types[target_param]
+                    if target_type == :bytes && func.param_types[our_param] != :bytes
+                      func.param_types[our_param] = :bytes
+                      changed = true
+                    end
+                  end
+                end
+              end
+            end
+          end
+        end
+      end
+
+      functions
+    end
+
+    # Check if a value looks like a bytes literal
+    def bytes_like_value?(arg)
+      case arg
+      when '<>', '<P>', '<L>', '<R>', '<LB>', '<RB>', '<LP>', '<RP>', '<BS>', '<SQ>', '<DQ>'
+        true
+      when /^'.*'$/, /^".*"$/  # Quoted strings
+        true
+      else
+        false
+      end
+    end
+
     # Collect prepend values by tracing call sites to functions with PREPEND(:param).
     # Returns updated functions with prepend_values filled in.
     def collect_prepend_values(functions)
+      # First propagate param types from callees to callers
+      functions = propagate_param_types(functions)
+
       func_by_name = functions.to_h { |f| [f.name, f] }
 
       # Step 1: Find which functions have PREPEND(:param) and which param it uses
@@ -1037,7 +1119,7 @@ module Descent
         content = ::Regexp.last_match(1)
         "b\"#{escape_for_rust_string(content)}\""
       when /^:(\w+)$/             then ::Regexp.last_match(1) # Param ref
-      when /^\d+$/                then 'b""' # 0 = empty (legacy)
+      when /^-?\d+$/              then 'b""' # 0/-1 = empty (legacy sentinel values)
       else
         arg # Pass through unknown
       end
