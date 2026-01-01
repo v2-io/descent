@@ -522,6 +522,9 @@ pub enum ParseErrorCode {
 - Character ranges: `|c[0-9]` → `b'0'..=b'9'`, `|c[a-f]` → `b'a'..=b'f'`
   - Currently parses as literal chars (broken)
   - `values.desc` depends on this
+- LINE variable: Current line number (1-indexed), like COL
+  - Parser already tracks `self.line` internally
+  - Just needs `LINE -> self.line as i32` in `rust_expr` filter (like COL/PREV)
 - C template
 
 ### Recently Implemented
