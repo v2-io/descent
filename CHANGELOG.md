@@ -5,6 +5,14 @@ All notable changes to descent will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.12] - 2026-01-01
+
+### Changed
+- **Conditional helper emission**: Generated parsers now only include helper methods
+  that are actually used, eliminating dead_code warnings. The generator analyzes
+  usage of `col()`, `prev()`, character class methods (`is_letter`, `is_digit`, etc.),
+  and scan methods (`scan_to1` through `scan_to6`) and only emits what's needed.
+
 ## [0.6.9] - 2026-01-01
 
 ### Fixed

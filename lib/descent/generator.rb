@@ -168,6 +168,7 @@ module Descent
 
     def build_context
       functions_data = @ir.functions.map { |f| function_to_hash(f) }
+      usage          = analyze_helper_usage(functions_data)
       {
         'parser'             => @ir.name,
         'entry_point'        => @ir.entry_point,
@@ -176,8 +177,129 @@ module Descent
         'keywords'           => @ir.keywords.map { |k| keywords_to_hash(k) },
         'custom_error_codes' => @ir.custom_error_codes,
         'trace'              => @trace,
-        'uses_unicode'       => uses_unicode_classes?(functions_data)
+        'uses_unicode'       => uses_unicode_classes?(functions_data),
+        # Helper usage flags - only emit helpers that are actually used
+        'uses_col'           => usage[:col],
+        'uses_prev'          => usage[:prev],
+        'uses_set_term'      => usage[:set_term],
+        'uses_span'          => usage[:span],
+        'uses_letter'        => usage[:letter],
+        'uses_label_cont'    => usage[:label_cont],
+        'uses_digit'         => usage[:digit],
+        'uses_hex_digit'     => usage[:hex_digit],
+        'uses_ws'            => usage[:ws],
+        'uses_nl'            => usage[:nl],
+        'max_scan_arity'     => usage[:max_scan_arity]
       }
+    end
+
+    # Analyze which helper methods are actually used by the generated code.
+    # Returns a hash of usage flags that the template uses for conditional emission.
+    def analyze_helper_usage(functions_data)
+      usage = {
+        col: false, prev: false, set_term: false, span: false,
+        letter: false, label_cont: false, digit: false, hex_digit: false,
+        ws: false, nl: false, max_scan_arity: 0
+      }
+
+      functions_data.each do |func|
+        # Check conditions for COL/PREV usage
+        check_expressions_in_function(func, usage)
+
+        # Check special classes used in cases
+        func['states'].each do |state|
+          # Track max scan arity
+          if state['scannable'] && state['scan_chars']
+            usage[:max_scan_arity] = [usage[:max_scan_arity], state['scan_chars'].size].max
+          end
+
+          state['cases'].each do |kase|
+            check_special_class(kase['special_class'], usage)
+          end
+        end
+      end
+
+      # span() is used for bracket types and errors (always needed if we have types)
+      usage[:span] = true
+
+      usage
+    end
+
+    # Check expressions in conditions/commands for COL/PREV usage
+    def check_expressions_in_function(func, usage)
+      all_commands = collect_all_commands(func)
+
+      all_commands.each do |cmd|
+        args = cmd['args'] || {}
+
+        # Check condition expressions (from if cases and conditionals)
+        check_expression(args['condition'], usage)
+
+        # Check call arguments for COL/PREV
+        check_expression(args['call_args'], usage) if cmd['type'] == 'call'
+
+        # Check assignment expressions
+        check_expression(args['expr'], usage) if %w[assign add_assign sub_assign].include?(cmd['type'])
+
+        # Check for set_term usage (TERM with offset)
+        usage[:set_term] = true if cmd['type'] == 'term' && args['offset']&.to_i != 0
+      end
+
+      # Check case conditions
+      func['states'].each do |state|
+        state['cases'].each do |kase|
+          check_expression(kase['condition'], usage)
+        end
+      end
+    end
+
+    # Collect all commands from a function (including nested in conditionals)
+    def collect_all_commands(func)
+      commands = []
+
+      # Entry actions
+      commands.concat(func['entry_actions'] || [])
+
+      # EOF handler
+      commands.concat(func['eof_handler'] || [])
+
+      # State commands
+      func['states'].each do |state|
+        commands.concat(state['eof_handler'] || [])
+        state['cases'].each do |kase|
+          kase['commands'].each do |cmd|
+            commands << cmd
+            # Recurse into conditional clauses
+            if cmd['type'] == 'conditional' && cmd.dig('args', 'clauses')
+              cmd['args']['clauses'].each do |clause|
+                commands.concat(clause['commands'] || [])
+              end
+            end
+          end
+        end
+      end
+
+      commands
+    end
+
+    def check_expression(expr, usage)
+      return unless expr.is_a?(String)
+
+      usage[:col]  = true if expr.match?(/\bCOL\b/)
+      usage[:prev] = true if expr.match?(/\bPREV\b/)
+    end
+
+    def check_special_class(special_class, usage)
+      return unless special_class
+
+      case special_class.to_s
+      when 'letter'     then usage[:letter] = true
+      when 'label_cont' then usage[:label_cont] = true
+      when 'digit'      then usage[:digit] = true
+      when 'hex_digit'  then usage[:hex_digit] = true
+      when 'ws'         then usage[:ws] = true
+      when 'nl'         then usage[:nl] = true
+      end
     end
 
     # Check if any function uses Unicode character classes

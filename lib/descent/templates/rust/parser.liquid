@@ -193,6 +193,7 @@ impl<'a> Parser<'a> {
         // This allows PREPEND to be called before a nested function that does MARK.
     }
 
+{% if uses_set_term %}
     /// Set termination point with optional offset (e.g., -1 for one char before current)
     /// Clamps to valid range [0, input.len()] to prevent underflow/overflow.
     #[inline(always)]
@@ -200,6 +201,7 @@ impl<'a> Parser<'a> {
         let new_pos = self.pos as i64 + offset as i64;
         self.term_pos = new_pos.clamp(0, self.input.len() as i64) as usize;
     }
+{% endif %}
 
     /// Prepend bytes to the accumulation buffer.
     /// Empty slice is naturally a no-op.
@@ -237,11 +239,14 @@ impl<'a> Parser<'a> {
         self.mark_pos..end
     }
 
+{% if uses_col %}
     #[inline(always)]
     fn col(&self) -> i32 {
         self.column as i32
     }
+{% endif %}
 
+{% if uses_prev %}
     /// Previous byte (0 at start of input).
     #[inline(always)]
     fn prev(&self) -> u8 {
@@ -251,36 +256,49 @@ impl<'a> Parser<'a> {
             0
         }
     }
+{% endif %}
 
+{% if uses_letter %}
     #[inline(always)]
     fn is_letter(b: u8) -> bool {
         b.is_ascii_alphabetic()
     }
+{% endif %}
 
+{% if uses_label_cont %}
     #[inline(always)]
     fn is_label_cont(b: u8) -> bool {
         b.is_ascii_alphanumeric() || b == b'_' || b == b'-'
     }
+{% endif %}
 
+{% if uses_digit %}
     #[inline(always)]
     fn is_digit(b: u8) -> bool {
         b.is_ascii_digit()
     }
+{% endif %}
 
+{% if uses_hex_digit %}
     #[inline(always)]
     fn is_hex_digit(b: u8) -> bool {
         b.is_ascii_hexdigit()
     }
+{% endif %}
 
+{% if uses_ws %}
     #[inline(always)]
     fn is_ws(b: u8) -> bool {
         b == b' ' || b == b'\t'
     }
+{% endif %}
 
+{% if uses_nl %}
     #[inline(always)]
     fn is_nl(b: u8) -> bool {
         b == b'\n'
     }
+{% endif %}
 
 {% if uses_unicode %}
     // ========== Unicode Identifier Classes ==========
@@ -329,8 +347,10 @@ impl<'a> Parser<'a> {
     }
 {% endif %}
 
+{% if max_scan_arity > 0 %}
     // ========== SCAN Methods (SIMD-accelerated via memchr) ==========
 
+{% if max_scan_arity >= 1 %}
     /// Scan forward to find first occurrence of b1, returns matched byte or None for EOF.
     #[inline]
     fn scan_to1(&mut self, b1: u8) -> Option<u8> {
@@ -363,7 +383,9 @@ impl<'a> Parser<'a> {
             }
         }
     }
+{% endif %}
 
+{% if max_scan_arity >= 2 %}
     /// Scan forward to find first occurrence of b1 or b2.
     #[inline]
     fn scan_to2(&mut self, b1: u8, b2: u8) -> Option<u8> {
@@ -394,7 +416,9 @@ impl<'a> Parser<'a> {
             }
         }
     }
+{% endif %}
 
+{% if max_scan_arity >= 3 %}
     /// Scan forward to find first occurrence of b1, b2, or b3.
     #[inline]
     fn scan_to3(&mut self, b1: u8, b2: u8, b3: u8) -> Option<u8> {
@@ -425,41 +449,15 @@ impl<'a> Parser<'a> {
             }
         }
     }
+{% endif %}
 
+{% if max_scan_arity >= 4 %}
     /// Scan forward to find first occurrence of b1, b2, b3, or b4 (chained memchr).
     #[inline]
     fn scan_to4(&mut self, b1: u8, b2: u8, b3: u8, b4: u8) -> Option<u8> {
         let haystack = &self.input[self.pos..];
         let p1 = memchr::memchr3(b1, b2, b3, haystack);
         let p2 = memchr::memchr(b4, haystack);
-        let offset = match (p1, p2) {
-            (Some(x), Some(y)) => Some(x.min(y)),
-            (Some(x), None) | (None, Some(x)) => Some(x),
-            (None, None) => None,
-        };
-        self.apply_scan_offset(offset)
-    }
-
-    /// Scan forward to find first occurrence of b1..b5 (chained memchr).
-    #[inline]
-    fn scan_to5(&mut self, b1: u8, b2: u8, b3: u8, b4: u8, b5: u8) -> Option<u8> {
-        let haystack = &self.input[self.pos..];
-        let p1 = memchr::memchr3(b1, b2, b3, haystack);
-        let p2 = memchr::memchr2(b4, b5, haystack);
-        let offset = match (p1, p2) {
-            (Some(x), Some(y)) => Some(x.min(y)),
-            (Some(x), None) | (None, Some(x)) => Some(x),
-            (None, None) => None,
-        };
-        self.apply_scan_offset(offset)
-    }
-
-    /// Scan forward to find first occurrence of b1..b6 (chained memchr).
-    #[inline]
-    fn scan_to6(&mut self, b1: u8, b2: u8, b3: u8, b4: u8, b5: u8, b6: u8) -> Option<u8> {
-        let haystack = &self.input[self.pos..];
-        let p1 = memchr::memchr3(b1, b2, b3, haystack);
-        let p2 = memchr::memchr3(b4, b5, b6, haystack);
         let offset = match (p1, p2) {
             (Some(x), Some(y)) => Some(x.min(y)),
             (Some(x), None) | (None, Some(x)) => Some(x),
@@ -498,6 +496,40 @@ impl<'a> Parser<'a> {
             }
         }
     }
+{% endif %}
+
+{% if max_scan_arity >= 5 %}
+    /// Scan forward to find first occurrence of b1..b5 (chained memchr).
+    #[inline]
+    fn scan_to5(&mut self, b1: u8, b2: u8, b3: u8, b4: u8, b5: u8) -> Option<u8> {
+        let haystack = &self.input[self.pos..];
+        let p1 = memchr::memchr3(b1, b2, b3, haystack);
+        let p2 = memchr::memchr2(b4, b5, haystack);
+        let offset = match (p1, p2) {
+            (Some(x), Some(y)) => Some(x.min(y)),
+            (Some(x), None) | (None, Some(x)) => Some(x),
+            (None, None) => None,
+        };
+        self.apply_scan_offset(offset)
+    }
+{% endif %}
+
+{% if max_scan_arity >= 6 %}
+    /// Scan forward to find first occurrence of b1..b6 (chained memchr).
+    #[inline]
+    fn scan_to6(&mut self, b1: u8, b2: u8, b3: u8, b4: u8, b5: u8, b6: u8) -> Option<u8> {
+        let haystack = &self.input[self.pos..];
+        let p1 = memchr::memchr3(b1, b2, b3, haystack);
+        let p2 = memchr::memchr3(b4, b5, b6, haystack);
+        let offset = match (p1, p2) {
+            (Some(x), Some(y)) => Some(x.min(y)),
+            (Some(x), None) | (None, Some(x)) => Some(x),
+            (None, None) => None,
+        };
+        self.apply_scan_offset(offset)
+    }
+{% endif %}
+{% endif %}
 
 {% comment %} Generate keyword lookup methods {% endcomment %}
 {% for kw in keywords %}
