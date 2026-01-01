@@ -755,11 +755,6 @@ These optimizations may apply to descent-generated parsers:
 - **Eliminate String allocations in value parsing**: Use `lexical-core` or `fast_float`
   for float/complex number parsing instead of String intermediates.
 
-### Unicode Handling
-- **Cheaper unicode label detection**: Current approach may use `from_utf8` on remainder
-  for every non-ASCII byte. Consider single-char decode (e.g., decode one codepoint,
-  check if XID_Start/XID_Continue) rather than validating entire remainder.
-
 ### Indentation Handling
 - **SPEC-INDENTS for multi-chunk feeds**: When input is streamed in chunks, indentation
   detection needs to handle chunk boundaries correctly. Document the invariants and
