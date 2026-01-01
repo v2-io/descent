@@ -2,14 +2,15 @@
 
 ## Priority Queue
 
-### 1. Multi-Chunk Streaming - VERIFY WORKING
+### 1. Multi-Chunk Streaming - **IMPLEMENTED** (0.4.0)
 
-Resumable state machine for streaming input (design decided in session 3).
-**This should already be implemented** - verify it works before other features.
+Line-oriented streaming with `StreamingParser` wrapper:
+- `ParseResult`: `Complete` | `NeedMoreData`
+- `StreamEvent`: owned `Vec<u8>` content for cross-chunk safety
+- Buffers incomplete lines, parses complete ones
+- Global offset tracking for correct spans
 
-If not working, this is the highest priority item.
-
-See "Multi-Chunk Streaming" section below for full design.
+See "Multi-Chunk Streaming" section below for original design.
 
 ### 2. Byte Literal Syntax Cleanup
 
@@ -287,10 +288,11 @@ Perfect Hash" in Future Enhancements).
 - Keyword lookup: phf perfect hash (O(1)) - pending implementation
 - Complex post-processing (if needed): libudon with `lexical-core`
 
-### 10. Multi-Chunk Streaming - **DECIDED** (Priority Queue #1 - VERIFY)
+### 10. Multi-Chunk Streaming - **IMPLEMENTED** (0.4.0)
 
 Current parser is single-buffer only (`&'a [u8]`). UDON needs streaming for LLM use case.
-**This should already be implemented** - verify before other work.
+
+**Implementation (0.4.0):** Line-oriented streaming via `StreamingParser` wrapper.
 
 **Decision:** Resumable State Machine (Option 2)
 
