@@ -1,6 +1,301 @@
 # frozen_string_literal: true
 
 module Descent
+  # Unified character class parser according to characters.md spec.
+  #
+  # Handles all character literal and class syntax:
+  # - Single chars: 'x', '\n', '\x00'
+  # - Strings: 'hello' (decomposed to chars for classes)
+  # - Classes: <...> with space-separated tokens
+  # - Predefined classes: LETTER, DIGIT, SQ, P, 0-9, etc.
+  # - Empty class: <> (empty set / empty string)
+  # - Param refs: :name
+  #
+  # The same parsing is used everywhere: c[...], function args, PREPEND
+  module CharacterClass
+    # Predefined single-character classes (DSL-reserved chars)
+    SINGLE_CHAR = {
+      'P'  => '|',
+      'L'  => '[',
+      'R'  => ']',
+      'LB' => '{',
+      'RB' => '}',
+      'LP' => '(',
+      'RP' => ')',
+      'SQ' => "'",
+      'DQ' => '"',
+      'BS' => '\\'
+    }.freeze
+
+    # Predefined character ranges
+    RANGES = {
+      '0-9' => '0123456789',
+      '0-7' => '01234567',
+      '0-1' => '01',
+      'a-z' => 'abcdefghijklmnopqrstuvwxyz',
+      'A-Z' => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+      'a-f' => 'abcdef',
+      'A-F' => 'ABCDEF'
+    }.freeze
+
+    # Predefined multi-character classes (expanded to char sets)
+    MULTI_CHAR = {
+      'LETTER'     => RANGES['a-z'] + RANGES['A-Z'],
+      'DIGIT'      => RANGES['0-9'],
+      'HEX_DIGIT'  => RANGES['0-9'] + RANGES['a-f'] + RANGES['A-F'],
+      'LABEL_CONT' => RANGES['a-z'] + RANGES['A-Z'] + RANGES['0-9'] + '_-',
+      'WS'         => " \t",
+      'NL'         => "\n"
+    }.freeze
+
+    # Special classes that require runtime checks (can't be expanded to char list)
+    SPECIAL_CLASSES = %w[XID_START XID_CONT XLBL_START XLBL_CONT].freeze
+
+    class << self
+      # Parse a class specification string and return structured result.
+      #
+      # @param str [String] The class specification (contents of c[...] or <...> or bare)
+      # @param context [Symbol] :match (for c[...]), :bytes (for function args/PREPEND), :byte (single byte)
+      # @return [Hash] { chars: [...], special_class: nil|Symbol, param_ref: nil|String, bytes: String }
+      def parse(str, context: :match)
+        return { chars: [], special_class: nil, param_ref: nil, bytes: '' } if str.nil? || str.empty?
+
+        str = str.strip
+
+        # Handle explicit class wrapper <...>
+        if str.start_with?('<') && str.end_with?('>')
+          inner = str[1...-1].strip
+          return { chars: [], special_class: nil, param_ref: nil, bytes: '' } if inner.empty? # <>
+
+          return parse_class_content(inner, context)
+        end
+
+        # Handle param reference :name
+        if str.start_with?(':')
+          param = str[1..]
+          return { chars: [], special_class: nil, param_ref: param, bytes: nil }
+        end
+
+        # Handle quoted string 'content'
+        if str.match?(/^'.*'$/) && str.length >= 2
+          content = parse_quoted_string(str[1...-1])
+          chars   = content.chars
+          return { chars: chars, special_class: nil, param_ref: nil, bytes: content }
+        end
+
+        # Handle double-quoted string "content"
+        if str.match?(/^".*"$/) && str.length >= 2
+          content = str[1...-1]
+          chars   = content.chars
+          return { chars: chars, special_class: nil, param_ref: nil, bytes: content }
+        end
+
+        # Check if it's a bare shorthand (only /[A-Za-z0-9_-]/ allowed)
+        if str.match?(/^[A-Za-z0-9_-]+$/)
+          # Could be a predefined class name or bare chars
+          upper = str.upcase
+          if SPECIAL_CLASSES.include?(upper)
+            return { chars: [], special_class: upper.downcase.to_sym, param_ref: nil, bytes: nil }
+          elsif MULTI_CHAR.key?(upper)
+            chars = MULTI_CHAR[upper].chars
+            return { chars: chars, special_class: nil, param_ref: nil, bytes: MULTI_CHAR[upper] }
+          elsif SINGLE_CHAR.key?(upper)
+            char = SINGLE_CHAR[upper]
+            return { chars: [char], special_class: nil, param_ref: nil, bytes: char }
+          elsif RANGES.key?(str)
+            chars = RANGES[str].chars
+            return { chars: chars, special_class: nil, param_ref: nil, bytes: RANGES[str] }
+          else
+            # Bare alphanumeric - decompose to individual chars
+            chars = str.chars
+            return { chars: chars, special_class: nil, param_ref: nil, bytes: str }
+          end
+        end
+
+        # If we get here, it's invalid bare content (special chars without quotes)
+        # For now, treat as literal bytes but this should probably error
+        { chars: str.chars, special_class: nil, param_ref: nil, bytes: str }
+      end
+
+      # Parse the content inside <...> (space-separated tokens)
+      def parse_class_content(content, context)
+        return { chars: [], special_class: nil, param_ref: nil, bytes: '' } if content.nil? || content.empty?
+
+        all_chars     = []
+        all_bytes     = +''
+        special_class = nil
+        param_ref     = nil
+
+        tokens = tokenize_class_content(content)
+
+        tokens.each do |token|
+          result = parse(token, context: context)
+
+          if result[:special_class]
+            # Only one special class allowed
+            special_class = result[:special_class]
+          elsif result[:param_ref]
+            param_ref = result[:param_ref]
+          else
+            all_chars.concat(result[:chars]) if result[:chars]
+            all_bytes << result[:bytes] if result[:bytes]
+          end
+        end
+
+        { chars: all_chars.uniq, special_class: special_class, param_ref: param_ref, bytes: all_bytes }
+      end
+
+      # Tokenize class content respecting quotes
+      def tokenize_class_content(content)
+        tokens   = []
+        current  = +''
+        in_quote = false
+        i        = 0
+
+        while i < content.length
+          c = content[i]
+
+          if c == "'" && !in_quote
+            in_quote = true
+            current << c
+          elsif c == "'" && in_quote
+            current << c
+            in_quote = false
+          elsif c == '\\' && in_quote && i + 1 < content.length
+            current << c << content[i + 1]
+            i += 1
+          elsif c == ' ' && !in_quote
+            tokens << current unless current.empty?
+            current = +''
+          else
+            current << c
+          end
+
+          i += 1
+        end
+
+        tokens << current unless current.empty?
+        tokens
+      end
+
+      # Parse a quoted string with escape sequences
+      def parse_quoted_string(str)
+        result = +''
+        i      = 0
+
+        while i < str.length
+          if str[i] == '\\'
+            if i + 1 < str.length
+              case str[i + 1]
+              when 'n'  then result << "\n"
+                             i += 2
+              when 't'  then result << "\t"
+                             i += 2
+              when 'r'  then result << "\r"
+                             i += 2
+              when '\\' then result << '\\'
+                             i += 2
+              when "'"  then result << "'"
+                             i  += 2
+              when '"'  then result << '"'
+                             i  += 2
+              when 'x'
+                # Hex byte: \xHH
+                if i + 3 < str.length && str[i + 2..i + 3].match?(/^[0-9A-Fa-f]{2}$/)
+                  result << str[i + 2..i + 3].to_i(16).chr
+                  i += 4
+                else
+                  result << str[i + 1]
+                  i += 2
+                end
+              when 'u'
+                # Unicode: \uXXXX
+                if i + 5 < str.length && str[i + 2..i + 5].match?(/^[0-9A-Fa-f]{4}$/)
+                  result << str[i + 2..i + 5].to_i(16).chr(Encoding::UTF_8)
+                  i += 6
+                else
+                  result << str[i + 1]
+                  i += 2
+                end
+              when '0'
+                # Null byte
+                result << "\0"
+                i += 2
+              else
+                result << str[i + 1]
+                i += 2
+              end
+            else
+              result << str[i]
+              i += 1
+            end
+          else
+            result << str[i]
+            i += 1
+          end
+        end
+
+        result
+      end
+
+      # Convert parsed result to Rust byte literal format for :byte param (u8)
+      def to_rust_byte(result)
+        return result[:param_ref] if result[:param_ref]
+        return 'b\'?\'' if result[:chars].empty? && result[:bytes].empty?
+
+        char = result[:bytes][0] || result[:chars][0]
+        escape_rust_byte(char)
+      end
+
+      # Convert parsed result to Rust byte string format for :bytes param (&[u8])
+      def to_rust_bytes(result)
+        return result[:param_ref] if result[:param_ref]
+        return 'b""' if result[:bytes].nil? || result[:bytes].empty?
+
+        "b\"#{escape_rust_byte_string(result[:bytes])}\""
+      end
+
+      # Escape a single character for Rust byte literal b'x'
+      def escape_rust_byte(char)
+        escaped = case char
+                  when "\n" then '\\n'
+                  when "\t" then '\\t'
+                  when "\r" then '\\r'
+                  when "\0" then '\\0'
+                  when '\\' then '\\\\'
+                  when "'" then "\\'"
+                  else
+                    if char.ord < 32 || char.ord > 126
+                      format('\\x%02x', char.ord)
+                    else
+                      char
+                    end
+                  end
+        "b'#{escaped}'"
+      end
+
+      # Escape a string for Rust byte string literal b"..."
+      def escape_rust_byte_string(str)
+        str.chars.map do |char|
+          case char
+          when "\n" then '\\n'
+          when "\t" then '\\t'
+          when "\r" then '\\r'
+          when "\0" then '\\0'
+          when '\\' then '\\\\'
+          when '"' then '\\"'
+          else
+            if char.ord < 32 || char.ord > 126
+              format('\\x%02x', char.ord)
+            else
+              char
+            end
+          end
+        end.join
+      end
+    end
+  end
+
   # Transforms AST into IR with semantic analysis.
   #
   # Responsibilities:
@@ -144,6 +439,7 @@ module Descent
 
     def build_case(kase, params = [])
       validate_char_syntax(kase.chars, kase.lineno) if kase.chars
+      validate_prepend_commands(kase.commands, params, kase.lineno)
       chars, special_class, param_ref = parse_chars(kase.chars, params:)
       commands = kase.commands.map { |c| build_command(c) }
 
@@ -238,60 +534,14 @@ module Descent
       IR::Command.new(type: cmd.type, args:)
     end
 
-    # Process character escapes in a string.
-    # Handles:
-    #   - Escape sequences: <P> -> |, <L> -> [, etc.
-    #   - Quoted strings: '|' -> |, 'abc' -> abc
-    #   - Backslash escapes: \n -> newline, \t -> tab
+    # Process character class/literal to get the actual bytes.
+    # Uses unified CharacterClass parser.
     def process_escapes(str)
-      return str if str.nil?
+      return '' if str.nil? || str.empty?
 
-      # First, handle quoted strings: 'content' or "content" -> content
-      if str.match?(/^'.*'$/) && str.length >= 2
-        str = parse_quoted_string(str[1...-1])
-      elsif str.match?(/^".*"$/) && str.length >= 2
-        str = str[1...-1] # Strip double quotes (no escape processing for now)
-      end
-
-      str.gsub('<L>', '[')
-         .gsub('<R>', ']')
-         .gsub('<LB>', '{')
-         .gsub('<RB>', '}')
-         .gsub('<LP>', '(')
-         .gsub('<RP>', ')')
-         .gsub('<P>', '|')
-         .gsub('<SQ>', "'")
-         .gsub('<DQ>', '"')
-         .gsub('<BS>', '\\')
-         .gsub('\\\\', '\\')  # \\ -> \ (escaped backslash)
-         .gsub('\\n', "\n")
-         .gsub('\\t', "\t")
+      result = CharacterClass.parse(str)
+      result[:bytes] || ''
     end
-
-    # Predefined character ranges (as class names in the DSL)
-    PREDEFINED_RANGES = {
-      '0-9' => '0123456789',
-      '0-7' => '01234567',
-      '0-1' => '01',
-      'a-z' => 'abcdefghijklmnopqrstuvwxyz',
-      'A-Z' => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
-      'a-f' => 'abcdef',
-      'A-F' => 'ABCDEF'
-    }.freeze
-
-    # DSL-reserved single-character class names
-    SINGLE_CHAR_CLASSES = {
-      'P'  => '|',
-      'L'  => '[',
-      'R'  => ']',
-      'LB' => '{',
-      'RB' => '}',
-      'LP' => '(',
-      'RP' => ')',
-      'SQ' => "'",
-      'DQ' => '"',
-      'BS' => '\\'
-    }.freeze
 
     # Characters that MUST be quoted or use predefined class names in c[...]
     # These cause lexer/parser issues if used bare
@@ -398,6 +648,29 @@ module Descent
       end
     end
 
+    # Validate PREPEND commands for common mistakes.
+    # Catches: PREPEND(param) where param is a known parameter name - should be PREPEND(:param)
+    def validate_prepend_commands(commands, params, lineno)
+      return if params.empty?
+
+      commands.each do |cmd|
+        next unless cmd.type == :prepend
+        next if cmd.value.nil?
+
+        literal = cmd.value.to_s.strip
+
+        # Check if the literal matches a param name (bare word without quotes)
+        # Valid literals: 'x', '|', '``', <P>, etc.
+        # Suspicious: prepend (bare word matching param name)
+        next unless literal.match?(/^[a-z_]\w*$/i) # Bare identifier
+        next unless params.include?(literal)
+
+        raise ValidationError, "Line #{lineno}: PREPEND(#{literal}) looks like a parameter reference. " \
+                               "Use PREPEND(:#{literal}) to reference the '#{literal}' parameter, " \
+                               "or PREPEND('#{literal}') for a literal string."
+      end
+    end
+
     # Parse character specification into literal chars, special class, and/or param reference.
     # Returns [chars_array, special_class_symbol, param_ref_string]
     #
@@ -417,125 +690,27 @@ module Descent
     #   "<0-9>"         -> [["0".."9"], nil, nil] (predefined range)
     #   "<LETTER 0-9 '_'>" -> [["_", "0".."9"], :letter, nil] (combined)
     #   "<:var>"        -> [nil, nil, "var"] (variable in class)
+    # Parse character specification for c[...] using unified CharacterClass parser.
+    # Returns [chars_array, special_class_symbol, param_ref_string]
     def parse_chars(chars_str, params: [])
       return [nil, nil, nil] if chars_str.nil?
 
-      # New syntax: <...> character class
-      return parse_class_syntax(chars_str[1...-1], params:) if chars_str.start_with?('<') && chars_str.end_with?('>')
+      # Use unified CharacterClass parser
+      result = CharacterClass.parse(chars_str)
 
-      # New syntax: '...' quoted character or string (decomposed to chars)
-      if chars_str.start_with?("'") && chars_str.end_with?("'") && chars_str.length >= 2
-        content = parse_quoted_string(chars_str[1...-1])
-        return [content.chars, nil, nil]
+      # Validate param_ref against known params
+      if result[:param_ref] && !params.include?(result[:param_ref])
+        # Unknown param - treat the whole thing as literal chars
+        chars = ":#{result[:param_ref]}".chars
+        return [chars, nil, nil]
       end
 
-      # Legacy: Check for parameter reference: starts with : followed by a valid param name
-      if chars_str.start_with?(':')
-        param_name = chars_str[1..]
-        return [nil, nil, param_name] if params.include?(param_name)
-        # Not a known param - fall through to treat as literal chars
-      end
-
-      # Legacy: Check for pure special named class (SCREAMING_CASE)
-      return [nil, chars_str.downcase.to_sym, nil] if chars_str.match?(/^[A-Z]+(?:_[A-Z]+)*$/)
-
-      # Legacy: Check for combined: CLASS followed by literal chars (e.g., LETTER'[.?!)
-      if (match = chars_str.match(/^([A-Z]+(?:_[A-Z]+)*)(.+)$/))
-        class_name    = match[1].downcase.to_sym
-        literal_chars = process_escapes(match[2]).chars
-        return [literal_chars, class_name, nil]
-      end
-
-      # Legacy: Parse literal characters with escapes (bare lowercase decomposed)
-      [process_escapes(chars_str).chars, nil, nil]
+      chars = result[:chars].empty? ? nil : result[:chars]
+      [chars, result[:special_class], result[:param_ref]]
     end
 
-    # Parse the contents of a <...> character class.
-    # Tokens are space-separated and can be:
-    #   - Bare lowercase: abc -> decomposed to ['a', 'b', 'c']
-    #   - Quoted string: 'abc' or 'x' -> decomposed to chars
-    #   - Predefined range: 0-9, a-z, etc. -> expanded
-    #   - Predefined class: LETTER, DIGIT, etc. -> special_class
-    #   - Single-char class: P, SQ, LB, etc. -> single char
-    #   - Variable ref: :var -> param_ref
-    def parse_class_syntax(content, params: [])
-      return [nil, nil, nil] if content.nil? || content.strip.empty?
-
-      chars         = []
-      special_class = nil
-      param_ref     = nil
-
-      tokenize_class_content(content).each do |token|
-        case token
-        when /^:(\w+)$/
-          # Variable reference
-          pname = ::Regexp.last_match(1)
-          if params.include?(pname)
-            param_ref = pname
-          else
-            # Unknown param, treat as literal colon + chars
-            chars.concat(token.chars)
-          end
-        when /^'(.*)'$/
-          # Quoted string/char - decompose
-          quoted = parse_quoted_string(::Regexp.last_match(1))
-          chars.concat(quoted.chars)
-        when /^[A-Z]+(?:_[A-Z]+)*$/
-          # Predefined class name (LETTER, DIGIT, LABEL_CONT, etc.)
-          if SINGLE_CHAR_CLASSES.key?(token)
-            chars << SINGLE_CHAR_CLASSES[token]
-          elsif special_class.nil?
-            special_class = token.downcase.to_sym
-          else
-            # Multiple special classes - combine by treating second as merged
-            # For now, just keep the first one and warn
-            # Future: could support multiple classes
-          end
-        when /^[0-9]-[0-9]$/, /^[a-z]-[a-z]$/, /^[A-Z]-[A-Z]$/
-          # Predefined range
-          if PREDEFINED_RANGES.key?(token)
-            chars.concat(PREDEFINED_RANGES[token].chars)
-          else
-            # Unknown range, treat as literal
-            chars.concat(token.chars)
-          end
-        when /^[a-z]+$/
-          # Bare lowercase - decompose to individual chars
-          chars.concat(token.chars)
-        else
-          # Unknown token - treat as literal chars with escape processing
-          chars.concat(process_escapes(token).chars)
-        end
-      end
-
-      [chars.empty? ? nil : chars.uniq, special_class, param_ref]
-    end
-
-    # Tokenize character class content, respecting quoted strings.
-    def tokenize_class_content(content)
-      tokens   = []
-      current  = +''
-      in_quote = false
-
-      content.each_char do |c|
-        if c == "'" && !in_quote
-          in_quote = true
-          current << c
-        elsif c == "'" && in_quote
-          current << c
-          in_quote = false
-        elsif c == ' ' && !in_quote
-          tokens << current unless current.empty?
-          current = +''
-        else
-          current << c
-        end
-      end
-      tokens << current unless current.empty?
-      tokens
-    end
-
-    # Parse escape sequences in a quoted string.
+    # Legacy: Parse escape sequences in a quoted string.
+    # Kept for backwards compatibility but CharacterClass.parse_quoted_string is preferred.
     def parse_quoted_string(str)
       return '' if str.nil? || str.empty?
 
@@ -812,13 +987,13 @@ module Descent
 
           # Check conditions for param == 'char' comparisons
           # e.g., |if[prepend == '|'] means prepend should be u8
+          # Note: param == 0 is NOT a byte comparison - it's a numeric flag check
           if kase.condition
             params.each do |param|
-              # Look for patterns like: param == 'x', param == 0, 'x' == param
+              # Look for patterns like: param == 'x', 'x' == param (character literal comparisons)
+              # Do NOT match param == 0 - that's a numeric comparison, not a byte sentinel
               next unless (kase.condition.match?(/\b#{Regexp.escape(param)}\s*[!=]=\s*'/) ||
-                 kase.condition.match?(/'\s*[!=]=\s*#{Regexp.escape(param)}\b/) ||
-                 kase.condition.match?(/\b#{Regexp.escape(param)}\s*[!=]=\s*0\b/) ||
-                 kase.condition.match?(/\b0\s*[!=]=\s*#{Regexp.escape(param)}\b/)) && types.key?(param)
+                 kase.condition.match?(/'\s*[!=]=\s*#{Regexp.escape(param)}\b/)) && types.key?(param)
 
               types[param] = :byte
             end
@@ -858,9 +1033,9 @@ module Descent
                 next unless target_param
 
                 # If arg looks like a bytes value, mark target param as :bytes
-                if bytes_like_value?(arg) && target.param_types[target_param] != :bytes
-                  target.param_types[target_param] = :bytes
-                end
+                # BUT only if it's currently :i32 (default). Don't override :byte
+                # which means it's used in |c[:x]| for single-byte comparison.
+                target.param_types[target_param] = :bytes if bytes_like_value?(arg) && target.param_types[target_param] == :i32
               end
             end
           end
@@ -884,15 +1059,23 @@ module Descent
                 args.zip(target.params).each do |arg, target_param|
                   next unless target_param
 
-                  # If arg is a param reference (:x) and target param is :bytes,
-                  # our param should also be :bytes
-                  if arg.match?(/^:(\w+)$/)
-                    our_param = arg[1..]
-                    target_type = target.param_types[target_param]
-                    if target_type == :bytes && func.param_types[our_param] != :bytes
-                      func.param_types[our_param] = :bytes
-                      changed = true
-                    end
+                  # If arg is a param reference (:x), propagate type from callee
+                  next unless arg.match?(/^:(\w+)$/)
+
+                  our_param = arg[1..]
+                  next unless func.param_types.key?(our_param)
+
+                  target_type = target.param_types[target_param]
+                  our_type = func.param_types[our_param]
+
+                  # Propagate :bytes from callee to caller
+                  if target_type == :bytes && our_type != :bytes
+                    func.param_types[our_param] = :bytes
+                    changed = true
+                  # Propagate :byte from callee to caller (only if we're still default :i32)
+                  elsif target_type == :byte && our_type == :i32
+                    func.param_types[our_param] = :byte
+                    changed = true
                   end
                 end
               end
@@ -904,17 +1087,17 @@ module Descent
       functions
     end
 
-    # Check if a value looks like a bytes literal
-    def bytes_like_value?(arg)
-      case arg
-      when '<>', '<P>', '<L>', '<R>', '<LB>', '<RB>', '<LP>', '<RP>', '<BS>', '<SQ>', '<DQ>'
-        true
-      when /^'.*'$/, /^".*"$/  # Quoted strings
-        true
-      else
-        false
-      end
-    end
+    # Check if a value looks like a bytes literal.
+    # These are DSL escape sequences and quoted strings that are clearly
+    # meant to be byte content, not numeric values.
+    # Note: Numeric values like 0 or -1 are NOT bytes-like - they're sentinels.
+    # PREPEND params get typed as :bytes from infer_param_types (PREPEND usage),
+    # not from call-site inference.
+    # Check if a value MUST be a byte slice (not a single byte).
+    # Only empty class <> definitively requires :bytes type.
+    # Single-char values like '<P>' or '|' could be either :byte or :bytes,
+    # so their type should be inferred from usage, not from call-site values.
+    def bytes_like_value?(arg) = arg == '<>'
 
     # Collect prepend values by tracing call sites to functions with PREPEND(:param).
     # Returns updated functions with prepend_values filled in.
@@ -1077,11 +1260,11 @@ module Descent
     end
 
     # Transform call arguments based on target function's parameter types.
-    # :bytes params get b"..." format, :byte params get b'.' format.
+    # Uses CharacterClass for unified parsing, then converts to appropriate Rust format.
     def transform_args_for_target(args_str, target_func)
       return args_str if args_str.nil? || target_func.params.empty?
 
-      args        = args_str.split(',').map(&:strip)
+      args        = tokenize_call_args(args_str)
       params      = target_func.params
       param_types = target_func.param_types
 
@@ -1089,72 +1272,61 @@ module Descent
         next arg unless param
 
         param_type = param_types[param]
-        case param_type
-        when :bytes then transform_arg_to_bytes(arg)
-        when :byte  then transform_arg_to_byte(arg)
+
+        # Handle numeric literals specially - they're numbers, not characters
+        if arg.match?(/^-?\d+$/)
+          case param_type
+          when :bytes then 'b""'      # Numeric sentinel → empty bytes
+          when :byte  then "#{arg}u8" # Numeric literal → u8
+          else arg                    # :i32 → pass through
+          end
         else
-          arg # :i32 or unknown, pass through
+          case param_type
+          when :bytes
+            result = CharacterClass.parse(arg)
+            CharacterClass.to_rust_bytes(result)
+          when :byte
+            result = CharacterClass.parse(arg)
+            CharacterClass.to_rust_byte(result)
+          else
+            arg # :i32 or unknown, pass through
+          end
         end
       end.join(', ')
     end
 
-    # Transform a DSL argument to Rust b"..." format for &'static [u8] params.
-    def transform_arg_to_bytes(arg)
-      case arg
-      when '<>'                   then 'b""'           # Empty
-      when '<P>'                  then 'b"|"'
-      when '<L>'                  then 'b"["'
-      when '<R>'                  then 'b"]"'
-      when '<LB>'                 then 'b"{"'
-      when '<RB>'                 then 'b"}"'
-      when '<LP>'                 then 'b"("'
-      when '<RP>'                 then 'b")"'
-      when '<BS>'                 then 'b"\\\\"'
-      when '<SQ>'                 then "b\"'\""
-      when '<DQ>'                 then 'b"\""'
-      when /^'((?:[^'\\]|\\.)*)'$/ # Quoted string/char
-        content = ::Regexp.last_match(1)
-        "b\"#{escape_for_rust_string(content)}\""
-      when /^"((?:[^"\\]|\\.)*)"$/ # Double-quoted
-        content = ::Regexp.last_match(1)
-        "b\"#{escape_for_rust_string(content)}\""
-      when /^:(\w+)$/             then ::Regexp.last_match(1) # Param ref
-      when /^-?\d+$/              then 'b""' # 0/-1 = empty (legacy sentinel values)
-      else
-        arg # Pass through unknown
-      end
-    end
+    # Tokenize call arguments respecting quotes (commas inside quotes don't split)
+    def tokenize_call_args(args_str)
+      args     = []
+      current  = +''
+      in_quote = false
+      in_angle = 0
 
-    # Transform a DSL argument to Rust b'.' format for u8 params.
-    def transform_arg_to_byte(arg)
-      case arg
-      when '<P>'                  then "b'|'"
-      when '<L>'                  then "b'['"
-      when '<R>'                  then "b']'"
-      when '<LB>'                 then "b'{'"
-      when '<RB>'                 then "b'}'"
-      when '<LP>'                 then "b'('"
-      when '<RP>'                 then "b')'"
-      when '<BS>'                 then "b'\\\\'"
-      when '<SQ>'                 then "b'\\''"
-      when '<DQ>'                 then 'b\'"\''
-      when /^'(.)'$/              then "b'#{::Regexp.last_match(1)}'"
-      when /^"(.)"$/              then "b'#{::Regexp.last_match(1)}'"
-      when /^:(\w+)$/             then ::Regexp.last_match(1) # Param ref
-      when /^\d+$/                then "#{arg}u8" # Numeric literal as u8
-      when /^.$/ then "b'#{arg}'" # Single char
-      else
-        arg # Pass through unknown
+      args_str.each_char do |c|
+        case c
+        when "'"
+          in_quote = !in_quote
+          current << c
+        when '<'
+          in_angle += 1
+          current << c
+        when '>'
+          in_angle -= 1 if in_angle > 0
+          current << c
+        when ','
+          if in_quote || in_angle > 0
+            current << c
+          else
+            args << current.strip
+            current = +''
+          end
+        else
+          current << c
+        end
       end
-    end
 
-    # Escape content for use in a Rust byte string literal.
-    def escape_for_rust_string(content)
-      content
-        .gsub('\\', '\\\\\\\\')  # Backslash
-        .gsub('"', '\\"')        # Quote
-        .gsub("\n", '\\n')       # Newline
-        .gsub("\t", '\\t')       # Tab
+      args << current.strip unless current.empty?
+      args
     end
 
     # Parse a call argument into a byte literal string for the template.

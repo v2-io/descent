@@ -12,20 +12,22 @@ Line-oriented streaming with `StreamingParser` wrapper:
 
 See "Multi-Chunk Streaming" section below for original design.
 
-### 2. Byte Literal Syntax Cleanup - **IMPLEMENTED** (0.5.0)
+### 2. Byte Literal Syntax Cleanup - **FULLY IMPLEMENTED** (0.6.6)
 
 See [characters.md](characters.md) for the complete specification.
 
 Summary: Three types (Character `'x'`, String `'hello'`, Class `<...>`) with
 clear coercion rules and predefined classes for common ranges and DSL-reserved chars.
 
-New syntax implemented in ir_builder.rb:
-- Quoted chars/strings: `'x'`, `'hello'` (decomposed to chars)
-- Character class: `<...>` with space-separated tokens
-- Predefined ranges: `0-9`, `0-7`, `0-1`, `a-z`, `A-Z`, `a-f`, `A-F`
-- Single-char classes: `P`, `L`, `R`, `LB`, `RB`, `LP`, `RP`, `SQ`, `DQ`, `BS`
+**Unified CharacterClass module** (0.6.6): All character class parsing now goes
+through a single `CharacterClass` module that implements the full spec:
+- Consistent parsing in all contexts: `c[...]`, function args, PREPEND
+- `<>` = empty class (empty bytes, no-op for PREPEND)
+- `<P>`, `<SQ>`, etc. = single-char classes for DSL-reserved chars
+- Quoted strings with escape sequences: `'\n'`, `'\x00'`, `'\u2042'`
+- Predefined ranges: `0-9`, `a-z`, `A-Z`, etc.
 - Combined classes: `<LETTER 0-9 '_'>`, `<WS>`, etc.
-- Template helpers: `is_ws()`, `is_nl()` added
+- Proper type inference and propagation for `:byte` and `:bytes` params
 
 ### 3. Unicode Identifiers - **IMPLEMENTED** (0.5.0)
 

@@ -5,6 +5,35 @@ All notable changes to descent will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.6] - 2025-01-01
+
+### Added
+- **Unified CharacterClass parser**: New `CharacterClass` module implements the
+  `characters.md` spec with consistent parsing everywhere (c[...], function args,
+  PREPEND). All character class syntax now goes through a single code path.
+- **PREPEND param validation**: `PREPEND(foo)` where `foo` is a known param now
+  raises a helpful error suggesting `PREPEND(:foo)` for param reference.
+
+### Fixed
+- **`<>` empty class consistency**: `<>` now correctly means "empty" everywhere:
+  - `PREPEND(<>)` → `b""` (no-op, empty prepend)
+  - `/func(<>)` for `:bytes` param → `b""` (empty byte slice)
+  - Previously `PREPEND(<>)` incorrectly output literal `<>` characters
+- **Type inference for numeric comparisons**: Conditions like `space_term == 0`
+  no longer incorrectly type the param as `:byte`. Numeric flag comparisons stay
+  as `:i32`; only character literal comparisons (e.g., `close == '|'`) set `:byte`.
+- **`:byte` type propagation**: When function A passes `:param` to function B
+  where B's param is `:byte`, A's param now correctly becomes `:byte`. Previously
+  only `:bytes` was propagated.
+- **Hex escapes in literals**: `'\x00'` and other hex escapes now work correctly
+  in PREPEND and function arguments, producing actual byte values.
+
+### Changed
+- Removed duplicate constant definitions (PREDEFINED_RANGES, SINGLE_CHAR_CLASSES)
+  in favor of unified CharacterClass module.
+- `bytes_like_value?` now only matches `<>` - single-char values like `'|'` are
+  typed based on usage, not call-site inference.
+
 ## [0.6.5] - 2024-12-31
 
 ### Fixed
