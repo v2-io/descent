@@ -147,6 +147,9 @@ module Descent
       # This prevents CONTENT functions from emitting twice (once for inline, once for auto)
       commands = mark_returns_after_inline_emits(commands)
 
+      # Filter out unreachable commands after /error (which generates return)
+      commands = filter_unreachable_after_error(commands)
+
       IR::Case.new(
         chars:,
         special_class:,
@@ -156,6 +159,20 @@ module Descent
         commands:,
         lineno:        kase.lineno
       )
+    end
+
+    # Filter out commands that appear after /error (which generates return).
+    # These are unreachable and cause compiler warnings.
+    # Example: | /error(NoTabs) | ->[\n] |>> :line
+    # After /error emits error + return, the ->[\n] and transition are dead code.
+    def filter_unreachable_after_error(commands)
+      result = []
+      commands.each do |cmd|
+        result << cmd
+        # /error generates a return, so subsequent commands are unreachable
+        break if cmd.type == :call && cmd.args[:is_error]
+      end
+      result
     end
 
     # Mark return commands that follow inline emits to suppress auto-emit.

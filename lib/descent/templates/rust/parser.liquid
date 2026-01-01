@@ -97,7 +97,7 @@ pub struct Parser<'a> {
     column: u32,
 }
 
-#[allow(unused_variables)]
+#[allow(unused_variables, dead_code)]
 impl<'a> Parser<'a> {
     /// Create a new parser for the given input.
     pub fn new(input: &'a [u8]) -> Self {
