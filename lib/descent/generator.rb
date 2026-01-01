@@ -31,6 +31,7 @@ module Descent
 
     # Transform DSL expressions to Rust.
     # - COL -> self.col()
+    # - LINE -> self.line as i32
     # - PREV -> self.prev()
     # - /function(args) -> self.parse_function(args, on_event)
     # - /function -> self.parse_function(on_event)
@@ -46,6 +47,7 @@ module Descent
 
       result
         .gsub(/\bCOL\b/, 'self.col()')
+        .gsub(/\bLINE\b/, 'self.line as i32')
         .gsub(/\bPREV\b/, 'self.prev()')
         .gsub(%r{/(\w+)\(([^)]*)\)}) do
           func = ::Regexp.last_match(1)
@@ -142,16 +144,33 @@ module Descent
 
     private
 
+    # Unicode character classes that require the unicode-ident crate
+    UNICODE_CLASSES = %w[xid_start xid_cont xlbl_start xlbl_cont].freeze
+
     def build_context
+      functions_data = @ir.functions.map { |f| function_to_hash(f) }
       {
         'parser'             => @ir.name,
         'entry_point'        => @ir.entry_point,
         'types'              => @ir.types.map { |t| type_to_hash(t) },
-        'functions'          => @ir.functions.map { |f| function_to_hash(f) },
+        'functions'          => functions_data,
         'keywords'           => @ir.keywords.map { |k| keywords_to_hash(k) },
         'custom_error_codes' => @ir.custom_error_codes,
-        'trace'              => @trace
+        'trace'              => @trace,
+        'uses_unicode'       => uses_unicode_classes?(functions_data)
       }
+    end
+
+    # Check if any function uses Unicode character classes
+    def uses_unicode_classes?(functions_data)
+      functions_data.any? do |func|
+        func['states'].any? do |state|
+          state['cases'].any? do |kase|
+            special_class = kase['special_class']
+            special_class && UNICODE_CLASSES.include?(special_class)
+          end
+        end
+      end
     end
 
     def keywords_to_hash(kw)

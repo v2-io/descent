@@ -27,10 +27,16 @@ New syntax implemented in ir_builder.rb:
 - Combined classes: `<LETTER 0-9 '_'>`, `<WS>`, etc.
 - Template helpers: `is_ws()`, `is_nl()` added
 
-### 3. Unicode Identifiers
+### 3. Unicode Identifiers - **IMPLEMENTED** (0.5.0)
 
-Use `unicode-ident` crate for XID_Start/XID_Continue. See section below for
-decided approach with XID_START, XID_CONT, XLBL_START, XLBL_CONT classes.
+Unicode character classes now supported:
+- `XID_START` - Unicode identifier start (uses `unicode-ident::is_xid_start`)
+- `XID_CONT` - Unicode identifier continue (uses `unicode-ident::is_xid_continue`)
+- `XLBL_START` - Same as XID_START (for label syntax)
+- `XLBL_CONT` - XID_CONT + hyphen (for kebab-case labels)
+
+These are conditionally included only when used (requires `unicode-ident` crate).
+For ASCII, uses the crate directly. For non-ASCII, accepts valid UTF-8 lead bytes.
 
 ### 4. Character Ranges - **PARTIALLY IMPLEMENTED** (0.5.0)
 
@@ -61,9 +67,10 @@ without a coherent grammar. This creates confusion and potential bugs.~~
 | Quoted char | `'!'` | Works in call args |
 | Double quoted | `"!"` | Works in call args |
 | Bare punctuation | `!` | Now auto-converts in call args (0.2.8) |
-| Magic zero | `0` | Means "no value" for PREPEND |
-| In PREPEND | `PREPEND(!)` | Works (inside parens) |
-| In PREPEND | `PREPEND(|)` | BROKEN - pipe terminates command |
+| Empty class | `<>` | Empty byte slice for PREPEND params |
+| In PREPEND | `PREPEND('!')` | Works - single byte |
+| In PREPEND | `PREPEND('**')` | Works - multi-byte (0.6.0) |
+| In PREPEND | `PREPEND(:param)` | Works - param is `&'static [u8]` (0.6.0) |
 
 **Risks:**
 - `/func(x)` could mean variable `x` or byte literal `b'x'` depending on context
@@ -569,12 +576,11 @@ pub enum ParseErrorCode {
 ### Not Yet Implemented
 - Character ranges: See Priority Queue #4
 - Unicode identifiers: See Priority Queue #3
-- LINE variable: Current line number (1-indexed), like COL
-  - Parser already tracks `self.line` internally
-  - Just needs `LINE -> self.line as i32` in `rust_expr` filter (like COL/PREV)
 - C template
 
 ### Recently Implemented
+- [x] LINE variable: Current line number (1-indexed), like COL (0.6.1)
+  - Transforms `LINE` → `self.line as i32` in `rust_expr` filter
 - [x] Character classes: `DIGIT`, `HEX_DIGIT` added (using Rust's is_ascii_digit/is_ascii_hexdigit)
 - [x] |eof directive: Generates specified action code at EOF
 - [x] Inline emit + return: No longer double-emits for CONTENT types
@@ -582,7 +588,7 @@ pub enum ParseErrorCode {
 - [x] Built-in /error: `/error`, `/error(CustomError)`
 - [x] Combined char classes: `|c[LETTER'[.?!*+]` - match class OR literal chars
 - [x] TERM adjustments: `TERM(-1)` - terminate slice before current position
-- [x] PREPEND: `PREPEND(|)` - emit literal as text event
+- [x] PREPEND: `PREPEND('|')` - prepend literal to accumulation buffer (0.6.0 fixed semantics)
 - [x] Inline literals: `TypeName`, `TypeName(literal)`, `TypeName(USE_MARK)`
 - [x] PREV variable: Previous byte for context-sensitive parsing
 - [x] Test harness: End-to-end Rust compilation and testing (12 tests)

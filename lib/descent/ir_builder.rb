@@ -23,6 +23,9 @@ module Descent
       # Collect prepend values by tracing call sites
       functions = collect_prepend_values(functions)
 
+      # Transform call arguments based on target parameter types
+      functions = transform_call_args_by_type(functions)
+
       IR::Parser.new(
         name:               @ast.name,
         entry_point:        @ast.entry_point,
@@ -672,24 +675,27 @@ module Descent
     end
 
     # Infer parameter types from usage in states.
-    # Params used in |c[:x]| or PREPEND(:x) are bytes (u8), others default to i32.
+    # - Params used in |c[:x]| are bytes (u8) for single-byte comparison
+    # - Params used in PREPEND(:x) are byte slices (&'static [u8]) for prepending
+    # - Others default to i32
     def infer_param_types(params, states)
       return {} if params.empty?
 
       # Start with all params as i32 (default)
       types = params.to_h { |p| [p, :i32] }
 
-      # Find params used in character matches or PREPEND (these become u8)
+      # Find params used in character matches (these become u8)
+      # and params used in PREPEND (these become bytes slice)
       states.each do |state|
         state.cases.each do |kase|
-          # Check param_ref in character matches
+          # Check param_ref in character matches - needs u8 for comparison
           types[kase.param_ref] = :byte if kase.param_ref && types.key?(kase.param_ref)
 
-          # Check param_ref in PREPEND commands
+          # Check param_ref in PREPEND commands - needs &'static [u8] for prepending
           kase.commands.each do |cmd|
             if cmd.type == :prepend_param && cmd.args[:param_ref]
               param = cmd.args[:param_ref]
-              types[param] = :byte if types.key?(param)
+              types[param] = :bytes if types.key?(param)
             end
           end
         end
@@ -778,6 +784,164 @@ module Descent
           end
         end
       end
+    end
+
+    # Transform call arguments based on target function parameter types.
+    # For :bytes params, generates b"..." format; for :byte params, b'.' format.
+    def transform_call_args_by_type(functions)
+      func_by_name = functions.to_h { |f| [f.name, f] }
+
+      functions.map do |func|
+        new_states = func.states.map do |state|
+          new_cases = state.cases.map do |kase|
+            new_commands = transform_commands_args(kase.commands, func_by_name)
+            IR::Case.new(
+              chars: kase.chars,
+              special_class: kase.special_class,
+              param_ref: kase.param_ref,
+              condition: kase.condition,
+              substate: kase.substate,
+              commands: new_commands,
+              lineno: kase.lineno
+            )
+          end
+
+          new_eof = transform_commands_args(state.eof_handler || [], func_by_name)
+
+          IR::State.new(
+            name: state.name,
+            cases: new_cases,
+            eof_handler: new_eof.empty? ? nil : new_eof,
+            scan_chars: state.scan_chars,
+            is_self_looping: state.is_self_looping,
+            has_default: state.has_default,
+            is_unconditional: state.is_unconditional,
+            lineno: state.lineno
+          )
+        end
+
+        IR::Function.new(
+          name: func.name,
+          return_type: func.return_type,
+          params: func.params,
+          param_types: func.param_types,
+          locals: func.locals,
+          states: new_states,
+          eof_handler: func.eof_handler,
+          emits_events: func.emits_events,
+          expects_char: func.expects_char,
+          emits_content_on_close: func.emits_content_on_close,
+          prepend_values: func.prepend_values,
+          lineno: func.lineno
+        )
+      end
+    end
+
+    def transform_commands_args(commands, func_by_name)
+      commands.map do |cmd|
+        if cmd.type == :call && cmd.args[:call_args]
+          target_func = func_by_name[cmd.args[:name]]
+          if target_func
+            transformed_args = transform_args_for_target(cmd.args[:call_args], target_func)
+            IR::Command.new(type: cmd.type, args: cmd.args.merge(call_args: transformed_args))
+          else
+            cmd
+          end
+        elsif cmd.type == :conditional
+          new_clauses = cmd.args[:clauses]&.map do |clause|
+            nested = (clause['commands'] || []).map do |c|
+              c.is_a?(Hash) ? IR::Command.new(type: c['type'].to_sym, args: c['args'].transform_keys(&:to_sym)) : c
+            end
+            { 'condition' => clause['condition'], 'commands' => transform_commands_args(nested, func_by_name) }
+          end
+          IR::Command.new(type: cmd.type, args: { clauses: new_clauses })
+        else
+          cmd
+        end
+      end
+    end
+
+    # Transform call arguments based on target function's parameter types.
+    # :bytes params get b"..." format, :byte params get b'.' format.
+    def transform_args_for_target(args_str, target_func)
+      return args_str if args_str.nil? || target_func.params.empty?
+
+      args = args_str.split(',').map(&:strip)
+      params = target_func.params
+      param_types = target_func.param_types
+
+      args.zip(params).map do |arg, param|
+        next arg unless param
+
+        param_type = param_types[param]
+        case param_type
+        when :bytes
+          transform_arg_to_bytes(arg)
+        when :byte
+          transform_arg_to_byte(arg)
+        else
+          arg # :i32 or unknown, pass through
+        end
+      end.join(', ')
+    end
+
+    # Transform a DSL argument to Rust b"..." format for &'static [u8] params.
+    def transform_arg_to_bytes(arg)
+      case arg
+      when '<>'                   then 'b""'           # Empty
+      when '<P>'                  then 'b"|"'
+      when '<L>'                  then 'b"["'
+      when '<R>'                  then 'b"]"'
+      when '<LB>'                 then 'b"{"'
+      when '<RB>'                 then 'b"}"'
+      when '<LP>'                 then 'b"("'
+      when '<RP>'                 then 'b")"'
+      when '<BS>'                 then 'b"\\\\"'
+      when '<SQ>'                 then "b\"'\""
+      when '<DQ>'                 then 'b"\""'
+      when /^'((?:[^'\\]|\\.)*)'$/ # Quoted string/char
+        content = ::Regexp.last_match(1)
+        "b\"#{escape_for_rust_string(content)}\""
+      when /^"((?:[^"\\]|\\.)*)"$/ # Double-quoted
+        content = ::Regexp.last_match(1)
+        "b\"#{escape_for_rust_string(content)}\""
+      when /^:(\w+)$/             then ::Regexp.last_match(1) # Param ref
+      when /^\d+$/                then 'b""' # 0 = empty (legacy)
+      else
+        arg # Pass through unknown
+      end
+    end
+
+    # Transform a DSL argument to Rust b'.' format for u8 params.
+    def transform_arg_to_byte(arg)
+      case arg
+      when '<P>'                  then "b'|'"
+      when '<L>'                  then "b'['"
+      when '<R>'                  then "b']'"
+      when '<LB>'                 then "b'{'"
+      when '<RB>'                 then "b'}'"
+      when '<LP>'                 then "b'('"
+      when '<RP>'                 then "b')'"
+      when '<BS>'                 then "b'\\\\'"
+      when '<SQ>'                 then "b'\\''"
+      when '<DQ>'                 then 'b\'"\''
+      when /^'(.)'$/              then "b'#{::Regexp.last_match(1)}'"
+      when /^"(.)"$/              then "b'#{::Regexp.last_match(1)}'"
+      when /^:(\w+)$/             then ::Regexp.last_match(1) # Param ref
+      when /^\d+$/                then arg # Numeric literal
+      when /^.$/ then "b'#{arg}'" # Single char
+      else
+        arg # Pass through unknown
+      end
+    end
+
+    # Escape content for use in a Rust byte string literal.
+    def escape_for_rust_string(content)
+      content
+        .gsub('\\', '\\\\\\\\')  # Backslash
+        .gsub('"', '\\"')        # Quote
+        .gsub("\n", '\\n')       # Newline
+        .gsub("\t", '\\t')       # Tab
     end
 
     # Parse a call argument into a byte literal string for the template.

@@ -46,95 +46,15 @@
                     self.set_term({{ term_offset }});
 
 {% when "prepend" %}
-{% comment %} Emit literal as text (prepends to logical content stream) {% endcomment %}
-                    on_event(Event::Text { content: b"{{ cmd.args.literal }}", span: self.span() });
+{% comment %} Prepend literal bytes to the accumulation buffer. Empty literals are
+              filtered as :noop at parse time, so we always have content here. {% endcomment %}
+                    self.prepend_bytes(b"{{ cmd.args.literal }}");
 
 {% when "prepend_param" %}
-{% comment %} Emit parameter value as text (no-op if param is 0). Uses static slices traced from call sites. {% endcomment %}
+{% comment %} Prepend parameter bytes to accumulation buffer. Parameter is &'static [u8],
+              so empty slice is naturally a no-op, NUL bytes work fine. {% endcomment %}
 {% assign param_name = cmd.args.param_ref %}
-{% assign traced_values = func.prepend_values[param_name] %}
-                    if {{ param_name }} != 0 {
-{% if traced_values and traced_values.size > 0 %}
-                        let content: &'static [u8] = match {{ param_name }} {
-{% for val in traced_values %}
-{% if val == '|' %}
-                            b'|' => b"|",
-{% elsif val == '!' %}
-                            b'!' => b"!",
-{% elsif val == ';' %}
-                            b';' => b";",
-{% elsif val == ':' %}
-                            b':' => b":",
-{% elsif val == '#' %}
-                            b'#' => b"#",
-{% elsif val == '*' %}
-                            b'*' => b"*",
-{% elsif val == '-' %}
-                            b'-' => b"-",
-{% elsif val == '_' %}
-                            b'_' => b"_",
-{% elsif val == '[' %}
-                            b'[' => b"[",
-{% elsif val == ']' %}
-                            b']' => b"]",
-{% elsif val == '{' %}
-                            b'{' => b"{",
-{% elsif val == '}' %}
-                            b'}' => b"}",
-{% elsif val == '(' %}
-                            b'(' => b"(",
-{% elsif val == ')' %}
-                            b')' => b")",
-{% elsif val == '<' %}
-                            b'<' => b"<",
-{% elsif val == '>' %}
-                            b'>' => b">",
-{% elsif val == '/' %}
-                            b'/' => b"/",
-{% elsif val == '\\' %}
-                            b'\\' => b"\\",
-{% elsif val == "'" %}
-                            b'\'' => b"'",
-{% elsif val == '"' %}
-                            b'"' => b"\"",
-{% elsif val == '`' %}
-                            b'`' => b"`",
-{% elsif val == '~' %}
-                            b'~' => b"~",
-{% elsif val == '@' %}
-                            b'@' => b"@",
-{% elsif val == '$' %}
-                            b'$' => b"$",
-{% elsif val == '%' %}
-                            b'%' => b"%",
-{% elsif val == '^' %}
-                            b'^' => b"^",
-{% elsif val == '&' %}
-                            b'&' => b"&",
-{% elsif val == '+' %}
-                            b'+' => b"+",
-{% elsif val == '=' %}
-                            b'=' => b"=",
-{% elsif val == '?' %}
-                            b'?' => b"?",
-{% elsif val == ',' %}
-                            b',' => b",",
-{% elsif val == '.' %}
-                            b'.' => b".",
-{% elsif val == ' ' %}
-                            b' ' => b" ",
-{% else %}
-                            b'{{ val }}' => b"{{ val }}",
-{% endif %}
-{% endfor %}
-                            _ => unreachable!("PREPEND(:{{ param_name }}) received unexpected byte value"),
-                        };
-                        on_event(Event::Text { content, span: self.span() });
-{% else %}
-                        // WARNING: No call sites found for PREPEND(:{{ param_name }}) - cannot determine valid values
-                        unreachable!("PREPEND(:{{ param_name }}) has no traced call sites");
-{% endif %}
-                    }
+                    self.prepend_bytes({{ param_name }});
 
 {% when "return" %}
 {% comment %} Emit appropriate event based on return type, then return {% endcomment %}
@@ -146,9 +66,9 @@
 {% if cmd.args.emit_mode == "mark" %}
                     on_event(Event::{{ cmd.args.emit_type }} { content: self.term(), span: self.span_from_mark() });
 {% elsif cmd.args.emit_mode == "literal" %}
-                    on_event(Event::{{ cmd.args.emit_type }} { content: b"{{ cmd.args.literal }}", span: self.span() });
+                    on_event(Event::{{ cmd.args.emit_type }} { content: std::borrow::Cow::Borrowed(b"{{ cmd.args.literal }}"), span: self.span() });
 {% else %}
-                    on_event(Event::{{ cmd.args.emit_type }} { content: b"", span: self.span() });
+                    on_event(Event::{{ cmd.args.emit_type }} { content: std::borrow::Cow::Borrowed(b""), span: self.span() });
 {% endif %}
                     return;
 {% elsif return_type_info.kind == "internal" %}
@@ -214,7 +134,7 @@
 
 {% when "inline_emit_bare" %}
 {% comment %} Inline emit with no payload: TypeName - CONTENT types still need content field {% endcomment %}
-                    on_event(Event::{{ cmd.args.type }} { content: b"", span: self.span() });
+                    on_event(Event::{{ cmd.args.type }} { content: std::borrow::Cow::Borrowed(b""), span: self.span() });
 
 {% when "inline_emit_mark" %}
 {% comment %} Inline emit using accumulated content: TypeName(USE_MARK) {% endcomment %}
@@ -223,7 +143,7 @@
 {% when "inline_emit_literal" %}
 {% comment %} Inline emit with literal: TypeName(literal) - strip $ sigil if present {% endcomment %}
 {% assign literal = cmd.args.literal | remove_first: '$' %}
-                    on_event(Event::{{ cmd.args.type }} { content: b"{{ literal }}", span: self.span() });
+                    on_event(Event::{{ cmd.args.type }} { content: std::borrow::Cow::Borrowed(b"{{ literal }}"), span: self.span() });
 
 {% when "error" %}
 {% assign error_code = cmd.args.value | pascalcase %}

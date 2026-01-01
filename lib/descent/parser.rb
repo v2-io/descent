@@ -13,7 +13,10 @@ module Descent
     CASE_KEYWORDS = %w[c default eof if].freeze
 
     # Character class names (lowercase words that start cases, not commands)
-    CHAR_CLASSES = %w[letter label_cont digit hex_digit].freeze
+    # ASCII classes: letter, digit, etc.
+    # Unicode classes: xid_start, xid_cont, xlbl_start, xlbl_cont
+    # Whitespace: ws, nl
+    CHAR_CLASSES = %w[letter label_cont digit hex_digit ws nl xid_start xid_cont xlbl_start xlbl_cont].freeze
 
     # All tokens that can start a new case (used to know when to stop parsing current case)
     CASE_STARTERS = (STRUCTURAL + CASE_KEYWORDS + CHAR_CLASSES).freeze

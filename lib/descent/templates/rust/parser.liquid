@@ -18,7 +18,7 @@ pub enum Event<'a> {
     {{ type.name }}Start { span: Range<usize> },
     {{ type.name }}End { span: Range<usize> },
 {% elsif type.kind == "content" %}
-    {{ type.name }} { content: &'a [u8], span: Range<usize> },
+    {{ type.name }} { content: std::borrow::Cow<'a, [u8]>, span: Range<usize> },
 {% endif %}
 {% endfor %}
     Error { code: ParseErrorCode, span: Range<usize> },
@@ -38,7 +38,7 @@ impl<'a> Event<'a> {
             }
 {% elsif type.kind == "content" %}
             Event::{{ type.name }} { content, span } => {
-                let s = std::str::from_utf8(content).unwrap_or("<invalid utf8>");
+                let s = std::str::from_utf8(content.as_ref()).unwrap_or("<invalid utf8>");
                 format!("{{ type.name }} {:?} @ {}..{}", s, span.start, span.end)
             }
 {% endif %}
@@ -93,6 +93,7 @@ pub struct Parser<'a> {
     pos: usize,
     mark_pos: usize,
     term_pos: usize,
+    prepend_buf: Vec<u8>,
     line: u32,
     column: u32,
 }
@@ -106,6 +107,7 @@ impl<'a> Parser<'a> {
             pos: 0,
             mark_pos: 0,
             term_pos: 0,
+            prepend_buf: Vec::new(),
             line: 1,
             column: 1,
         }
@@ -144,16 +146,23 @@ impl<'a> Parser<'a> {
     }
 
     /// Format accumulated content for trace display (truncated).
+    /// Shows slice content only (prepend buffer shown separately if non-empty).
     fn trace_content(&self) -> String {
-        let content = self.term();
-        if content.is_empty() {
+        let end = if self.term_pos > self.mark_pos { self.term_pos } else { self.pos };
+        let slice = &self.input[self.mark_pos..end];
+        let prepend_info = if self.prepend_buf.is_empty() {
+            String::new()
+        } else {
+            format!("+{}", self.prepend_buf.len())
+        };
+        if slice.is_empty() && self.prepend_buf.is_empty() {
             return "[]".to_string();
         }
-        let s = std::str::from_utf8(content).unwrap_or("<binary>");
+        let s = std::str::from_utf8(slice).unwrap_or("<binary>");
         if s.len() > 32 {
-            format!("[{:?}...]", &s[..32])
+            format!("[{:?}...]{}", &s[..32], prepend_info)
         } else {
-            format!("[{:?}]", s)
+            format!("[{:?}]{}", s, prepend_info)
         }
     }
 {% endif %}
@@ -180,6 +189,8 @@ impl<'a> Parser<'a> {
     fn mark(&mut self) {
         self.mark_pos = self.pos;
         self.term_pos = self.pos; // Reset term position
+        // Note: prepend_buf is NOT cleared here - it persists until term() consumes it.
+        // This allows PREPEND to be called before a nested function that does MARK.
     }
 
     /// Set termination point with optional offset (e.g., -1 for one char before current)
@@ -190,11 +201,28 @@ impl<'a> Parser<'a> {
         self.term_pos = new_pos.clamp(0, self.input.len() as i64) as usize;
     }
 
+    /// Prepend bytes to the accumulation buffer.
+    /// Empty slice is naturally a no-op.
     #[inline(always)]
-    fn term(&self) -> &'a [u8] {
+    fn prepend_bytes(&mut self, bytes: &[u8]) {
+        self.prepend_buf.extend_from_slice(bytes);
+    }
+
+    /// Get accumulated content from MARK to TERM, including any prepended bytes.
+    /// Returns Cow::Borrowed when no prepend (zero-copy), Cow::Owned when prepend used.
+    #[inline(always)]
+    fn term(&mut self) -> std::borrow::Cow<'a, [u8]> {
         // Use term_pos if set after mark, otherwise use current pos
         let end = if self.term_pos > self.mark_pos { self.term_pos } else { self.pos };
-        &self.input[self.mark_pos..end]
+        let slice = &self.input[self.mark_pos..end];
+
+        if self.prepend_buf.is_empty() {
+            std::borrow::Cow::Borrowed(slice)
+        } else {
+            let mut combined = std::mem::take(&mut self.prepend_buf);
+            combined.extend_from_slice(slice);
+            std::borrow::Cow::Owned(combined)
+        }
     }
 
     #[inline(always)]
@@ -253,6 +281,51 @@ impl<'a> Parser<'a> {
     fn is_nl(b: u8) -> bool {
         b == b'\n'
     }
+
+{% if uses_unicode %}
+    // ========== Unicode Identifier Classes ==========
+    // Requires `unicode-ident` crate for full Unicode support.
+    // These is_* methods work with the byte-at-a-time matching pattern.
+    // For ASCII bytes, they use unicode-ident. For non-ASCII, the check
+    // is done at the byte level (first byte of UTF-8 sequence).
+
+    /// XID_Start: Can start a Unicode identifier.
+    /// For ASCII, uses unicode-ident. For non-ASCII first bytes, returns true
+    /// (conservative - actual validation happens via match_xid_start for multi-byte).
+    #[inline(always)]
+    fn is_xid_start(b: u8) -> bool {
+        if b < 0x80 {
+            unicode_ident::is_xid_start(b as char)
+        } else {
+            // Non-ASCII: could be start of valid UTF-8 XID_Start sequence
+            // Return true for lead bytes (0xC2-0xF4), let advance handle it
+            b >= 0xC2 && b <= 0xF4
+        }
+    }
+
+    /// XID_Continue: Can continue a Unicode identifier.
+    #[inline(always)]
+    fn is_xid_cont(b: u8) -> bool {
+        if b < 0x80 {
+            unicode_ident::is_xid_continue(b as char)
+        } else {
+            // Non-ASCII: could be valid UTF-8 continuation or lead byte
+            b >= 0x80
+        }
+    }
+
+    /// XLBL_Start: Same as XID_Start (for label syntax).
+    #[inline(always)]
+    fn is_xlbl_start(b: u8) -> bool {
+        Self::is_xid_start(b)
+    }
+
+    /// XLBL_Continue: XID_Continue + hyphen (for kebab-case labels).
+    #[inline(always)]
+    fn is_xlbl_cont(b: u8) -> bool {
+        b == b'-' || Self::is_xid_cont(b)
+    }
+{% endif %}
 
     // ========== SCAN Methods (SIMD-accelerated via memchr) ==========
 
@@ -435,7 +508,7 @@ impl<'a> Parser<'a> {
         F: FnMut(Event<'a>),
     {
         let content = self.term();
-        if let Some(&id) = {{ kw.const_name }}.get(content) {
+        if let Some(&id) = {{ kw.const_name }}.get(content.as_ref()) {
             let span = self.span_from_mark();
             match id {
 {% for m in kw.mappings %}
@@ -482,7 +555,7 @@ impl<'a> Parser<'a> {
 
     /// Parse {{ func.name }}{% if func.return_type %} -> {{ func.return_type }}{% endif %}
     {% if func.params.size > 0 %}
-    fn parse_{{ func.name }}<F>(&mut self, {% for param in func.params %}{{ param }}: {% if func.param_types[param] == "byte" %}u8{% else %}i32{% endif %}, {% endfor %}on_event: &mut F){% if return_type_info.kind == "internal" %} -> i32{% endif %}
+    fn parse_{{ func.name }}<F>(&mut self, {% for param in func.params %}{{ param }}: {% if func.param_types[param] == "byte" %}u8{% elsif func.param_types[param] == "bytes" %}&'static [u8]{% else %}i32{% endif %}, {% endfor %}on_event: &mut F){% if return_type_info.kind == "internal" %} -> i32{% endif %}
     {% else %}
     fn parse_{{ func.name }}<F>(&mut self, on_event: &mut F){% if return_type_info.kind == "internal" %} -> i32{% endif %}
     {% endif %}
@@ -835,7 +908,7 @@ impl StreamEvent {
 {% elsif type.kind == "content" %}
             Event::{{ type.name }} { content, span } => {
                 StreamEvent::{{ type.name }} {
-                    content: content.to_vec(),
+                    content: content.into_owned(),
                     span: (span.start + offset)..(span.end + offset),
                 }
             }

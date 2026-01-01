@@ -2,6 +2,7 @@
 /.bundle/
 /vendor/bundle/
 Gemfile.lock
+.obsidian/
 
 # Gem build artifacts
 *.gem

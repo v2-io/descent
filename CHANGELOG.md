@@ -5,6 +5,26 @@ All notable changes to descent will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2024-12-31
+
+### Changed
+- **PREPEND semantics fixed**: PREPEND now correctly adds bytes to the accumulation
+  buffer instead of emitting a separate Text event. The prepended content is combined
+  with the next `term()` result using `Cow<[u8]>` for zero-copy in the common case.
+- **Event content type**: Content fields in events are now `Cow<'a, [u8]>` instead of
+  `&'a [u8]`. This enables zero-copy when no PREPEND is used, with owned data only
+  when prepending is needed.
+
+### Added
+- **Unicode identifier classes**: `XID_START`, `XID_CONT`, `XLBL_START`, `XLBL_CONT`
+  for Unicode-aware identifier parsing (requires `unicode-ident` crate)
+- **Conditional unicode-ident import**: The crate is only required when Unicode
+  classes are actually used in the parser
+
+### Fixed
+- **PREPEND buffer persistence**: The prepend buffer now persists across nested
+  function calls, allowing `PREPEND(*) | /paragraph` patterns to work correctly
+
 ## [0.2.1] - 2024-12-30
 
 ### Added

@@ -242,11 +242,12 @@ class MarkdownTest < Minitest::Test
     assert_match(/self\.prev\(\) == 0/, rust_code)
   end
 
-  def test_generated_rust_emits_literal_stars
+  def test_generated_rust_prepends_literal_stars
     rust_code = Descent.generate(MARKDOWN_DESC, target: :rust)
 
-    assert_match(/Event::Text \{ content: b"\*"/, rust_code)
-    assert_match(/Event::Text \{ content: b"\*\*"/, rust_code)
+    # PREPEND always uses prepend_bytes() for consistency
+    assert_match(/self\.prepend_bytes\(b"\*"\)/, rust_code)
+    assert_match(/self\.prepend_bytes\(b"\*\*"\)/, rust_code)
   end
 
   def test_generated_rust_has_recursive_emphasis

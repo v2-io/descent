@@ -1,4 +1,4 @@
-# descent
+# `descent` Recursive Descent Parser Generator
 
 A recursive descent parser generator that produces high-performance callback-based
 parsers from declarative `.desc` specifications.
@@ -171,46 +171,55 @@ The DSL supports three literal types. See [characters.md](characters.md) for com
 
 **Predefined ranges:**
 
-| Name | Characters |
-|------|------------|
-| `0-9` | Decimal digits |
-| `0-7` | Octal digits |
-| `0-1` | Binary digits |
-| `a-z` | Lowercase ASCII |
-| `A-Z` | Uppercase ASCII |
-| `a-f` / `A-F` | Hex letters |
+| Name          | Characters      |
+| ------------- | --------------- |
+| `0-9`         | Decimal digits  |
+| `0-7`         | Octal digits    |
+| `0-1`         | Binary digits   |
+| `a-z`         | Lowercase ASCII |
+| `A-Z`         | Uppercase ASCII |
+| `a-f` / `A-F` | Hex letters     |
 
 **Predefined classes:**
 
-| Name | Description |
-|------|-------------|
-| `LETTER` | `a-z` + `A-Z` |
-| `DIGIT` | `0-9` |
-| `HEX_DIGIT` | `0-9` + `a-f` + `A-F` |
+| Name         | Description                    |
+| ------------ | ------------------------------ |
+| `LETTER`     | `a-z` + `A-Z`                  |
+| `DIGIT`      | `0-9`                          |
+| `HEX_DIGIT`  | `0-9` + `a-f` + `A-F`          |
 | `LABEL_CONT` | `LETTER` + `DIGIT` + `_` + `-` |
-| `WS` | Space + tab |
-| `NL` | Newline |
+| `WS`         | Space + tab                    |
+| `NL`         | Newline                        |
+
+**Unicode classes** (requires `unicode-ident` crate):
+
+| Name         | Description                   |
+| ------------ | ----------------------------- |
+| `XID_START`  | Unicode identifier start      |
+| `XID_CONT`   | Unicode identifier continue   |
+| `XLBL_START` | = `XID_START` (label start)   |
+| `XLBL_CONT`  | `XID_CONT` + `-` (kebab-case) |
 
 **DSL-reserved single-char classes:**
 
 | Name | Char | Name | Char |
-|------|------|------|------|
-| `P` | `\|` | `SQ` | `'` |
-| `L` | `[` | `DQ` | `"` |
-| `R` | `]` | `BS` | `\` |
-| `LB` | `{` | `LP` | `(` |
-| `RB` | `}` | `RP` | `)` |
+| ---- | ---- | ---- | ---- |
+| `P`  | `\|` | `SQ` | `'`  |
+| `L`  | `[`  | `DQ` | `"`  |
+| `R`  | `]`  | `BS` | `\`  |
+| `LB` | `{`  | `LP` | `(`  |
+| `RB` | `}`  | `RP` | `)`  |
 
 **Escape sequences** (in quoted strings):
 
-| Syntax | Result |
-|--------|--------|
-| `\n` | Newline |
-| `\t` | Tab |
-| `\r` | Carriage return |
-| `\\` | Backslash |
-| `\'` | Single quote |
-| `\xHH` | Hex byte |
+| Syntax   | Result            |
+| -------- | ----------------- |
+| `\n`     | Newline           |
+| `\t`     | Tab               |
+| `\r`     | Carriage return   |
+| `\\`     | Backslash         |
+| `\'`     | Single quote      |
+| `\xHH`   | Hex byte          |
 | `\uXXXX` | Unicode codepoint |
 
 ### Actions
@@ -226,12 +235,16 @@ Actions are pipe-separated, execute left-to-right:
 | /function(args)       ; Call with arguments
 | var = value           ; Assignment
 | var += 1              ; Increment
-| PREPEND(literal)      ; Emit literal as Text event
-| PREPEND(:param)       ; Emit parameter value as Text (no-op if empty)
+| PREPEND('|')          ; Prepend literal to next accumulated content
+| PREPEND('**')         ; Prepend multi-byte literal
+| PREPEND(:param)       ; Prepend parameter bytes (empty = no-op)
 ```
 
-`PREPEND()` with empty content is a no-op, as is `PREPEND(:param)` when the
-parameter value is 0.
+`PREPEND` adds bytes to the accumulation buffer that will be combined with the
+next `TERM` result. This is useful for restoring consumed characters during
+lookahead. Parameters used in `PREPEND(:param)` become `&'static [u8]` type,
+allowing empty (`<>`), single byte (`'x'`), or multi-byte (`'**'`) values.
+Empty content is naturally a no-op.
 
 ### Inline Literal Events
 
@@ -239,7 +252,7 @@ For emitting events directly with literal or accumulated content:
 
 ```
 | TypeName              ; Emit event with no payload (BoolTrue, Nil)
-| TypeName(literal)     ; Emit with literal value (Attr($id), Attr(?))
+| TypeName('value')     ; Emit with literal value (e.g., Attr('$id'), Attr('?'))
 | TypeName(USE_MARK)    ; Emit using current MARK/TERM content
 ```
 
@@ -272,6 +285,7 @@ Single-line guards only (no block structure):
 | Variable | Meaning                              |
 |----------|--------------------------------------|
 | `COL`    | Current column (1-indexed)           |
+| `LINE`   | Current line (1-indexed)             |
 | `PREV`   | Previous byte (0 at start of input)  |
 
 ### Keywords (phf Perfect Hash)
