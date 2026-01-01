@@ -284,18 +284,19 @@ impl<'a> Parser<'a> {
 
 {% if uses_unicode %}
     // ========== Unicode Identifier Classes ==========
-    // Requires `unicode-ident` crate for full Unicode support.
+    // Requires `unicode-xid` crate for full Unicode support.
     // These is_* methods work with the byte-at-a-time matching pattern.
-    // For ASCII bytes, they use unicode-ident. For non-ASCII, the check
+    // For ASCII bytes, they use unicode-xid. For non-ASCII, the check
     // is done at the byte level (first byte of UTF-8 sequence).
 
     /// XID_Start: Can start a Unicode identifier.
-    /// For ASCII, uses unicode-ident. For non-ASCII first bytes, returns true
+    /// For ASCII, uses unicode-xid. For non-ASCII first bytes, returns true
     /// (conservative - actual validation happens via match_xid_start for multi-byte).
     #[inline(always)]
     fn is_xid_start(b: u8) -> bool {
+        use unicode_xid::UnicodeXID;
         if b < 0x80 {
-            unicode_ident::is_xid_start(b as char)
+            (b as char).is_xid_start()
         } else {
             // Non-ASCII: could be start of valid UTF-8 XID_Start sequence
             // Return true for lead bytes (0xC2-0xF4), let advance handle it
@@ -306,8 +307,9 @@ impl<'a> Parser<'a> {
     /// XID_Continue: Can continue a Unicode identifier.
     #[inline(always)]
     fn is_xid_cont(b: u8) -> bool {
+        use unicode_xid::UnicodeXID;
         if b < 0x80 {
-            unicode_ident::is_xid_continue(b as char)
+            (b as char).is_xid_continue()
         } else {
             // Non-ASCII: could be valid UTF-8 continuation or lead byte
             b >= 0x80

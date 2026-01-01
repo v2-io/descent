@@ -196,7 +196,7 @@ The DSL supports three literal types. See [characters.md](characters.md) for com
 | `WS`         | Space + tab                    |
 | `NL`         | Newline                        |
 
-**Unicode classes** (requires `unicode-ident` crate):
+**Unicode classes** (requires `unicode-xid` crate):
 
 | Name         | Description                   |
 | ------------ | ----------------------------- |

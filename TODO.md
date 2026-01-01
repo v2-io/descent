@@ -32,12 +32,12 @@ through a single `CharacterClass` module that implements the full spec:
 ### 3. Unicode Identifiers - **IMPLEMENTED** (0.5.0)
 
 Unicode character classes now supported:
-- `XID_START` - Unicode identifier start (uses `unicode-ident::is_xid_start`)
-- `XID_CONT` - Unicode identifier continue (uses `unicode-ident::is_xid_continue`)
+- `XID_START` - Unicode identifier start (uses `unicode-xid::is_xid_start`)
+- `XID_CONT` - Unicode identifier continue (uses `unicode-xid::is_xid_continue`)
 - `XLBL_START` - Same as XID_START (for label syntax)
 - `XLBL_CONT` - XID_CONT + hyphen (for kebab-case labels)
 
-These are conditionally included only when used (requires `unicode-ident` crate).
+These are conditionally included only when used (requires `unicode-xid` crate).
 For ASCII, uses the crate directly. For non-ASCII, accepts valid UTF-8 lead bytes.
 
 ### 4. Character Ranges - **PARTIALLY IMPLEMENTED** (0.5.0)
@@ -256,7 +256,7 @@ May be specific to patterns in udon.desc - needs investigation with actual file.
 `is_letter()` in generated code uses `b.is_ascii_alphabetic()`. UDON spec allows Unicode
 XID_Start/XID_Continue for element names.
 
-**Decision:** Use `unicode-ident` crate with these character class names:
+**Decision:** Use `unicode-xid` crate with these character class names:
 
 | Class | Meaning |
 |-------|---------|

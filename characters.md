@@ -127,7 +127,7 @@ Type coercion for variables:
 
 ### Unicode Character Classes
 
-Requires `unicode-ident` crate in generated Rust code.
+Requires `unicode-xid` crate in generated Rust code.
 
 | Name | Description |
 |------|-------------|

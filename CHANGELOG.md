@@ -104,8 +104,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Unicode identifier classes**: `XID_START`, `XID_CONT`, `XLBL_START`, `XLBL_CONT`
-  for Unicode-aware identifier parsing (requires `unicode-ident` crate)
-- **Conditional unicode-ident import**: The crate is only required when Unicode
+  for Unicode-aware identifier parsing (requires `unicode-xid` crate)
+- **Conditional unicode-xid import**: The crate is only required when Unicode
   classes are actually used in the parser
 
 ### Fixed

@@ -163,7 +163,7 @@ module Descent
 
     private
 
-    # Unicode character classes that require the unicode-ident crate
+    # Unicode character classes that require the unicode-xid crate
     UNICODE_CLASSES = %w[xid_start xid_cont xlbl_start xlbl_cont].freeze
 
     def build_context
