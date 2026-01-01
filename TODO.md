@@ -12,10 +12,12 @@ Line-oriented streaming with `StreamingParser` wrapper:
 
 See "Multi-Chunk Streaming" section below for original design.
 
-### 2. Byte Literal Syntax Cleanup
+### 2. Byte Literal Syntax Cleanup - **DESIGNED**
 
-See "Design Discussions Needed" section below. Needs resolution before adding
-more syntax features - the current ad-hoc accretion is confusing and error-prone.
+See [characters.md](characters.md) for the complete specification.
+
+Summary: Three types (Character `'x'`, String `'hello'`, Class `<...>`) with
+clear coercion rules and predefined classes for common ranges and DSL-reserved chars.
 
 ### 3. Unicode Identifiers
 
@@ -31,10 +33,12 @@ Currently parses as literal chars (broken). `values.desc` depends on this.
 
 ## Design Discussions Needed
 
-### Byte Literal Syntax Inconsistency
+### Byte Literal Syntax Inconsistency - **RESOLVED**
 
-**Problem:** The DSL has accumulated multiple ways to express byte/character literals
-without a coherent grammar. This creates confusion and potential bugs.
+See [characters.md](characters.md) for the complete specification.
+
+~~**Problem:** The DSL has accumulated multiple ways to express byte/character literals
+without a coherent grammar. This creates confusion and potential bugs.~~
 
 **Current state (ad-hoc accretion):**
 

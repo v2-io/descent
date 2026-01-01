@@ -3,6 +3,8 @@
 A recursive descent parser generator that produces high-performance callback-based
 parsers from declarative `.desc` specifications.
 
+**See also:** [characters.md](characters.md) - Character, String, and Class literal specification
+
 ## Philosophy
 
 **The DSL describes *what* to parse. The generator figures out *how*.**
