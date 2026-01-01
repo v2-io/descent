@@ -440,6 +440,7 @@ module Descent
     def build_case(kase, params = [])
       validate_char_syntax(kase.chars, kase.lineno) if kase.chars
       validate_prepend_commands(kase.commands, params, kase.lineno)
+      validate_call_args(kase.commands, params, kase.lineno)
       chars, special_class, param_ref = parse_chars(kase.chars, params:)
       commands = kase.commands.map { |c| build_command(c) }
 
@@ -669,6 +670,82 @@ module Descent
                                "Use PREPEND(:#{literal}) to reference the '#{literal}' parameter, " \
                                "or PREPEND('#{literal}') for a literal string."
       end
+    end
+
+    # Validate function call arguments for bare identifiers matching param names.
+    # Catches: /func(param) where param is a known parameter - should be /func(:param)
+    def validate_call_args(commands, params, lineno)
+      return if params.empty?
+
+      commands.each do |cmd|
+        next unless cmd.type == :call
+        next if cmd.value.nil?
+
+        # cmd.value is like "text(prepend)" or "func" - extract args if present
+        call_str = cmd.value.to_s
+        next unless call_str.include?('(')
+
+        args_str = call_str[/\((.+)\)/, 1]
+        next if args_str.nil? || args_str.empty?
+
+        # Tokenize respecting quotes and angle brackets
+        args = tokenize_call_args_for_validation(args_str)
+
+        args.each do |arg|
+          arg = arg.strip
+          # Skip if it's already a proper reference (:param), quoted, or class syntax
+          next if arg.start_with?(':')      # :param - correct
+          next if arg.start_with?("'")      # 'literal'
+          next if arg.start_with?('"')      # "literal"
+          next if arg.start_with?('<')      # <CLASS>
+          next if arg.match?(/^-?\d+$/)     # numeric
+          next if arg.match?(/^[A-Z]+$/)    # COL, LINE, PREV - built-in vars
+          next if arg.include?(' ')         # expression like "COL - 1"
+          next if arg.include?('.')         # method call
+          next if arg.include?('(')         # function call
+
+          # Bare lowercase identifier - check if it matches a param name
+          next unless arg.match?(/^[a-z_]\w*$/i)
+          next unless params.include?(arg)
+
+          raise ValidationError, "Line #{lineno}: /...(...#{arg}...) - bare identifier '#{arg}' matches a parameter name. " \
+                                 "Use ':#{arg}' to pass the parameter value, or \"'#{arg}'\" for a literal string."
+        end
+      end
+    end
+
+    # Tokenize call args for validation, respecting quotes and angle brackets
+    def tokenize_call_args_for_validation(args_str)
+      args = []
+      current = +''
+      in_quote = false
+      in_angle = 0
+
+      args_str.each_char do |c|
+        case c
+        when "'"
+          in_quote = !in_quote
+          current << c
+        when '<'
+          in_angle += 1
+          current << c
+        when '>'
+          in_angle -= 1 if in_angle > 0
+          current << c
+        when ','
+          if in_quote || in_angle > 0
+            current << c
+          else
+            args << current.strip
+            current = +''
+          end
+        else
+          current << c
+        end
+      end
+
+      args << current.strip unless current.empty?
+      args
     end
 
     # Parse character specification into literal chars, special class, and/or param reference.

@@ -11,8 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Unified CharacterClass parser**: New `CharacterClass` module implements the
   `characters.md` spec with consistent parsing everywhere (c[...], function args,
   PREPEND). All character class syntax now goes through a single code path.
-- **PREPEND param validation**: `PREPEND(foo)` where `foo` is a known param now
-  raises a helpful error suggesting `PREPEND(:foo)` for param reference.
+- **Param reference validation**: Bare identifiers matching param names now raise
+  helpful errors in both PREPEND and function calls:
+  - `PREPEND(foo)` → suggests `PREPEND(:foo)` or `PREPEND('foo')`
+  - `/func(foo)` → suggests `/func(:foo)` or `/func('foo')`
+  - This prevents confusing bugs where param names are treated as literal strings
 
 ### Fixed
 - **`<>` empty class consistency**: `<>` now correctly means "empty" everywhere:
