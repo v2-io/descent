@@ -241,7 +241,7 @@ module Descent
       # Convert parsed result to Rust byte literal format for :byte param (u8)
       def to_rust_byte(result)
         return result[:param_ref] if result[:param_ref]
-        return 'b\'?\'' if result[:chars].empty? && result[:bytes].empty?
+        return '0u8' if result[:chars].empty? && result[:bytes].empty? # Empty = never match sentinel
 
         char = result[:bytes][0] || result[:chars][0]
         escape_rust_byte(char)
