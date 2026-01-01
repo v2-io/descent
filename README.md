@@ -8,7 +8,7 @@ parsers from declarative `.desc` specifications.
 **The DSL describes *what* to parse. The generator figures out *how*.**
 
 - **Type-driven emit**: Return types determine events, no explicit `emit()` needed
-- **Inferred EOF**: No explicit `|eof` cases - behavior derived from context
+- **Inferred EOF**: Default EOF behavior derived from context (`|eof` available for explicit control)
 - **Auto SCAN**: SIMD-accelerated scanning inferred from state structure
 - **True recursion**: Call stack IS the element stack
 - **Minimal state**: Small functions compose into complex parsers
@@ -28,14 +28,26 @@ gem 'descent'
 ## Usage
 
 ```bash
-# Generate Rust parser
-descent --target rust parser.desc > parser.rs
+# Generate Rust parser (to stdout)
+descent generate parser.desc
 
-# Generate C parser
-descent --target c parser.desc -o parser
+# Generate with output file
+descent generate parser.desc -o parser.rs
+
+# Generate with debug tracing enabled
+descent generate parser.desc --trace
+
+# Validate .desc file without generating
+descent validate parser.desc
+
+# Debug: inspect tokens, AST, or IR
+descent debug parser.desc
+descent debug --tokens parser.desc
+descent debug --ast parser.desc
 
 # Show help
 descent --help
+descent generate --help
 ```
 
 ## The `.desc` DSL
@@ -107,7 +119,7 @@ This eliminates duplicate functions that differ only in their terminator charact
 ```
 |function[element:Element] :col
   |state[:identity]
-    |c[a-z]     |.name     | /name           |>> :after
+    |LETTER     |.name     | /name           |>> :after
     |default    |.anon     |                 |>> :content
 
   |state[:after]
@@ -206,7 +218,6 @@ Single-line guards only (no block structure):
 | Variable | Meaning                              |
 |----------|--------------------------------------|
 | `COL`    | Current column (1-indexed)           |
-| `LINE`   | Current line (1-indexed)             |
 | `PREV`   | Previous byte (0 at start of input)  |
 
 ### Keywords (phf Perfect Hash)
@@ -251,14 +262,15 @@ The generator detects this and uses `memchr` to scan for `\n` and `|` in bulk.
 
 ### EOF Handling
 
-By default, the generator infers EOF behavior:
+By default, the generator infers EOF behavior based on return type:
 
-1. If `MARK` is active → finalize accumulation
-2. If `EXPECTS(x)` declared → emit unclosed error
-3. Based on return type:
-   - `BRACKET` → emit End event
-   - `CONTENT` → emit content event
-   - `INTERNAL` / void → just return
+- `BRACKET` → emit End event
+- `CONTENT` → emit content event (finalizing any active MARK)
+- `INTERNAL` / void → just return
+
+The generator also infers unclosed-delimiter errors from the structure of return
+cases (e.g., a string function that only returns on `"` will emit `UnclosedStringValue`
+if EOF is reached).
 
 For explicit control, use the `|eof` directive:
 
@@ -374,6 +386,33 @@ impl<'a> Parser<'a> {
 }
 ```
 
+### Debug Tracing
+
+Generate parsers with `--trace` to output detailed execution traces to stderr:
+
+```bash
+descent generate --trace parser.desc > parser.rs
+```
+
+Trace output shows the exact execution path through the parser:
+
+```
+TRACE: L14 ENTER document | byte='H' pos=0
+TRACE: L16 document:main.collect | byte='H' term=[] pos=0
+TRACE: L16 document:main.collect | byte='e' term=["H"] pos=1
+TRACE: L15 document:main EOF | term=["Hello"] pos=5
+```
+
+Each line shows:
+- **L14**: Source line number from the `.desc` file
+- **document:main.collect**: Function name, state name, and case label (substate)
+- **byte='H'**: Current byte being processed
+- **term=["H"]**: Accumulated content in the term buffer
+- **pos=0**: Current position in input
+
+This is invaluable for debugging parser behavior and understanding how the
+generated state machine processes input.
+
 ## Architecture
 
 ```
@@ -419,8 +458,8 @@ No changes needed to case detection or structural parsing.
 
 | Target | Status | Output |
 |--------|--------|--------|
-| Rust   | In progress | Single `.rs` file with callback API |
-| C      | Planned | `.c` + `.h` files |
+| Rust   | Working | Single `.rs` file with callback API |
+| C      | Not implemented | `.c` + `.h` files (planned) |
 
 ## Bootstrapping
 
