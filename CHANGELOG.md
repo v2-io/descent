@@ -5,6 +5,16 @@ All notable changes to descent will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.7] - 2025-01-01
+
+### Fixed
+- **`:param` in conditionals**: `if[col <= :line_col]` now correctly generates
+  `col <= line_col` instead of literal `:line_col`.
+- **`<>` for `:byte` params**: Empty class now generates `0u8` (never-match sentinel)
+  instead of `b'?'` which incorrectly matched question marks.
+- **Function call arg validation**: `/func(param)` where `param` matches a known
+  parameter now errors with helpful message suggesting `:param` or `'param'`.
+
 ## [0.6.6] - 2025-01-01
 
 ### Added

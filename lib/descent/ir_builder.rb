@@ -716,8 +716,8 @@ module Descent
 
     # Tokenize call args for validation, respecting quotes and angle brackets
     def tokenize_call_args_for_validation(args_str)
-      args = []
-      current = +''
+      args     = []
+      current  = +''
       in_quote = false
       in_angle = 0
 
