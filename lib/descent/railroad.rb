@@ -22,9 +22,7 @@ module Descent
   #   - |return → end of path
   #   - |>> → loop/continue
   class Railroad
-    def initialize(ir)
-      @ir = ir
-    end
+    def initialize(ir) = @ir = ir
 
     def generate
       lines = []
@@ -108,7 +106,7 @@ module Descent
       comment = func.return_type ? ", Comment('→ #{func.return_type}')" : ''
 
       <<~PY
-        # Function: #{func.name}#{func.params.empty? ? '' : "(#{func.params.join(', ')})"}
+        # Function: #{func.name}#{"(#{func.params.join(', ')})" unless func.params.empty?}
         DIAGRAMS['#{func.name}'] = Diagram(
             #{diagram_content}#{comment}
         )
@@ -118,13 +116,13 @@ module Descent
     def build_state_sequence(state, state_map, visited)
       return 'Skip()' if state.nil? || visited.include?(state.name)
 
-      visited = visited + [state.name]
-      cases = state.cases.reject(&:conditional?)
+      visited += [state.name]
+      cases   = state.cases.reject(&:conditional?)
       return 'Skip()' if cases.empty?
 
       # Categorize cases by their transition type
-      exit_cases = []      # Cases that return (exit the function)
-      loop_cases = []      # Cases that self-loop (stay in this state)
+      exit_cases    = []      # Cases that return (exit the function)
+      loop_cases    = []      # Cases that self-loop (stay in this state)
       forward_cases = []   # Cases that go to another state
 
       cases.each do |kase|
@@ -170,7 +168,7 @@ module Descent
         if loop_cases.size == 1
           loop_content = case_to_element(loop_cases.first, nil)
         else
-          elements = loop_cases.map { |c| case_to_element(c, nil) }
+          elements     = loop_cases.map { |c| case_to_element(c, nil) }
           loop_content = "Choice(0, #{elements.join(', ')})"
         end
         parts << "ZeroOrMore(#{loop_content})"
@@ -194,26 +192,22 @@ module Descent
 
     def find_transition(kase)
       kase.commands.each do |cmd|
-        if cmd.type == :transition
-          return cmd.args[:value] || cmd.args['value']
-        end
+        return cmd.args[:value] || cmd.args['value'] if cmd.type == :transition
       end
       nil
     end
 
-    def returns?(kase)
-      kase.commands.any? { |cmd| cmd.type == :return }
-    end
+    def returns?(kase) = kase.commands.any? { |cmd| cmd.type == :return }
 
     # Known character class patterns - map expanded chars back to names
     CHAR_CLASS_NAMES = {
-      'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ' => 'LETTER',
+      'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'             => 'LETTER',
       'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-' => 'LABEL_CONT',
-      '0123456789' => 'DIGIT',
-      '0123456789abcdefABCDEF' => 'HEX_DIGIT',
-      " \t" => 'WS',
-      'abcdefghijklmnopqrstuvwxyz' => 'a-z',
-      'ABCDEFGHIJKLMNOPQRSTUVWXYZ' => 'A-Z'
+      '0123456789'                                                       => 'DIGIT',
+      '0123456789abcdefABCDEF'                                           => 'HEX_DIGIT',
+      " \t"                                                              => 'WS',
+      'abcdefghijklmnopqrstuvwxyz'                                       => 'a-z',
+      'ABCDEFGHIJKLMNOPQRSTUVWXYZ'                                       => 'A-Z'
     }.freeze
 
     def case_to_element(kase, _func)

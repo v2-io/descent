@@ -48,7 +48,7 @@ module Descent
 
       # Specific lowercase commands (not character classes)
       base_tag = tag.downcase.split('(').first
-      %w[return err].include?(base_tag)
+      %w[return err mark term].include?(base_tag)
     end
 
     def parse
@@ -128,8 +128,7 @@ module Descent
           mappings << { keyword:, event_type: }
           advance
         else
-          # Unknown format - skip
-          advance
+          raise ParseError, "Line #{t.lineno}: Unknown keyword mapping format: '#{t.tag}' rest='#{t.rest}'"
         end
       end
 
@@ -195,8 +194,7 @@ module Descent
           elsif command_like?(t.tag)
             cases << parse_bare_action_case
           else
-            # Unknown token - skip it
-            advance
+            raise ParseError, "Line #{t.lineno}: Unknown token in state: '#{t.tag}' (not a case starter or command)"
           end
         end
       end

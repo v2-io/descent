@@ -44,7 +44,7 @@
 
 |function[document]
   |state[:main]
-    |c[\n]      |.blank     | ->               |>>
+    |c['\n']      |.blank     | ->               |>>
     |c[' \t']     |.ws        | ->               |>> :indented
     |c['#']       |.hash      | /heading         |>>
     |c['`']       |.tick      | /maybe_fence     |>>
@@ -59,7 +59,7 @@
     |c[' \t']     |.more_ws   | ->               |>>
     |c[-]       |.list      | -> | /list_item(COL) |>>
     |c['*']       |.list      | -> | /list_item(COL) |>>
-    |c[\n]      |.blank     | ->               |>> :main
+    |c['\n']      |.blank     | ->               |>> :main
     |default    |.text      | /paragraph       |>> :main
 
 ; ============================================================
@@ -71,24 +71,24 @@
   |state[:hashes]
     |c['#']       |.hash      | ->               |>>
     |c[' \t']     |.space     | ->               |>> :content
-    |c[\n]      |.empty     | ->               |return
+    |c['\n']      |.empty     | ->               |return
     |default    |.not_head  | /paragraph       |return
 
   |state[:content]
     |c[' \t']     |.ws        | ->               |>>
-    |c[\n]      |.eol       | ->               |return
+    |c['\n']      |.eol       | ->               |return
     |default    |.text      | /inline          |>> :trailing
 
   ; Handle optional closing hashes: ## Heading ##
   |state[:trailing]
-    |c[\n]      |.eol       | ->               |return
+    |c['\n']      |.eol       | ->               |return
     |c['#']       |.trail     | ->               |>> :close_hash
     |default    |.more      | /inline          |>>
 
   |state[:close_hash]
     |c['#']       |.hash      | ->               |>>
     |c[' \t']     |.ws        | ->               |>>
-    |c[\n]      |.eol       | ->               |return
+    |c['\n']      |.eol       | ->               |return
     |default    |.text      | /inline          |>> :trailing
 
 ; ============================================================
@@ -97,12 +97,12 @@
 
 |function[paragraph:Paragraph]
   |state[:main]
-    |c[\n]      |.eol       | ->               |>> :check
+    |c['\n']      |.eol       | ->               |>> :check
     |default    |.text      | /inline          |>>
 
   ; Blank line or new block ends paragraph
   |state[:check]
-    |c[\n]      |.blank     |return
+    |c['\n']      |.blank     |return
     |c['#']       |.heading   |return
     |c['`']       |.fence     |return
     |c['>']       |.quote     |return
@@ -126,34 +126,34 @@
 |function[code_block:CodeBlock]
   ; Skip optional info string (language hint)
   |state[:info]
-    |c[\n]      |.eol       | ->               |>> :content
+    |c['\n']      |.eol       | ->               |>> :content
     |default    |.skip      | ->               |>>
 
   |state[:content]
     |c['`']       |.maybe_end | ->               |>> :end1
-    |c[\n]      |.newline   | ->               |>>
+    |c['\n']      |.newline   | ->               |>>
     |default    |.code      | /code_line       |>>
 
   |state[:end1]
     |c['`']       |.tick2     | ->               |>> :end2
-    |c[\n]      |.newline   | ->               |>> :content
+    |c['\n']      |.newline   | ->               |>> :content
     |default    |.not_end   | /code_line       |>> :content
 
   |state[:end2]
     |c['`']       |.tick3     | ->               |>> :end3
-    |c[\n]      |.newline   | ->               |>> :content
+    |c['\n']      |.newline   | ->               |>> :content
     |default    |.not_end   | /code_line       |>> :content
 
   |state[:end3]
     |c['`']       |.extra     | ->               |>>
-    |c[\n]      |.done      | ->               |return
+    |c['\n']      |.done      | ->               |return
     |c[' \t']     |.ws        | ->               |>>
     |default    |.not_end   |                  |>> :content
 
 ; Single line of code content
 |function[code_line:Code]
   |state[:main]
-    |c[\n]      |.eol       | ->               |return
+    |c['\n']      |.eol       | ->               |return
     |default    |.char      | ->               |>>
 
 ; ============================================================
@@ -164,28 +164,28 @@
   |state[:start]
     |c[' ']       |.space     | ->               |>> :content
     |c['>']       |.nested    | -> | /blockquote |>> :after
-    |c[\n]      |.empty     | ->               |>> :next
+    |c['\n']      |.empty     | ->               |>> :next
     |default    |.text      |                  |>> :content
 
   |state[:content]
-    |c[\n]      |.eol       | ->               |>> :next
+    |c['\n']      |.eol       | ->               |>> :next
     |default    |.text      | /inline          |>>
 
   |state[:after]
-    |c[\n]      |.eol       | ->               |>> :next
+    |c['\n']      |.eol       | ->               |>> :next
     |default    |.more      | /inline          |>> :after
 
   ; Check for continuation or end
   |state[:next]
     |c['>']       |.cont      | ->               |>> :start
-    |c[\n]      |.blank     |return
+    |c['\n']      |.blank     |return
     |c[' \t']     |.ws        | ->               |>> :lazy
     |default    |.end       |return
 
   ; Lazy continuation (no > but still in blockquote)
   |state[:lazy]
     |c['>']       |.quote     | ->               |>> :start
-    |c[\n]      |.blank     |return
+    |c['\n']      |.blank     |return
     |default    |.cont      |                  |>> :content
 
 ; ============================================================
@@ -196,7 +196,7 @@
   |state[:first]
     |c[-]       |.dash2     | ->               |>> :second
     |c[' \t']     |.space     | -> | /list_item(0) |return
-    |c[\n]      |.eol       | -> | /list_item(0) |return
+    |c['\n']      |.eol       | -> | /list_item(0) |return
     |default    |.text      | /paragraph       |return
 
   |state[:second]
@@ -207,7 +207,7 @@
   |state[:hr_check]
     |c[-]       |.more      | ->               |>>
     |c[' \t']     |.ws        | ->               |>>
-    |c[\n]      |.hr        | -> | /thematic_break |return
+    |c['\n']      |.hr        | -> | /thematic_break |return
     |default    |.text      | /paragraph       |return
 
 ; Lines starting with star: list item or thematic break
@@ -220,13 +220,13 @@
   |state[:second]
     |c['*']       |.star3     | ->               |>> :hr_check
     |c[' \t']     |.space     | -> | /list_item(0) |return   ; "* " = list item
-    |c[\n]      |.eol       | -> | /list_item(0) |return   ; "*\n" = empty list item
+    |c['\n']      |.eol       | -> | /list_item(0) |return   ; "*\n" = empty list item
     |default    |.text      | PREPEND(*) | /paragraph |return   ; "*x" = emphasis, restore *
 
   |state[:hr_check]
     |c['*']       |.more      | ->               |>>
     |c[' \t']     |.ws        | ->               |>>
-    |c[\n]      |.hr        | -> | /thematic_break |return
+    |c['\n']      |.hr        | -> | /thematic_break |return
     |default    |.text      | PREPEND(**) | /paragraph |return  ; "**x" = strong, restore **
 
 ; Thematic break (horizontal rule) - just marks position
@@ -240,12 +240,12 @@
 
 |function[list_item:ListItem] :col
   |state[:content]
-    |c[\n]      |.eol       | ->               |>> :next
+    |c['\n']      |.eol       | ->               |>> :next
     |default    |.text      | /inline          |>>
 
   ; Check what follows: continuation, sibling, nested, or end
   |state[:next]
-    |c[\n]      |.blank     | ->               |>> :after_blank
+    |c['\n']      |.blank     | ->               |>> :after_blank
     |c[' \t']     |.ws        | ->               |>> :check_indent
     |c[-]       |.sibling   |return
     |c['*']       |.sibling   |return
@@ -253,7 +253,7 @@
 
   ; After blank line - tight vs loose list detection point
   |state[:after_blank]
-    |c[\n]      |.more_blank|return
+    |c['\n']      |.more_blank|return
     |c[' \t']     |.ws        | ->               |>> :check_indent
     |default    |.end       |return
 
@@ -263,7 +263,7 @@
     |if[COL <= col]         |return
     |c[-]       |.nested    | -> | /list_item(COL) |>> :next
     |c['*']       |.nested    | -> | /list_item(COL) |>> :next
-    |c[\n]      |.blank     | ->               |>> :after_blank
+    |c['\n']      |.blank     | ->               |>> :after_blank
     |default    |.cont      |                  |>> :content
 
 ; ============================================================
@@ -281,7 +281,7 @@
     |c['*']       |.star      | -> |>> :after_star
     |c[_]       |.under     | -> |>> :after_under
     |c['~']       |.tilde     | -> |>> :after_tilde
-    |c[\n]      |.eol       |return
+    |c['\n']      |.eol       |return
     |default    |.text      | /text            |>>
 
   ; Consumed one *, check for ** or left-flanking single *
@@ -322,7 +322,7 @@
 |function[code_span:Code]
   |state[:main]
     |c['`']       |.end       | TERM | ->        |return
-    |c[\n]      |.eol       |return
+    |c['\n']      |.eol       |return
     |default    |.char      | ->               |>>
 
 ; ============================================================
@@ -337,7 +337,7 @@
   |state[:content]
     |c['`']       |.code      | -> | /code_span   |>>
     |c['*']       |.star      |>> :check_star
-    |c[\n]      |.eol       | ->               |return    ; unclosed at EOL
+    |c['\n']      |.eol       | ->               |return    ; unclosed at EOL
     |default    |.text      | /emph_text       |>>
 
   ; At *, check if it's a closer (right-flanking) or nested opener
@@ -374,7 +374,7 @@
   |state[:content]
     |c['`']       |.code      | -> | /code_span   |>>
     |c['*']       |.star      |>> :check_star
-    |c[\n]      |.eol       | ->               |return
+    |c['\n']      |.eol       | ->               |return
     |default    |.text      | /emph_text       |>>
 
   ; At *, check for ** closer or nested emphasis
@@ -415,7 +415,7 @@
   |state[:content]
     |c['`']       |.code      | -> | /code_span   |>>
     |c[_]       |.under     |>> :check_under
-    |c[\n]      |.eol       | ->               |return
+    |c['\n']      |.eol       | ->               |return
     |default    |.text      | /emph_text_under |>>
 
   |state[:check_under]
@@ -446,7 +446,7 @@
   |state[:content]
     |c['`']       |.code      | -> | /code_span   |>>
     |c[_]       |.under     |>> :check_under
-    |c[\n]      |.eol       | ->               |return
+    |c['\n']      |.eol       | ->               |return
     |default    |.text      | /emph_text_under |>>
 
   |state[:check_under]
@@ -481,7 +481,7 @@
   |state[:content]
     |c['`']       |.code      | -> | /code_span   |>>
     |c['~']       |.tilde     |>> :check_tilde
-    |c[\n]      |.eol       | ->               |return
+    |c['\n']      |.eol       | ->               |return
     |default    |.text      | /strike_text     |>>
 
   |state[:check_tilde]
@@ -517,7 +517,7 @@
     |c['*']       |.star      |return
     |c[_]       |.under     |return
     |c['~']       |.tilde     |return
-    |c[\n]      |.eol       |return
+    |c['\n']      |.eol       |return
     |default    |.char      | ->               |>>
 
 ; Text inside */emphasis/strong - stops at * delimiter
@@ -525,7 +525,7 @@
   |state[:main]
     |c['`']       |.code      |return
     |c['*']       |.star      |return
-    |c[\n]      |.eol       |return
+    |c['\n']      |.eol       |return
     |default    |.char      | ->               |>>
 
 ; Text inside _emphasis/strong - stops at _ delimiter
@@ -533,7 +533,7 @@
   |state[:main]
     |c['`']       |.code      |return
     |c[_]       |.under     |return
-    |c[\n]      |.eol       |return
+    |c['\n']      |.eol       |return
     |default    |.char      | ->               |>>
 
 ; Text inside ~~strikethrough~~ - stops at ~ delimiter
@@ -541,6 +541,6 @@
   |state[:main]
     |c['`']       |.code      |return
     |c['~']       |.tilde     |return
-    |c[\n]      |.eol       |return
+    |c['\n']      |.eol       |return
     |default    |.char      | ->               |>>
 

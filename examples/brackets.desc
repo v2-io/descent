@@ -21,7 +21,7 @@
     |c[<L>]     |.sq      | -> | /bracketed(<R>)   |>>
     |c[<LB>]    |.br      | -> | /bracketed(<RB>)  |>>
     |c[<LP>]    |.pr      | -> | /bracketed(<RP>)  |>>
-    |c[\n]      |.nl      | ->                     |>>
+    |c['\n']      |.nl      | ->                     |>>
     |default    |.text    | /text                  |>>
 
 ; Single parameterized function handles all bracket types

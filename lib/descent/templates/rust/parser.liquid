@@ -148,7 +148,7 @@ impl<'a> Parser<'a> {
     /// Format accumulated content for trace display (truncated).
     /// Shows slice content only (prepend buffer shown separately if non-empty).
     fn trace_content(&self) -> String {
-        let end = if self.term_pos > self.mark_pos { self.term_pos } else { self.pos };
+        let end = if self.term_pos != usize::MAX { self.term_pos } else { self.pos };
         let slice = &self.input[self.mark_pos..end];
         let prepend_info = if self.prepend_buf.is_empty() {
             String::new()
@@ -188,7 +188,7 @@ impl<'a> Parser<'a> {
     #[inline(always)]
     fn mark(&mut self) {
         self.mark_pos = self.pos;
-        self.term_pos = self.pos; // Reset term position
+        self.term_pos = usize::MAX; // Sentinel: TERM not yet called
         // Note: prepend_buf is NOT cleared here - it persists until term() consumes it.
         // This allows PREPEND to be called before a nested function that does MARK.
     }
@@ -213,7 +213,7 @@ impl<'a> Parser<'a> {
     #[inline(always)]
     fn term(&mut self) -> std::borrow::Cow<'a, [u8]> {
         // Use term_pos if set after mark, otherwise use current pos
-        let end = if self.term_pos > self.mark_pos { self.term_pos } else { self.pos };
+        let end = if self.term_pos != usize::MAX { self.term_pos } else { self.pos };
         let slice = &self.input[self.mark_pos..end];
 
         if self.prepend_buf.is_empty() {
@@ -233,7 +233,7 @@ impl<'a> Parser<'a> {
     #[inline(always)]
     fn span_from_mark(&self) -> Range<usize> {
         // Use term_pos if set after mark, otherwise use current pos
-        let end = if self.term_pos > self.mark_pos { self.term_pos } else { self.pos };
+        let end = if self.term_pos != usize::MAX { self.term_pos } else { self.pos };
         self.mark_pos..end
     }
 
@@ -800,6 +800,14 @@ impl<'a> Parser<'a> {
                         _ => unreachable!("scan_to only returns target chars"),
                     }
                     {% else %}
+                    {% if state.is_unconditional %}
+                    {% comment %} Unconditional state: execute commands immediately without byte match {% endcomment %}
+                    {% assign kase = state.cases.first %}
+                    {% if trace %}eprintln!("TRACE: L{{ kase.lineno }} {{ func.name }}:{{ state.name }}{% if kase.substate %}.{{ kase.substate }}{% endif %} UNCONDITIONAL | term={} pos={}", self.trace_content(), self.pos);{% endif %}
+                    {% for cmd in kase.commands %}
+                    {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info, states: func.states %}
+                    {% endfor %}
+                    {% else %}
                     {% comment %} Non-scannable: check EOF first {% endcomment %}
                     if self.eof() {
                         {% if trace %}eprintln!("TRACE: L{{ state.lineno }} {{ func.name }}:{{ state.name }} EOF | term={} pos={}", self.trace_content(), self.pos);{% endif %}
@@ -856,6 +864,7 @@ impl<'a> Parser<'a> {
                         }
                         {% endunless %}
                     }
+                    {% endif %}
                     {% endif %}
                 }
             {% endfor %}

@@ -19,7 +19,7 @@
 ; No return type = void, no auto emissions
 |function[document]
   |state[:main]
-    |c[\n]      |.blank    | ->              |>>
+    |c['\n']      |.blank    | ->              |>>
     |c[' \t']     |.ws       | ->              |>>
     |c[<P>]     |.pipe     | -> | /element(0)|>>
     |default    |.text     | /text(0)        |>>
@@ -35,17 +35,17 @@
     |default    |.anon     |                 |>> :content
 
   |state[:after_name]
-    |c[\n]      |.eol      | ->              |>> :children
+    |c['\n']      |.eol      | ->              |>> :children
     |c[' \t']     |.ws       | ->              |>> :content
-    |default    |.inline   | /text(col)      |>> :children
+    |default    |.inline   | /text(:col)     |>> :children
 
   |state[:content]
-    |c[\n]      |.eol      | ->              |>> :children
+    |c['\n']      |.eol      | ->              |>> :children
     |c[' \t']     |.ws       | ->              |>>
-    |default    |.text     | /text(col)      |>> :children
+    |default    |.text     | /text(:col)     |>> :children
 
   |state[:children]
-    |c[\n]      |.blank    | ->              |>>
+    |c['\n']      |.blank    | ->              |>>
     |c[' \t']     |.ws       | ->              |>> :check
     |default    |.dedent   |return
 
@@ -69,5 +69,5 @@
 ; - SCAN inferred (\n case + self-loop default)
 |function[text:Text] :col
   |state[:main]
-    |c[\n]      |.eol      |return
+    |c['\n']      |.eol      |return
     |default    |.collect  | ->              |>>

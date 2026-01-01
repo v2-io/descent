@@ -13,7 +13,7 @@
 
 |function[document]
   |state[:main]
-    |c[\n]      |.blank      | ->             |>>
+    |c['\n']      |.blank      | ->             |>>
     |default    |.start      | /line          |>>
 
 ; line returns Text (CONTENT), so:
@@ -23,5 +23,5 @@
 ; - SCAN inferred from self-looping default with \n case
 |function[line:Text]
   |state[:main]
-    |c[\n]      |.eol        | ->  |return
+    |c['\n']      |.eol        | ->  |return
     |default    |.collect    | ->  |>>

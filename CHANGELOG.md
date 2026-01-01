@@ -5,6 +5,23 @@ All notable changes to descent will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.9] - 2026-01-01
+
+### Fixed
+- **Unconditional state handling**: States with bare action cases (no character match)
+  now execute immediately without waiting for a byte. Previously, `| MARK |>> :next`
+  would generate `Some(_) =>` which waited for a byte before executing MARK.
+
+## [0.6.8] - 2026-01-01
+
+### Fixed
+- **Empty content span bug**: `span_from_mark()` and `term()` now correctly handle
+  empty content where TERM is called at the same position as MARK. Uses sentinel
+  value (`usize::MAX`) to distinguish "TERM not called" from "TERM called with
+  empty content". Fixes spans like `!{{}}` returning 6..8 instead of 6..6.
+- **Example syntax**: Fixed `c[\n]` → `c['\n']` in example .desc files. Bare
+  escape sequences must be quoted per characters.md spec.
+
 ## [0.6.7] - 2025-01-01
 
 ### Fixed
