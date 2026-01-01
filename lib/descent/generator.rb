@@ -51,6 +51,7 @@ module Descent
         .gsub(/\bCOL\b/, 'self.col()')
         .gsub(/\bLINE\b/, 'self.line as i32')
         .gsub(/\bPREV\b/, 'self.prev()')
+        .gsub(/:([a-z_]\w*)/i) { ::Regexp.last_match(1) }  # :param -> param
         .gsub(%r{/(\w+)\(([^)]*)\)}) do
           func = ::Regexp.last_match(1)
           args = transform_call_args(::Regexp.last_match(2))
