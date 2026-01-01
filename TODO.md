@@ -12,22 +12,35 @@ Line-oriented streaming with `StreamingParser` wrapper:
 
 See "Multi-Chunk Streaming" section below for original design.
 
-### 2. Byte Literal Syntax Cleanup - **DESIGNED**
+### 2. Byte Literal Syntax Cleanup - **IMPLEMENTED** (0.5.0)
 
 See [characters.md](characters.md) for the complete specification.
 
 Summary: Three types (Character `'x'`, String `'hello'`, Class `<...>`) with
 clear coercion rules and predefined classes for common ranges and DSL-reserved chars.
 
+New syntax implemented in ir_builder.rb:
+- Quoted chars/strings: `'x'`, `'hello'` (decomposed to chars)
+- Character class: `<...>` with space-separated tokens
+- Predefined ranges: `0-9`, `0-7`, `0-1`, `a-z`, `A-Z`, `a-f`, `A-F`
+- Single-char classes: `P`, `L`, `R`, `LB`, `RB`, `LP`, `RP`, `SQ`, `DQ`, `BS`
+- Combined classes: `<LETTER 0-9 '_'>`, `<WS>`, etc.
+- Template helpers: `is_ws()`, `is_nl()` added
+
 ### 3. Unicode Identifiers
 
 Use `unicode-ident` crate for XID_Start/XID_Continue. See section below for
 decided approach with XID_START, XID_CONT, XLBL_START, XLBL_CONT classes.
 
-### 4. Character Ranges
+### 4. Character Ranges - **PARTIALLY IMPLEMENTED** (0.5.0)
 
-`|c[0-9]` → `b'0'..=b'9'`, `|c[a-f]` → `b'a'..=b'f'`
-Currently parses as literal chars (broken). `values.desc` depends on this.
+Predefined range classes now work inside `<...>` class syntax:
+- `<0-9>` expands to all decimal digits
+- `<a-z>`, `<A-Z>` for letter ranges
+- `<0-7>` for octal, `<0-1>` for binary, `<a-f>/<A-F>` for hex
+
+Legacy bare range syntax (`|c[0-9]`) still parses as literal chars. Use new
+class syntax: `|c[<0-9>]` or combined: `|c[<LETTER 0-9 '_'>]`
 
 ---
 

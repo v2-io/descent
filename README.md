@@ -3,7 +3,7 @@
 A recursive descent parser generator that produces high-performance callback-based
 parsers from declarative `.desc` specifications.
 
-**See also:** [characters.md](characters.md) - Character, String, and Class literal specification
+**See also:** [characters.md](characters.md) for the complete Character, String, and Class literal specification including type coercion rules and usage examples.
 
 ## Philosophy
 
@@ -112,7 +112,8 @@ with different terminators:
   |default     | /content(:close)  |>>    ; Pass param to nested calls
 ```
 
-Called as: `/bracketed(<R>)` for `]`, `/bracketed(<RB>)` for `}`, `/bracketed(<RP>)` for `)`.
+Called as: `/bracketed(']')` for `]`, `/bracketed('}')` for `}`, `/bracketed(')')` for `)`.
+(Legacy syntax `/bracketed(<R>)` etc. also works.)
 
 This eliminates duplicate functions that differ only in their terminator character.
 
@@ -138,6 +139,8 @@ Each case has: `match | actions | transition`
 |c[\n]          | actions    |>>          ; Match newline (self-loop)
 |c[ \t]         | actions    |return      ; Match space or tab
 |c[abc]         | actions    |>> :next    ; Match any of a, b, c
+|c[<0-9>]       | actions    |>> :digit   ; Match digit (using class syntax)
+|c[<LETTER '_'>]| actions    |>> :ident   ; Match letter or underscore
 |LETTER         | actions    |>> :name    ; Match ASCII letter (a-z, A-Z)
 |LABEL_CONT     | actions    |>>          ; Match letter/digit/_/-
 |DIGIT          | actions    |>> :num     ; Match ASCII digit (0-9)
@@ -145,21 +148,70 @@ Each case has: `match | actions | transition`
 |default        | actions    |>> :other   ; Fallback case
 ```
 
-**Character escapes:**
+### Character, String, and Class Literals
 
-| Syntax | Character |
-|--------|-----------|
-| `\n`   | Newline   |
-| `\t`   | Tab       |
-| `\\`   | Backslash `\` |
-| `<BS>` | Backslash `\` (alternate) |
-| `<P>`  | Pipe `\|` |
-| `<L>`  | `[`       |
-| `<R>`  | `]`       |
-| `<LB>` | `{`       |
-| `<RB>` | `}`       |
-| `<LP>` | `(`       |
-| `<RP>` | `)`       |
+The DSL supports three literal types. See [characters.md](characters.md) for complete specification.
+
+| Type | Syntax | Semantics |
+|------|--------|-----------|
+| **Character** | `'x'` | Single byte or Unicode codepoint |
+| **String** | `'hello'` | Ordered sequence (decomposed to chars in classes) |
+| **Class** | `<...>` | Unordered set of characters |
+
+**Character class syntax** (`<...>`):
+
+```
+<abc>                 ; Bare lowercase decomposed: a, b, c
+<'|'>                 ; Quoted character (for special chars)
+<LETTER>              ; Predefined class
+<0-9>                 ; Predefined range (digits)
+<LETTER 0-9 '_'>      ; Combined: letters, digits, underscore
+<:var>                ; Include variable's chars
+```
+
+**Predefined ranges:**
+
+| Name | Characters |
+|------|------------|
+| `0-9` | Decimal digits |
+| `0-7` | Octal digits |
+| `0-1` | Binary digits |
+| `a-z` | Lowercase ASCII |
+| `A-Z` | Uppercase ASCII |
+| `a-f` / `A-F` | Hex letters |
+
+**Predefined classes:**
+
+| Name | Description |
+|------|-------------|
+| `LETTER` | `a-z` + `A-Z` |
+| `DIGIT` | `0-9` |
+| `HEX_DIGIT` | `0-9` + `a-f` + `A-F` |
+| `LABEL_CONT` | `LETTER` + `DIGIT` + `_` + `-` |
+| `WS` | Space + tab |
+| `NL` | Newline |
+
+**DSL-reserved single-char classes:**
+
+| Name | Char | Name | Char |
+|------|------|------|------|
+| `P` | `\|` | `SQ` | `'` |
+| `L` | `[` | `DQ` | `"` |
+| `R` | `]` | `BS` | `\` |
+| `LB` | `{` | `LP` | `(` |
+| `RB` | `}` | `RP` | `)` |
+
+**Escape sequences** (in quoted strings):
+
+| Syntax | Result |
+|--------|--------|
+| `\n` | Newline |
+| `\t` | Tab |
+| `\r` | Carriage return |
+| `\\` | Backslash |
+| `\'` | Single quote |
+| `\xHH` | Hex byte |
+| `\uXXXX` | Unicode codepoint |
 
 ### Actions
 

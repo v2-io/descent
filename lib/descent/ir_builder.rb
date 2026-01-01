@@ -251,39 +251,208 @@ module Descent
          .gsub('\\t', "\t")
     end
 
+    # Predefined character ranges (as class names in the DSL)
+    PREDEFINED_RANGES = {
+      '0-9' => '0123456789',
+      '0-7' => '01234567',
+      '0-1' => '01',
+      'a-z' => 'abcdefghijklmnopqrstuvwxyz',
+      'A-Z' => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+      'a-f' => 'abcdef',
+      'A-F' => 'ABCDEF'
+    }.freeze
+
+    # DSL-reserved single-character class names
+    SINGLE_CHAR_CLASSES = {
+      'P'  => '|',
+      'L'  => '[',
+      'R'  => ']',
+      'LB' => '{',
+      'RB' => '}',
+      'LP' => '(',
+      'RP' => ')',
+      'SQ' => "'",
+      'DQ' => '"',
+      'BS' => '\\'
+    }.freeze
+
     # Parse character specification into literal chars, special class, and/or param reference.
     # Returns [chars_array, special_class_symbol, param_ref_string]
-    # Examples:
+    #
+    # Supports both legacy syntax and new characters.md syntax:
+    #
+    # Legacy (backwards compatible):
     #   "abc"           -> [["a", "b", "c"], nil, nil]
     #   "LETTER"        -> [nil, :letter, nil]
     #   "LETTER'[.?!"   -> [["'", "[", ".", "?", "!"], :letter, nil]
     #   ":close"        -> [nil, nil, "close"]  (param reference)
-    #   "a:"            -> [["a", ":"], nil, nil] (literal colon not first)
+    #
+    # New syntax (characters.md):
+    #   "'x'"           -> [["x"], nil, nil] (quoted char)
+    #   "'abc'"         -> [["a", "b", "c"], nil, nil] (quoted string, decomposed)
+    #   "<abc>"         -> [["a", "b", "c"], nil, nil] (class with bare lowercase)
+    #   "<LETTER>"      -> [nil, :letter, nil] (class with predefined class)
+    #   "<0-9>"         -> [["0".."9"], nil, nil] (predefined range)
+    #   "<LETTER 0-9 '_'>" -> [["_", "0".."9"], :letter, nil] (combined)
+    #   "<:var>"        -> [nil, nil, "var"] (variable in class)
     def parse_chars(chars_str, params: [])
       return [nil, nil, nil] if chars_str.nil?
 
-      # Check for parameter reference: starts with : followed by a valid param name
-      # Rule: `:` must be first char, followed by a known param name
+      # New syntax: <...> character class
+      return parse_class_syntax(chars_str[1...-1], params:) if chars_str.start_with?('<') && chars_str.end_with?('>')
+
+      # New syntax: '...' quoted character or string (decomposed to chars)
+      if chars_str.start_with?("'") && chars_str.end_with?("'") && chars_str.length >= 2
+        content = parse_quoted_string(chars_str[1...-1])
+        return [content.chars, nil, nil]
+      end
+
+      # Legacy: Check for parameter reference: starts with : followed by a valid param name
       if chars_str.start_with?(':')
         param_name = chars_str[1..]
         return [nil, nil, param_name] if params.include?(param_name)
         # Not a known param - fall through to treat as literal chars
       end
 
-      # Check for pure special named class (SCREAMING_CASE: uppercase words separated by underscores)
-      # Examples: LETTER, LABEL_CONT, HEX_DIGIT
+      # Legacy: Check for pure special named class (SCREAMING_CASE)
       return [nil, chars_str.downcase.to_sym, nil] if chars_str.match?(/^[A-Z]+(?:_[A-Z]+)*$/)
 
-      # Check for combined: CLASS followed by literal chars (e.g., LETTER'[.?!)
-      # Class portion is SCREAMING_CASE, literals start with non-uppercase
+      # Legacy: Check for combined: CLASS followed by literal chars (e.g., LETTER'[.?!)
       if (match = chars_str.match(/^([A-Z]+(?:_[A-Z]+)*)(.+)$/))
         class_name    = match[1].downcase.to_sym
         literal_chars = process_escapes(match[2]).chars
         return [literal_chars, class_name, nil]
       end
 
-      # Parse literal characters with escapes
+      # Legacy: Parse literal characters with escapes (bare lowercase decomposed)
       [process_escapes(chars_str).chars, nil, nil]
+    end
+
+    # Parse the contents of a <...> character class.
+    # Tokens are space-separated and can be:
+    #   - Bare lowercase: abc -> decomposed to ['a', 'b', 'c']
+    #   - Quoted string: 'abc' or 'x' -> decomposed to chars
+    #   - Predefined range: 0-9, a-z, etc. -> expanded
+    #   - Predefined class: LETTER, DIGIT, etc. -> special_class
+    #   - Single-char class: P, SQ, LB, etc. -> single char
+    #   - Variable ref: :var -> param_ref
+    def parse_class_syntax(content, params: [])
+      return [nil, nil, nil] if content.nil? || content.strip.empty?
+
+      chars         = []
+      special_class = nil
+      param_ref     = nil
+
+      tokenize_class_content(content).each do |token|
+        case token
+        when /^:(\w+)$/
+          # Variable reference
+          pname = ::Regexp.last_match(1)
+          if params.include?(pname)
+            param_ref = pname
+          else
+            # Unknown param, treat as literal colon + chars
+            chars.concat(token.chars)
+          end
+        when /^'(.*)'$/
+          # Quoted string/char - decompose
+          quoted = parse_quoted_string(::Regexp.last_match(1))
+          chars.concat(quoted.chars)
+        when /^[A-Z]+(?:_[A-Z]+)*$/
+          # Predefined class name (LETTER, DIGIT, LABEL_CONT, etc.)
+          if SINGLE_CHAR_CLASSES.key?(token)
+            chars << SINGLE_CHAR_CLASSES[token]
+          elsif special_class.nil?
+            special_class = token.downcase.to_sym
+          else
+            # Multiple special classes - combine by treating second as merged
+            # For now, just keep the first one and warn
+            # Future: could support multiple classes
+          end
+        when /^[0-9]-[0-9]$/, /^[a-z]-[a-z]$/, /^[A-Z]-[A-Z]$/
+          # Predefined range
+          if PREDEFINED_RANGES.key?(token)
+            chars.concat(PREDEFINED_RANGES[token].chars)
+          else
+            # Unknown range, treat as literal
+            chars.concat(token.chars)
+          end
+        when /^[a-z]+$/
+          # Bare lowercase - decompose to individual chars
+          chars.concat(token.chars)
+        else
+          # Unknown token - treat as literal chars with escape processing
+          chars.concat(process_escapes(token).chars)
+        end
+      end
+
+      [chars.empty? ? nil : chars.uniq, special_class, param_ref]
+    end
+
+    # Tokenize character class content, respecting quoted strings.
+    def tokenize_class_content(content)
+      tokens   = []
+      current  = +''
+      in_quote = false
+
+      content.each_char do |c|
+        if c == "'" && !in_quote
+          in_quote = true
+          current << c
+        elsif c == "'" && in_quote
+          current << c
+          in_quote = false
+        elsif c == ' ' && !in_quote
+          tokens << current unless current.empty?
+          current = +''
+        else
+          current << c
+        end
+      end
+      tokens << current unless current.empty?
+      tokens
+    end
+
+    # Parse escape sequences in a quoted string.
+    def parse_quoted_string(str)
+      return '' if str.nil? || str.empty?
+
+      result = +''
+      i      = 0
+      while i < str.length
+        if str[i] == '\\' && i + 1 < str.length
+          case str[i + 1]
+          when 'n'  then result << "\n"
+          when 't'  then result << "\t"
+          when 'r'  then result << "\r"
+          when '\\' then result << '\\'
+          when "'"  then result << "'"
+          when 'x'
+            # Hex byte: \xHH
+            if i + 3 < str.length && str[i + 2..i + 3].match?(/^[0-9A-Fa-f]{2}$/)
+              result << str[i + 2..i + 3].to_i(16).chr
+              i += 2
+            else
+              result << str[i + 1]
+            end
+          when 'u'
+            # Unicode: \uXXXX
+            if i + 5 < str.length && str[i + 2..i + 5].match?(/^[0-9A-Fa-f]{4}$/)
+              result << str[i + 2..i + 5].to_i(16).chr(Encoding::UTF_8)
+              i += 4
+            else
+              result << str[i + 1]
+            end
+          else
+            result << str[i + 1]
+          end
+          i += 2
+        else
+          result << str[i]
+          i += 1
+        end
+      end
+      result
     end
 
     # Parse return value specification
@@ -611,12 +780,14 @@ module Descent
       end
     end
 
-    # Parse a call argument into a byte literal string for the template
+    # Parse a call argument into a byte literal string for the template.
+    # Supports both legacy syntax and new characters.md syntax.
     def parse_byte_literal(arg)
       return nil if arg.nil? || arg.empty?
 
       case arg
       when '0' then nil  # 0 means no prepend
+      # Legacy escape syntax
       when '<P>' then '|'
       when '<L>' then '['
       when '<R>' then ']'
@@ -625,9 +796,13 @@ module Descent
       when '<LP>' then '('
       when '<RP>' then ')'
       when '<BS>' then '\\\\'
-      when /^'(.)'$/ then ::Regexp.last_match(1)  # Single quoted char
-      when /^"(.)"$/ then ::Regexp.last_match(1)  # Double quoted char
-      when /^.$/ then arg  # Single char
+      # New syntax: quoted single character
+      when /^'(.)'$/ then ::Regexp.last_match(1)
+      when /^"(.)"$/ then ::Regexp.last_match(1)
+      # New syntax: quoted with escape (e.g., '\'')
+      when /^'\\(.)'$/ then parse_quoted_string("\\#{::Regexp.last_match(1)}")
+      # Legacy: single char
+      when /^.$/ then arg
       else nil  # Unknown format
       end
     end

@@ -104,13 +104,15 @@ Type coercion for variables:
 
 ### Character Ranges (as class names)
 
-| Name | Characters |
-|------|------------|
-| `0-9` | `0123456789` |
-| `a-z` | `abcdefghijklmnopqrstuvwxyz` |
-| `A-Z` | `ABCDEFGHIJKLMNOPQRSTUVWXYZ` |
-| `a-f` | `abcdef` |
-| `A-F` | `ABCDEF` |
+| Name | Characters | Notes |
+|------|------------|-------|
+| `0-9` | `0123456789` | Decimal digits |
+| `0-7` | `01234567` | Octal digits |
+| `0-1` | `01` | Binary digits |
+| `a-z` | `abcdefghijklmnopqrstuvwxyz` | Lowercase ASCII |
+| `A-Z` | `ABCDEFGHIJKLMNOPQRSTUVWXYZ` | Uppercase ASCII |
+| `a-f` | `abcdef` | Lowercase hex |
+| `A-F` | `ABCDEF` | Uppercase hex |
 
 ### ASCII Character Classes
 
@@ -125,12 +127,17 @@ Type coercion for variables:
 
 ### Unicode Character Classes
 
+Requires `unicode-ident` crate in generated Rust code.
+
 | Name | Description |
 |------|-------------|
-| `XID_START` | Unicode XID_Start (identifier start) |
-| `XID_CONT` | Unicode XID_Continue (identifier continue) |
-| `XLBL_START` | = `XID_START` |
-| `XLBL_CONT` | `XID_CONT` + `-` (for kebab-case labels) |
+| `XID_START` | Unicode XID_Start (can start identifier) |
+| `XID_CONT` | Unicode XID_Continue (can continue identifier) |
+| `XLBL_START` | = `XID_START` (label start) |
+| `XLBL_CONT` | `XID_CONT` + `-` (label continue, for kebab-case) |
+
+**Note:** These match Unicode codepoints, not bytes. When used, the parser
+decodes UTF-8 on demand (single codepoint, not full validation).
 
 ### Single-Character Classes (DSL-Reserved)
 
