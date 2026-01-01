@@ -1,5 +1,33 @@
 # descent TODO
 
+## Priority Queue
+
+### 1. Multi-Chunk Streaming - VERIFY WORKING
+
+Resumable state machine for streaming input (design decided in session 3).
+**This should already be implemented** - verify it works before other features.
+
+If not working, this is the highest priority item.
+
+See "Multi-Chunk Streaming" section below for full design.
+
+### 2. Byte Literal Syntax Cleanup
+
+See "Design Discussions Needed" section below. Needs resolution before adding
+more syntax features - the current ad-hoc accretion is confusing and error-prone.
+
+### 3. Unicode Identifiers
+
+Use `unicode-ident` crate for XID_Start/XID_Continue. See section below for
+decided approach with XID_START, XID_CONT, XLBL_START, XLBL_CONT classes.
+
+### 4. Character Ranges
+
+`|c[0-9]` → `b'0'..=b'9'`, `|c[a-f]` → `b'a'..=b'f'`
+Currently parses as literal chars (broken). `values.desc` depends on this.
+
+---
+
 ## Design Discussions Needed
 
 ### Byte Literal Syntax Inconsistency
@@ -197,7 +225,7 @@ May be specific to patterns in udon.desc - needs investigation with actual file.
 
 ---
 
-### 7. Unicode Identifiers - **DECIDED**
+### 7. Unicode Identifiers - **DECIDED** (Priority Queue #3)
 `is_letter()` in generated code uses `b.is_ascii_alphabetic()`. UDON spec allows Unicode
 XID_Start/XID_Continue for element names.
 
@@ -259,9 +287,10 @@ Perfect Hash" in Future Enhancements).
 - Keyword lookup: phf perfect hash (O(1)) - pending implementation
 - Complex post-processing (if needed): libudon with `lexical-core`
 
-### 10. Multi-Chunk Streaming - **DECIDED**
+### 10. Multi-Chunk Streaming - **DECIDED** (Priority Queue #1 - VERIFY)
 
 Current parser is single-buffer only (`&'a [u8]`). UDON needs streaming for LLM use case.
+**This should already be implemented** - verify before other work.
 
 **Decision:** Resumable State Machine (Option 2)
 
@@ -519,9 +548,8 @@ pub enum ParseErrorCode {
 - MARK/TERM: parsed, auto-MARK for CONTENT works, explicit MARK/TERM working
 
 ### Not Yet Implemented
-- Character ranges: `|c[0-9]` → `b'0'..=b'9'`, `|c[a-f]` → `b'a'..=b'f'`
-  - Currently parses as literal chars (broken)
-  - `values.desc` depends on this
+- Character ranges: See Priority Queue #4
+- Unicode identifiers: See Priority Queue #3
 - LINE variable: Current line number (1-indexed), like COL
   - Parser already tracks `self.line` internally
   - Just needs `LINE -> self.line as i32` in `rust_expr` filter (like COL/PREV)
