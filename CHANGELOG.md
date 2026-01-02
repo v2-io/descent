@@ -5,6 +5,15 @@ All notable changes to descent will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.15] - 2026-01-02
+
+### Fixed
+- **pascalcase preserves PascalCase**: The `pascalcase` filter now correctly handles
+  already-PascalCase input like `UnclosedInterpolation` instead of lowercasing it
+  to `Unclosedinterpolation`. Splits on case transitions in addition to delimiters.
+- **Error code deduplication**: Custom `/error(Code)` calls no longer create duplicate
+  enum variants when the same code is auto-generated from `expects_char` inference.
+
 ## [0.6.14] - 2026-01-02
 
 ### Added
