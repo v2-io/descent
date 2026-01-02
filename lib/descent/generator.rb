@@ -21,12 +21,15 @@ module Descent
       "b'#{escaped}'"
     end
 
-    # Convert snake_case or lowercase to PascalCase.
-    # Examples: "identity" -> "Identity", "after_name" -> "AfterName"
+    # Convert snake_case, camelCase, or preserve PascalCase.
+    # Examples: "identity" -> "Identity", "after_name" -> "AfterName",
+    #           "UnclosedInterpolation" -> "UnclosedInterpolation"
     def pascalcase(str)
       return '' if str.nil?
 
-      str.to_s.split(/[_\s-]/).map(&:capitalize).join
+      # Split on delimiters AND on case transitions (lowercase followed by uppercase)
+      # This preserves existing PascalCase while converting snake_case and camelCase
+      str.to_s.split(/[_\s-]|(?<=[a-z])(?=[A-Z])/).map(&:capitalize).join
     end
 
     # Transform DSL expressions to Rust.
