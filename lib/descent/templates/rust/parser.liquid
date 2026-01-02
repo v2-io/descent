@@ -69,19 +69,25 @@ pub enum ParseErrorCode {
     UnexpectedChar,
 {% comment %} Deduplicate error codes by return_type - multiple functions may return the same type {% endcomment %}
 {% comment %} Use comma-delimited format with leading comma to avoid partial matches {% endcomment %}
-{% assign seen_unclosed_types = "," %}
+{% assign seen_error_codes = ",UnexpectedEof,UnexpectedChar," %}
 {% for func in functions %}
 {% if func.expects_char %}
-{% assign type_pattern = "," | append: func.return_type | append: "," %}
-{% unless seen_unclosed_types contains type_pattern %}
-    Unclosed{{ func.return_type }},
-{% assign seen_unclosed_types = seen_unclosed_types | append: func.return_type | append: "," %}
+{% assign unclosed_code = "Unclosed" | append: func.return_type %}
+{% assign code_pattern = "," | append: unclosed_code | append: "," %}
+{% unless seen_error_codes contains code_pattern %}
+    {{ unclosed_code }},
+{% assign seen_error_codes = seen_error_codes | append: unclosed_code | append: "," %}
 {% endunless %}
 {% endif %}
 {% endfor %}
-{% comment %} Custom error codes from /error(code) calls {% endcomment %}
+{% comment %} Custom error codes from /error(code) calls - skip if already generated {% endcomment %}
 {% for code in custom_error_codes %}
-    {{ code | pascalcase }},
+{% assign pascal_code = code | pascalcase %}
+{% assign code_pattern = "," | append: pascal_code | append: "," %}
+{% unless seen_error_codes contains code_pattern %}
+    {{ pascal_code }},
+{% assign seen_error_codes = seen_error_codes | append: pascal_code | append: "," %}
+{% endunless %}
 {% endfor %}
 }
 
