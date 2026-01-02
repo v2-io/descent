@@ -243,6 +243,12 @@ module Descent
 
         # Check for set_term usage (any TERM command uses set_term)
         usage[:set_term] = true if cmd['type'] == 'term'
+
+        # Check for advance_to - track scan arity for explicit ->[chars]
+        if cmd['type'] == 'advance_to' && args['value']
+          arity = args['value'].length
+          usage[:max_scan_arity] = [usage[:max_scan_arity], arity].max
+        end
       end
 
       # Check case conditions

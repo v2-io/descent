@@ -522,7 +522,8 @@ module Descent
 
       args = case cmd.type
              when :assign, :add_assign, :sub_assign then cmd.value.is_a?(Hash) ? cmd.value : {}
-             when :advance_to, :scan then { value: process_escapes(cmd.value) }
+             when :advance_to then { value: validate_advance_to(cmd.value, cmd.lineno) }
+             when :scan then { value: process_escapes(cmd.value) }
              when :emit, :call_method, :transition, :error then { value: cmd.value }
              when :call then parse_call_value(cmd.value)
              when :inline_emit_bare, :inline_emit_mark then { type: cmd.value }
@@ -547,6 +548,42 @@ module Descent
 
       result = CharacterClass.parse(str)
       result[:bytes] || ''
+    end
+
+    # Validate and process advance_to (->[...]) arguments.
+    # Only literal bytes are supported (1-6 chars for SIMD memchr).
+    # Special classes and param refs are NOT supported.
+    def validate_advance_to(str, lineno)
+      if str.nil? || str.empty?
+        raise ValidationError, "L#{lineno}: ->[] requires at least one character"
+      end
+
+      result = CharacterClass.parse(str)
+
+      if result[:special_class]
+        raise ValidationError,
+              "L#{lineno}: ->[] does not support character classes like #{str.upcase}. " \
+              'Only literal bytes are supported (uses SIMD memchr).'
+      end
+
+      if result[:param_ref]
+        raise ValidationError,
+              "L#{lineno}: ->[] does not support parameter references like :#{result[:param_ref]}. " \
+              'Only literal bytes are supported (uses SIMD memchr).'
+      end
+
+      bytes = result[:bytes] || ''
+      if bytes.empty?
+        raise ValidationError, "L#{lineno}: ->[] resolved to empty bytes from '#{str}'"
+      end
+
+      if bytes.length > 6
+        raise ValidationError,
+              "L#{lineno}: ->[#{str}] has #{bytes.length} chars but maximum is 6 " \
+              '(chained memchr limit). Split into multiple scans or restructure grammar.'
+      end
+
+      bytes
     end
 
     # Characters that MUST be quoted or use predefined class names in c[...]

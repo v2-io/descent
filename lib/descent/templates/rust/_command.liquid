@@ -14,7 +14,8 @@
                     self.advance();
 
 {% when "advance_to" %}
-{% comment %} Explicit advance-to: ->[chars] uses memchr to scan forward {% endcomment %}
+{% comment %} Explicit advance-to: ->[chars] uses memchr to scan forward.
+              Limited to 1-6 chars (validated by IR builder). {% endcomment %}
 {% assign target_chars = cmd.args.value | split: "" %}
 {% assign char_count = target_chars | size %}
 {% if char_count == 1 %}
@@ -23,19 +24,14 @@
                     self.scan_to2({{ target_chars[0] | escape_rust_char }}, {{ target_chars[1] | escape_rust_char }});
 {% elsif char_count == 3 %}
                     self.scan_to3({{ target_chars[0] | escape_rust_char }}, {{ target_chars[1] | escape_rust_char }}, {{ target_chars[2] | escape_rust_char }});
+{% elsif char_count == 4 %}
+                    self.scan_to4({{ target_chars[0] | escape_rust_char }}, {{ target_chars[1] | escape_rust_char }}, {{ target_chars[2] | escape_rust_char }}, {{ target_chars[3] | escape_rust_char }});
+{% elsif char_count == 5 %}
+                    self.scan_to5({{ target_chars[0] | escape_rust_char }}, {{ target_chars[1] | escape_rust_char }}, {{ target_chars[2] | escape_rust_char }}, {{ target_chars[3] | escape_rust_char }}, {{ target_chars[4] | escape_rust_char }});
+{% elsif char_count == 6 %}
+                    self.scan_to6({{ target_chars[0] | escape_rust_char }}, {{ target_chars[1] | escape_rust_char }}, {{ target_chars[2] | escape_rust_char }}, {{ target_chars[3] | escape_rust_char }}, {{ target_chars[4] | escape_rust_char }}, {{ target_chars[5] | escape_rust_char }});
 {% else %}
-                    // advance_to with {{ char_count }} chars - use memchr iter
-                    if let Some(idx) = memchr::memchr_iter({% for c in target_chars %}{{ c | escape_rust_char }}{% unless forloop.last %}, {% endunless %}{% endfor %}, &self.input[self.pos..]).next() {
-                        for &b in &self.input[self.pos..self.pos + idx] {
-                            if b == b'\n' { self.line += 1; self.column = 1; } else { self.column += 1; }
-                        }
-                        self.pos += idx;
-                    } else {
-                        for &b in &self.input[self.pos..] {
-                            if b == b'\n' { self.line += 1; self.column = 1; } else { self.column += 1; }
-                        }
-                        self.pos = self.input.len();
-                    }
+                    unreachable!("advance_to validated to 1-6 chars");
 {% endif %}
 
 {% when "mark" %}
