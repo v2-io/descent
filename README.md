@@ -233,16 +233,33 @@ Actions are pipe-separated, execute left-to-right:
 
 ```
 | ->                    ; Advance one character
-| ->[\n]                ; Advance TO newline (SIMD scan)
+| ->['\n']              ; Advance TO newline (SIMD scan, 1-6 chars)
+| ->['"\'']             ; Advance TO first " or ' (multi-char scan)
 | MARK                  ; Mark position for accumulation
 | TERM                  ; Terminate slice (MARK to current)
+| TERM(-1)              ; Terminate slice excluding last N bytes
 | /function             ; Call function
 | /function(args)       ; Call with arguments
+| /error                ; Emit error event and return
+| /error(CustomCode)    ; Emit error with custom code and return
 | var = value           ; Assignment
 | var += 1              ; Increment
 | PREPEND('|')          ; Prepend literal to next accumulated content
 | PREPEND('**')         ; Prepend multi-byte literal
 | PREPEND(:param)       ; Prepend parameter bytes (empty = no-op)
+```
+
+**Advance-to (`->[...]`)**: SIMD-accelerated scan using memchr. Supports 1-6 literal
+bytes only. Does NOT support character classes (LETTER, DIGIT) or parameter refs (:param).
+Use quoted chars for special bytes: `->['\n\t']`, `->['|']`.
+
+**Error handling (`/error`)**: Emits an Error event and returns. Custom error codes
+are converted to PascalCase:
+
+```
+|c['\t']    | /error(no_tabs)   |return    ; Emits [Error, "NoTabs"]
+|c[' ']     | /error(no_spaces) |return    ; Emits [Error, "NoSpaces"]
+|default    | /error            |return    ; Emits [Error, "UnexpectedChar"]
 ```
 
 `PREPEND` adds bytes to the accumulation buffer that will be combined with the
