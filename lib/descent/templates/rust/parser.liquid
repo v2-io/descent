@@ -622,8 +622,11 @@ impl<'a> Parser<'a> {
         {% endfor %}
 
         {% comment %} Entry actions (variable initialization on function entry) {% endcomment %}
+        {% comment %} Skip MARK for CONTENT types since auto-MARK already handles it {% endcomment %}
         {% for cmd in func.entry_actions %}
+        {% unless cmd.type == "mark" and return_type_info.kind == "content" %}
         {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info, states: func.states %}
+        {% endunless %}
         {% endfor %}
 
         {% comment %} State machine {% endcomment %}
@@ -734,6 +737,14 @@ impl<'a> Parser<'a> {
                 {% if return_type_info.kind == "internal" %}return 0;{% else %}return;{% endif %}
                 {% endif %}
             }
+            {% comment %} Optimization: if only one case and it's default, skip the match {% endcomment %}
+            {% if state.cases.size == 1 and state.cases[0].is_default %}
+            {% assign kase = state.cases[0] %}
+                    {% if trace %}eprintln!("TRACE: L{{ kase.lineno }} {{ func.name }}:{{ state.name }}{% if kase.substate %}.{{ kase.substate }}{% endif %} | byte={} term={} pos={}", Self::trace_byte(self.peek()), self.trace_content(), self.pos);{% endif %}
+                    {% for cmd in kase.commands %}
+                    {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info %}
+                    {% endfor %}
+            {% else %}
             match self.peek() {
                 {% for kase in state.cases %}
                 {% if kase.is_default %}
@@ -767,6 +778,7 @@ impl<'a> Parser<'a> {
                 }
                 {% endunless %}
             }
+            {% endif %}
             {% endif %}
         }
         {% else %}
@@ -875,6 +887,14 @@ impl<'a> Parser<'a> {
                         {% if return_type_info.kind == "internal" %}return 0;{% else %}return;{% endif %}
                         {% endif %}
                     }
+                    {% comment %} Optimization: if only one case and it's default, skip the match {% endcomment %}
+                    {% if state.cases.size == 1 and state.cases[0].is_default %}
+                    {% assign kase = state.cases[0] %}
+                            {% if trace %}eprintln!("TRACE: L{{ kase.lineno }} {{ func.name }}:{{ state.name }}{% if kase.substate %}.{{ kase.substate }}{% endif %} | byte={} term={} pos={}", Self::trace_byte(self.peek()), self.trace_content(), self.pos);{% endif %}
+                            {% for cmd in kase.commands %}
+                            {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info, states: func.states %}
+                            {% endfor %}
+                    {% else %}
                     match self.peek() {
                         {% for kase in state.cases %}
                         {% if kase.is_default %}
@@ -908,6 +928,7 @@ impl<'a> Parser<'a> {
                         }
                         {% endunless %}
                     }
+                    {% endif %}
                     {% endif %}
                     {% endif %}
                 }
