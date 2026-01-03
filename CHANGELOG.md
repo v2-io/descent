@@ -5,6 +5,16 @@ All notable changes to descent will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.16] - 2026-01-02
+
+### Changed
+- **SIMD newline injection for line tracking**: Scannable states now automatically
+  inject `'\n'` into scan targets (if not already present and size < 6). This enables
+  correct line/column tracking during SIMD scans without runtime checks. When the
+  injected newline is hit, the parser updates line/column and continues scanning.
+  Scan functions simplified to just add offset to column, trusting no newlines exist
+  between start and found position.
+
 ## [0.6.15] - 2026-01-02
 
 ### Fixed

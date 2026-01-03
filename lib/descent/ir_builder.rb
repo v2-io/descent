@@ -429,6 +429,15 @@ module Descent
       eof_commands = state.eof_handler&.commands&.map { |c| build_command(c) }
       eof_commands = mark_returns_after_inline_emits(eof_commands) if eof_commands
 
+      # Inject '\n' into scan_chars if not already a user target (and room available).
+      # This ensures SIMD scans stop at newlines for correct line/column tracking.
+      # The template adds a match arm for '\n' that updates line/col and continues scanning.
+      newline_injected = false
+      if scan_chars && !scan_chars.include?("\n") && scan_chars.size < 6
+        scan_chars = ["\n"] + scan_chars  # Prepend so newline is checked first
+        newline_injected = true
+      end
+
       IR::State.new(
         name:             state.name,
         cases:,
@@ -437,6 +446,7 @@ module Descent
         is_self_looping:,
         has_default:,
         is_unconditional:,
+        newline_injected:,
         lineno:           state.lineno
       )
     end
@@ -1340,6 +1350,7 @@ module Descent
             is_self_looping:  state.is_self_looping,
             has_default:      state.has_default,
             is_unconditional: state.is_unconditional,
+            newline_injected: state.newline_injected,
             lineno:           state.lineno
           )
         end

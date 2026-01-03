@@ -53,13 +53,17 @@ module Descent
     end
 
     # State with inferred optimizations
-    State = Data.define(:name, :cases, :eof_handler, :scan_chars, :is_self_looping, :has_default, :is_unconditional, :lineno) do
+    State = Data.define(:name, :cases, :eof_handler, :scan_chars, :is_self_looping, :has_default, :is_unconditional, :newline_injected, :lineno) do
       # scan_chars: Array of chars for SIMD memchr scan, or nil if not applicable
       # is_self_looping: true if has default case that loops back to self
       # has_default: true if state has a default case (no chars, no condition)
       # is_unconditional: true if first case has no char match (bare action case)
+      # newline_injected: true if '\n' was added to scan_chars by the generator (not a user target).
+      #   When true, the template must add a match arm for '\n' that updates line/column and
+      #   continues scanning (no state transition). This enables correct line tracking during
+      #   SIMD scans without runtime checks for whether '\n' is a target.
       def initialize(name:, cases: [], eof_handler: nil, scan_chars: nil, is_self_looping: false,
-                     has_default: false, is_unconditional: false, lineno: 0) = super
+                     has_default: false, is_unconditional: false, newline_injected: false, lineno: 0) = super
 
       def scannable? = !scan_chars.nil? && !scan_chars.empty?
     end

@@ -392,15 +392,16 @@ module Descent
 
     def state_to_hash(state)
       {
-        'name'             => state.name,
-        'cases'            => state.cases.map { |c| case_to_hash(c) },
-        'eof_handler'      => state.eof_handler&.map { |c| command_to_hash(c) } || [],
-        'scan_chars'       => state.scan_chars,
-        'scannable'        => state.scannable?,
-        'is_self_looping'  => state.is_self_looping,
-        'has_default'      => state.has_default,
-        'is_unconditional' => state.is_unconditional,
-        'lineno'           => state.lineno
+        'name'              => state.name,
+        'cases'             => state.cases.map { |c| case_to_hash(c) },
+        'eof_handler'       => state.eof_handler&.map { |c| command_to_hash(c) } || [],
+        'scan_chars'        => state.scan_chars,
+        'scannable'         => state.scannable?,
+        'is_self_looping'   => state.is_self_looping,
+        'has_default'       => state.has_default,
+        'is_unconditional'  => state.is_unconditional,
+        'newline_injected'  => state.newline_injected,
+        'lineno'            => state.lineno
       }
     end
 
