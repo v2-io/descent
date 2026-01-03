@@ -694,6 +694,30 @@ fn lookup_name_or_fallback<F>(&mut self, on_event: &mut F) { ... }
 
 ## Future Enhancements
 
+### Parser Profiling for Optimization
+
+A special mode that takes a finished parser and runs it against exemplar documents
+to generate statistics about actual branching behavior. This empirical data can then
+be analyzed against the `.desc` file for optimizations based on probabilistic state
+transition tables.
+
+**Concept:**
+- Instrument generated parser to collect transition counts, scan hit rates, etc.
+- Run against representative corpus of real-world documents
+- Output: probabilistic state transition matrix, hot paths, rarely-used branches
+- Use data to inform: branch ordering, SCAN targets, potential state merging
+
+**Potential optimizations:**
+- Reorder cases by frequency (most common first for faster short-circuit)
+- Identify SCAN opportunities based on actual loop iteration counts
+- Detect dead code paths (never taken in practice)
+- Suggest grammar restructuring for better locality
+
+### Validation Gaps (discovered during test suite development)
+
+- **Missing parser name**: Neither the parser nor validator catches missing `|parser name`
+  directive. The AST/IR ends up with `name: nil` and passes validation. Should error early.
+
 ### Static Analysis
 The IR provides enough structure for useful static analysis:
 
