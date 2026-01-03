@@ -123,7 +123,7 @@ module Descent
       if in_quote
         raise LexerError.new(
           "Unterminated #{in_quote == "'" ? 'single' : 'double'} quote - opened but never closed",
-          lineno:      quote_start_line,
+          lineno: quote_start_line,
           source_file: @source_file
         )
       end
@@ -151,7 +151,7 @@ module Descent
             when '[' then depth += 1
             when ']' then depth -= 1
             when ';'
-              if depth == 0
+              if depth.zero?
                 comment_start = i
                 break
               end
@@ -159,7 +159,7 @@ module Descent
           end
           prev_char = c
         end
-        comment_start ? line[0...comment_start].rstrip + "\n" : line
+        comment_start ? "#{line[0...comment_start].rstrip}\n" : line
       end.join
     end
 
@@ -178,7 +178,7 @@ module Descent
       in_quote = false
       content  = +''
 
-      while i < part.length && depth > 0
+      while i < part.length && depth.positive?
         c = part[i]
 
         case c
@@ -193,7 +193,7 @@ module Descent
             content << c
           else
             depth -= 1
-            content << c if depth > 0 # Don't include final ]
+            content << c if depth.positive? # Don't include final ]
           end
         else
           content << c
@@ -201,7 +201,7 @@ module Descent
         i += 1
       end
 
-      [content, depth == 0 ? i : nil]
+      [content, depth.zero? ? i : nil]
     end
 
     def parse_part(part, lineno)
@@ -225,7 +225,7 @@ module Descent
         while i < line.length
           c = line[i]
           if in_quote
-            in_quote = false if c == "'" && (i == 0 || line[i - 1] != '\\')
+            in_quote = false if c == "'" && (i.zero? || line[i - 1] != '\\')
           else
             case c
             when "'"
@@ -236,7 +236,7 @@ module Descent
             when '(' then paren_depth += 1
             when ')' then paren_depth -= 1
             when ';'
-              if bracket_depth == 0 && paren_depth == 0
+              if bracket_depth.zero? && paren_depth.zero?
                 comment_start = i
                 break
               end
@@ -249,7 +249,7 @@ module Descent
         if in_quote
           raise LexerError.new(
             "Unterminated single quote at column #{quote_start_col + 1}",
-            lineno:      lineno + line_idx,
+            lineno: lineno + line_idx,
             source_file: @source_file
           )
         end
@@ -266,18 +266,19 @@ module Descent
                   part[/^(\.|[^ \[]+)/]
                 end&.strip || ''
 
-      tag = if raw_tag.match?(/^emit\(/i)
+      tag = case raw_tag
+            when /^emit\(/i
               raw_tag
-            elsif raw_tag.match?(%r{^/\w+\(})
+            when %r{^/\w+\(}
               # Function call - preserve case of arguments inside parens
               name = raw_tag[%r{^/(\w+)\(}, 1]
               args = raw_tag[/\(([^)]*)\)/, 1]
               "/#{name.downcase}(#{args})"
-            elsif raw_tag.match?(/^[A-Z]+(_[A-Z]+)*$/)
+            when /^[A-Z]+(_[A-Z]+)*$/
               # SCREAMING_SNAKE_CASE - character class like LETTER, LABEL_CONT, DIGIT
               # Lowercase it so parser can handle it uniformly
               raw_tag.downcase
-            elsif raw_tag.match?(/^[A-Z]/)
+            when /^[A-Z]/
               # PascalCase - inline type emit, preserve case entirely
               raw_tag
             else
@@ -288,13 +289,12 @@ module Descent
       id, id_end_pos = extract_bracketed_id(part)
 
       # For function calls, strip the full call including parens
-      rest = if raw_tag.match?(%r{^/\w+\(})
-               after_tag = part.sub(%r{^/\w+\([^)]*\)}, '')
-               id_end_pos ? after_tag[(after_tag.index('[') + id.length + 2)..].to_s.strip : after_tag.strip
-             else
-               after_tag = part.sub(/^(\.|[^ \[]+)/, '')
-               id_end_pos ? after_tag[(after_tag.index('[') + id.length + 2)..].to_s.strip : after_tag.strip
-             end
+      after_tag = if raw_tag.match?(%r{^/\w+\(})
+                    part.sub(%r{^/\w+\([^)]*\)}, '')
+                  else
+                    part.sub(/^(\.|[^ \[]+)/, '')
+                  end
+      rest = id_end_pos ? after_tag[(after_tag.index('[') + id.length + 2)..].to_s.strip : after_tag.strip
 
       # For parser name and similar, take only first word/line
       rest = rest.split("\n").first&.strip || '' if %w[parser entry-point].include?(tag)

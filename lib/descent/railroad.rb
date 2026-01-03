@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require 'set'
-
 module Descent
   # Generates Python code using the railroad-diagrams library.
   #
@@ -123,7 +121,7 @@ module Descent
       # Categorize cases by their transition type
       exit_cases    = []      # Cases that return (exit the function)
       loop_cases    = []      # Cases that self-loop (stay in this state)
-      forward_cases = []   # Cases that go to another state
+      forward_cases = [] # Cases that go to another state
 
       cases.each do |kase|
         transition = find_transition(kase)
@@ -201,13 +199,13 @@ module Descent
 
     # Known character class patterns - map expanded chars back to names
     CHAR_CLASS_NAMES = {
-      'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'             => 'LETTER',
+      'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ' => 'LETTER',
       'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-' => 'LABEL_CONT',
-      '0123456789'                                                       => 'DIGIT',
-      '0123456789abcdefABCDEF'                                           => 'HEX_DIGIT',
-      " \t"                                                              => 'WS',
-      'abcdefghijklmnopqrstuvwxyz'                                       => 'a-z',
-      'ABCDEFGHIJKLMNOPQRSTUVWXYZ'                                       => 'A-Z'
+      '0123456789' => 'DIGIT',
+      '0123456789abcdefABCDEF' => 'HEX_DIGIT',
+      " \t" => 'WS',
+      'abcdefghijklmnopqrstuvwxyz' => 'a-z',
+      'ABCDEFGHIJKLMNOPQRSTUVWXYZ' => 'A-Z'
     }.freeze
 
     def case_to_element(kase, _func)

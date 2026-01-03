@@ -14,7 +14,7 @@ class IRBuilderTest < Minitest::Test
         |state[:main]
           |default | -> |>>
     DESC
-    ir = build_ir(content)
+    ir   = build_ir(content)
     type = ir.types.find { |t| t.name == 'Element' }
 
     assert_equal :bracket, type.kind
@@ -31,7 +31,7 @@ class IRBuilderTest < Minitest::Test
         |state[:main]
           |default | -> |>>
     DESC
-    ir = build_ir(content)
+    ir   = build_ir(content)
     type = ir.types.find { |t| t.name == 'Text' }
 
     assert_equal :content, type.kind
@@ -48,7 +48,7 @@ class IRBuilderTest < Minitest::Test
         |state[:main]
           |default | -> |>>
     DESC
-    ir = build_ir(content)
+    ir   = build_ir(content)
     type = ir.types.find { |t| t.name == 'Counter' }
 
     assert_equal :internal, type.kind
@@ -69,7 +69,7 @@ class IRBuilderTest < Minitest::Test
         |state[:done]
           |default |return
     DESC
-    ir = build_ir(content)
+    ir         = build_ir(content)
     main_state = ir.functions[0].states.find { |s| s.name == 'main' }
 
     assert main_state.scannable?
@@ -87,7 +87,7 @@ class IRBuilderTest < Minitest::Test
         |state[:other]
           |default |return
     DESC
-    ir = build_ir(content)
+    ir         = build_ir(content)
     main_state = ir.functions[0].states.find { |s| s.name == 'main' }
 
     refute main_state.scannable?
@@ -105,7 +105,7 @@ class IRBuilderTest < Minitest::Test
         |state[:pipe]
           |default |return
     DESC
-    ir = build_ir(content)
+    ir         = build_ir(content)
     main_state = ir.functions[0].states.find { |s| s.name == 'main' }
 
     assert main_state.scannable?
@@ -126,7 +126,7 @@ class IRBuilderTest < Minitest::Test
         |state[:pipe]
           |default |return
     DESC
-    ir = build_ir(content)
+    ir         = build_ir(content)
     main_state = ir.functions[0].states.find { |s| s.name == 'main' }
 
     # Newline should be auto-injected for line tracking
@@ -145,7 +145,7 @@ class IRBuilderTest < Minitest::Test
         |state[:eol]
           |default |return
     DESC
-    ir = build_ir(content)
+    ir         = build_ir(content)
     main_state = ir.functions[0].states.find { |s| s.name == 'main' }
 
     # Already has newline, no injection needed
@@ -164,7 +164,7 @@ class IRBuilderTest < Minitest::Test
           |c[:close] | -> |return
           |default   | -> |>>
     DESC
-    ir = build_ir(content)
+    ir   = build_ir(content)
     func = ir.functions[0]
 
     assert_equal :byte, func.param_types['close']
@@ -179,7 +179,7 @@ class IRBuilderTest < Minitest::Test
           |c[x]    | PREPEND(:prefix) |return
           |default | -> |>>
     DESC
-    ir = build_ir(content)
+    ir   = build_ir(content)
     func = ir.functions[0]
 
     assert_equal :bytes, func.param_types['prefix']
@@ -194,7 +194,7 @@ class IRBuilderTest < Minitest::Test
           |if[COL <= :col] |return
           |default | -> |>>
     DESC
-    ir = build_ir(content)
+    ir   = build_ir(content)
     func = ir.functions[0]
 
     assert_equal :i32, func.param_types['col']
@@ -210,7 +210,7 @@ class IRBuilderTest < Minitest::Test
         |state[:main]
           |default | -> |>>
     DESC
-    ir = build_ir(content)
+    ir   = build_ir(content)
     func = ir.functions[0]
 
     # Locals is a Hash: { var_name => type }
@@ -230,7 +230,7 @@ class IRBuilderTest < Minitest::Test
           |c['"']   | -> |return
           |default | -> |>>
     DESC
-    ir = build_ir(content)
+    ir   = build_ir(content)
     func = ir.functions[0]
 
     assert_equal '"', func.expects_char
@@ -247,7 +247,7 @@ class IRBuilderTest < Minitest::Test
           |c[')']  | -> |return
           |default | -> |>>
     DESC
-    ir = build_ir(content)
+    ir   = build_ir(content)
     func = ir.functions[0]
 
     # Multiple different return chars - can't infer single expects_char
@@ -264,11 +264,11 @@ class IRBuilderTest < Minitest::Test
         |state[:main]
           |default | -> |>>
     DESC
-    ir = build_ir(content)
+    ir   = build_ir(content)
     func = ir.functions[0]
 
     # Entry actions are Command objects with .type
-    assert func.entry_actions.any? { |cmd| cmd.type == :assign }
+    assert(func.entry_actions.any? { |cmd| cmd.type == :assign })
   end
 
   # EOF handler
@@ -284,13 +284,13 @@ class IRBuilderTest < Minitest::Test
           |default | TERM |return
           |eof     | TERM |return
     DESC
-    ir = build_ir(content)
+    ir    = build_ir(content)
     state = ir.functions[0].states[0]
 
     # EOF handler is an array of Command objects directly
     refute_nil state.eof_handler
     refute_empty state.eof_handler
-    assert state.eof_handler.any? { |cmd| cmd.type == :term }
+    assert(state.eof_handler.any? { |cmd| cmd.type == :term })
   end
 
   # Unconditional states
@@ -305,7 +305,7 @@ class IRBuilderTest < Minitest::Test
         |state[:process]
           |default | -> |>>
     DESC
-    ir = build_ir(content)
+    ir          = build_ir(content)
     setup_state = ir.functions[0].states.find { |s| s.name == 'setup' }
 
     # State has bare action case (no char match) - should be unconditional

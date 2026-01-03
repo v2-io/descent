@@ -92,7 +92,7 @@ class LexerTest < Minitest::Test
   # Bracket handling
 
   def test_handles_pipe_in_brackets
-    tokens = tokenize("|c[<P>] | -> |>>")
+    tokens = tokenize('|c[<P>] | -> |>>')
     assert_equal 3, tokens.size
     assert_equal 'c', tokens[0].tag
     assert_equal '<P>', tokens[0].id
@@ -161,9 +161,5 @@ class LexerTest < Minitest::Test
 
   # Error cases
 
-  def test_raises_on_unterminated_quote
-    assert_raises(Descent::LexerError) do
-      tokenize("|c['unterminated")
-    end
-  end
+  def test_raises_on_unterminated_quote = assert_raises(Descent::LexerError) { tokenize("|c['unterminated") }
 end

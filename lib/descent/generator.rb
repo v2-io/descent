@@ -7,9 +7,9 @@ module Descent
   module LiquidFilters
     # Escape sequences: DSL placeholder -> Rust byte literal
     ESCAPE_SEQUENCES = {
-      '<P>'  => "b'|'",
-      '<R>'  => "b']'",
-      '<L>'  => "b'['",
+      '<P>' => "b'|'",
+      '<R>' => "b']'",
+      '<L>' => "b'['",
       '<RB>' => "b'}'",
       '<LB>' => "b'{'",
       '<RP>' => "b')'",
@@ -19,7 +19,7 @@ module Descent
       '<DQ>' => "b'\"'",
       '<NL>' => "b'\\n'",
       '<WS>' => "b' '",
-      '<>'   => 'b""' # Empty byte slice
+      '<>' => 'b""' # Empty byte slice
     }.freeze
     # Convert a character to Rust byte literal format.
     # Examples: "\n" -> "b'\\n'", "|" -> "b'|'", " " -> "b' '"
@@ -81,8 +81,8 @@ module Descent
       result = transform_call_args(result)
 
       result
-        .gsub(/(?<!b)'(\\.|.)'/, "b'\\1'")  # Convert char literals to byte literals (only if not already b'...')
-        .gsub(/<[A-Z]+>/) { |m| ESCAPE_SEQUENCES[m] || m }  # Escape sequences
+        .gsub(/(?<!b)'(\\.|.)'/, "b'\\1'") # Convert char literals to byte literals (only if not already b'...')
+        .gsub(/<[A-Z]+>/) { |m| ESCAPE_SEQUENCES[m] || m } # Escape sequences
     end
 
     # Expand special variables: COL, LINE, PREV, :param
@@ -91,7 +91,7 @@ module Descent
         .gsub(/\bCOL\b/, 'self.col()')
         .gsub(/\bLINE\b/, 'self.line as i32')
         .gsub(/\bPREV\b/, 'self.prev()')
-        .gsub(/:([a-z_]\w*)/i) { ::Regexp.last_match(1) }  # :param -> param
+        .gsub(/:([a-z_]\w*)/i) { ::Regexp.last_match(1) } # :param -> param
     end
 
     # Transform function call arguments.
@@ -119,7 +119,6 @@ module Descent
         end
       end.join(', ')
     end
-
   end
 
   # Custom file system for Liquid partials.
@@ -166,7 +165,7 @@ module Descent
       result = template.render(
         build_context,
         strict_variables: false, # Partials may not have all variables
-        strict_filters:   true
+        strict_filters: true
       )
 
       # Post-process: clean up whitespace from Liquid template
@@ -174,7 +173,7 @@ module Descent
         .gsub(/^[ \t]+$/, '')                                 # Remove whitespace-only lines
         .gsub(/\n{2,}/, "\n")                                 # Collapse all blank lines
         .gsub(%r{^(//.*)\n(use |pub |impl )}, "\\1\n\n\\2")   # Blank before use/pub/impl
-        .gsub(%r{(\})\n([ \t]*(?://|#\[|pub |fn ))}, "\\1\n\n\\2")  # Blank after } before new item
+        .gsub(%r{(\})\n([ \t]*(?://|#\[|pub |fn ))}, "\\1\n\n\\2") # Blank after } before new item
     end
 
     private
@@ -186,27 +185,27 @@ module Descent
       functions_data = @ir.functions.map { |f| function_to_hash(f) }
       usage          = analyze_helper_usage(functions_data)
       {
-        'parser'             => @ir.name,
-        'entry_point'        => @ir.entry_point,
-        'types'              => @ir.types.map { |t| type_to_hash(t) },
-        'functions'          => functions_data,
-        'keywords'           => @ir.keywords.map { |k| keywords_to_hash(k) },
+        'parser' => @ir.name,
+        'entry_point' => @ir.entry_point,
+        'types' => @ir.types.map { |t| type_to_hash(t) },
+        'functions' => functions_data,
+        'keywords' => @ir.keywords.map { |k| keywords_to_hash(k) },
         'custom_error_codes' => @ir.custom_error_codes,
-        'trace'              => @trace,
-        'uses_unicode'       => uses_unicode_classes?(functions_data),
+        'trace' => @trace,
+        'uses_unicode' => uses_unicode_classes?(functions_data),
         # Helper usage flags - only emit helpers that are actually used
-        'uses_col'           => usage[:col],
-        'uses_prev'          => usage[:prev],
-        'uses_set_term'      => usage[:set_term],
-        'uses_span'          => usage[:span],
-        'uses_letter'        => usage[:letter],
-        'uses_label_cont'    => usage[:label_cont],
-        'uses_digit'         => usage[:digit],
-        'uses_hex_digit'     => usage[:hex_digit],
-        'uses_ws'            => usage[:ws],
-        'uses_nl'            => usage[:nl],
-        'max_scan_arity'     => usage[:max_scan_arity],
-        'streaming'          => @streaming
+        'uses_col' => usage[:col],
+        'uses_prev' => usage[:prev],
+        'uses_set_term' => usage[:set_term],
+        'uses_span' => usage[:span],
+        'uses_letter' => usage[:letter],
+        'uses_label_cont' => usage[:label_cont],
+        'uses_digit' => usage[:digit],
+        'uses_hex_digit' => usage[:hex_digit],
+        'uses_ws' => usage[:ws],
+        'uses_nl' => usage[:nl],
+        'max_scan_arity' => usage[:max_scan_arity],
+        'streaming' => @streaming
       }
     end
 
@@ -227,7 +226,8 @@ module Descent
         func['states'].each do |state|
           # Track max scan arity
           if state['scannable'] && state['scan_chars']
-            usage[:max_scan_arity] = [usage[:max_scan_arity], state['scan_chars'].size].max
+            usage[:max_scan_arity] =
+              [usage[:max_scan_arity], state['scan_chars'].size].max
           end
 
           state['cases'].each do |kase|
@@ -293,10 +293,10 @@ module Descent
           kase['commands'].each do |cmd|
             commands << cmd
             # Recurse into conditional clauses
-            if cmd['type'] == 'conditional' && cmd.dig('args', 'clauses')
-              cmd['args']['clauses'].each do |clause|
-                commands.concat(clause['commands'] || [])
-              end
+            next unless cmd['type'] == 'conditional' && cmd.dig('args', 'clauses')
+
+            cmd['args']['clauses'].each do |clause|
+              commands.concat(clause['commands'] || [])
             end
           end
         end
@@ -339,13 +339,13 @@ module Descent
 
     def keywords_to_hash(kw)
       {
-        'name'          => kw.name,
-        'const_name'    => "#{kw.name.upcase}_KEYWORDS",
+        'name' => kw.name,
+        'const_name' => "#{kw.name.upcase}_KEYWORDS",
         'fallback_func' => kw.fallback_func,
         'fallback_args' => kw.fallback_args,
-        'mappings'      => kw.mappings.map do |m|
+        'mappings' => kw.mappings.map do |m|
           {
-            'keyword'    => m[:keyword],
+            'keyword' => m[:keyword],
             'event_type' => m[:event_type]
           }
         end
@@ -354,10 +354,10 @@ module Descent
 
     def type_to_hash(type)
       {
-        'name'        => type.name,
-        'kind'        => type.kind.to_s,
+        'name' => type.name,
+        'kind' => type.kind.to_s,
         'emits_start' => type.emits_start,
-        'emits_end'   => type.emits_end
+        'emits_end' => type.emits_end
       }
     end
 
@@ -376,21 +376,21 @@ module Descent
       end
 
       {
-        'name'                   => func.name,
-        'return_type'            => func.return_type,
-        'params'                 => func.params,
-        'param_types'            => func.param_types.transform_keys(&:to_s).transform_values(&:to_s),
-        'locals'                 => func.locals.transform_keys(&:to_s),
-        'local_init_values'      => local_init_values,
-        'mutable_locals'         => mutable_locals,
-        'states'                 => func.states.map { |s| state_to_hash(s) },
-        'eof_handler'            => func.eof_handler&.map { |c| command_to_hash(c) } || [],
-        'entry_actions'          => filtered_entry_actions.map { |c| command_to_hash(c) },
-        'emits_events'           => func.emits_events,
-        'expects_char'           => func.expects_char,
+        'name' => func.name,
+        'return_type' => func.return_type,
+        'params' => func.params,
+        'param_types' => func.param_types.transform_keys(&:to_s).transform_values(&:to_s),
+        'locals' => func.locals.transform_keys(&:to_s),
+        'local_init_values' => local_init_values,
+        'mutable_locals' => mutable_locals,
+        'states' => func.states.map { |s| state_to_hash(s) },
+        'eof_handler' => func.eof_handler&.map { |c| command_to_hash(c) } || [],
+        'entry_actions' => filtered_entry_actions.map { |c| command_to_hash(c) },
+        'emits_events' => func.emits_events,
+        'expects_char' => func.expects_char,
         'emits_content_on_close' => func.emits_content_on_close,
-        'prepend_values'         => func.prepend_values.transform_keys(&:to_s),
-        'lineno'                 => func.lineno
+        'prepend_values' => func.prepend_values.transform_keys(&:to_s),
+        'lineno' => func.lineno
       }
     end
 
@@ -433,42 +433,40 @@ module Descent
     def collect_mutable_vars(commands, mutable)
       commands.each do |cmd|
         case cmd.type
-        when :assign, :add_assign, :sub_assign
-          mutable << cmd.args[:var] if cmd.args[:var]
-        when :conditional
-          cmd.args[:clauses]&.each do |clause|
-            collect_mutable_vars(clause.commands, mutable)
-          end
+        when :assign, :add_assign, :sub_assign then mutable << cmd.args[:var] if cmd.args[:var]
+        when :conditional                      then cmd.args[:clauses]&.each do |clause|
+          collect_mutable_vars(clause.commands, mutable)
+        end
         end
       end
     end
 
     def state_to_hash(state)
       {
-        'name'              => state.name,
-        'cases'             => state.cases.map { |c| case_to_hash(c) },
-        'eof_handler'       => state.eof_handler&.map { |c| command_to_hash(c) } || [],
-        'scan_chars'        => state.scan_chars,
-        'scannable'         => state.scannable?,
-        'is_self_looping'   => state.is_self_looping,
-        'has_default'       => state.has_default,
-        'is_unconditional'  => state.is_unconditional,
-        'newline_injected'  => state.newline_injected,
-        'lineno'            => state.lineno
+        'name' => state.name,
+        'cases' => state.cases.map { |c| case_to_hash(c) },
+        'eof_handler' => state.eof_handler&.map { |c| command_to_hash(c) } || [],
+        'scan_chars' => state.scan_chars,
+        'scannable' => state.scannable?,
+        'is_self_looping' => state.is_self_looping,
+        'has_default' => state.has_default,
+        'is_unconditional' => state.is_unconditional,
+        'newline_injected' => state.newline_injected,
+        'lineno' => state.lineno
       }
     end
 
     def case_to_hash(kase)
       {
-        'chars'          => kase.chars,
-        'special_class'  => kase.special_class&.to_s,
-        'param_ref'      => kase.param_ref,
-        'condition'      => kase.condition,
+        'chars' => kase.chars,
+        'special_class' => kase.special_class&.to_s,
+        'param_ref' => kase.param_ref,
+        'condition' => kase.condition,
         'is_conditional' => kase.conditional?,
-        'substate'       => kase.substate,
-        'commands'       => kase.commands.map { |c| command_to_hash(c) },
-        'is_default'     => kase.default?,
-        'lineno'         => kase.lineno
+        'substate' => kase.substate,
+        'commands' => kase.commands.map { |c| command_to_hash(c) },
+        'is_default' => kase.default?,
+        'lineno' => kase.lineno
       }
     end
 
@@ -480,7 +478,7 @@ module Descent
         args['clauses'] = args['clauses'].map do |clause|
           {
             'condition' => clause['condition'],
-            'commands'  => clause['commands'].map { |c| command_to_hash(c) }
+            'commands' => clause['commands'].map { |c| command_to_hash(c) }
           }
         end
       end

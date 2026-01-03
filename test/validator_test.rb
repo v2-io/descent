@@ -25,7 +25,7 @@ class ValidatorTest < Minitest::Test
     validator = validate(content)
 
     refute validator.valid?
-    assert validator.errors.any? { |e| e.message.include?('Missing parser name') }
+    assert(validator.errors.any? { |e| e.message.include?('Missing parser name') })
   end
 
   # Type validation
@@ -43,7 +43,7 @@ class ValidatorTest < Minitest::Test
     validator = validate(content)
 
     refute validator.valid?
-    assert validator.errors.any? { |e| e.message.include?('Duplicate type') }
+    assert(validator.errors.any? { |e| e.message.include?('Duplicate type') })
   end
 
   def test_unknown_type_kind_is_error
@@ -80,7 +80,7 @@ class ValidatorTest < Minitest::Test
 
     # Duplicate function is a warning, not error
     assert validator.valid?
-    assert validator.warnings.any? { |w| w.message.include?('Duplicate function') }
+    assert(validator.warnings.any? { |w| w.message.include?('Duplicate function') })
   end
 
   def test_function_with_no_states_is_warning
@@ -93,7 +93,7 @@ class ValidatorTest < Minitest::Test
 
     # No states is a warning, not error
     assert validator.valid?
-    assert validator.warnings.any? { |w| w.message.include?('no states') }
+    assert(validator.warnings.any? { |w| w.message.include?('no states') })
   end
 
   def test_unknown_return_type_is_warning
@@ -108,7 +108,7 @@ class ValidatorTest < Minitest::Test
 
     # Unknown return type is a warning
     assert validator.valid?
-    assert validator.warnings.any? { |w| w.message.include?("Return type") && w.message.include?('not declared') }
+    assert(validator.warnings.any? { |w| w.message.include?('Return type') && w.message.include?('not declared') })
   end
 
   # State validation
@@ -125,7 +125,7 @@ class ValidatorTest < Minitest::Test
     validator = validate(content)
 
     assert validator.valid?
-    assert validator.warnings.any? { |w| w.message.include?("'empty'") && w.message.include?('no cases') }
+    assert(validator.warnings.any? { |w| w.message.include?("'empty'") && w.message.include?('no cases') })
   end
 
   # Command validation
@@ -141,7 +141,7 @@ class ValidatorTest < Minitest::Test
     validator = validate(content)
 
     assert validator.valid?
-    assert validator.warnings.any? { |w| w.message.include?('undefined function') }
+    assert(validator.warnings.any? { |w| w.message.include?('undefined function') })
   end
 
   def test_call_to_defined_function_is_valid
@@ -158,7 +158,7 @@ class ValidatorTest < Minitest::Test
     validator = validate(content)
 
     assert validator.valid?
-    refute validator.warnings.any? { |w| w.message.include?('undefined function') }
+    refute(validator.warnings.any? { |w| w.message.include?('undefined function') })
   end
 
   # Transition validation
@@ -174,7 +174,7 @@ class ValidatorTest < Minitest::Test
     validator = validate(content)
 
     assert validator.valid?
-    assert validator.warnings.any? { |w| w.message.include?('undefined state') }
+    assert(validator.warnings.any? { |w| w.message.include?('undefined state') })
   end
 
   def test_transition_to_defined_state_is_valid
@@ -190,7 +190,7 @@ class ValidatorTest < Minitest::Test
     validator = validate(content)
 
     assert validator.valid?
-    refute validator.warnings.any? { |w| w.message.include?('undefined state') }
+    refute(validator.warnings.any? { |w| w.message.include?('undefined state') })
   end
 
   def test_self_loop_transition_is_valid
@@ -204,7 +204,7 @@ class ValidatorTest < Minitest::Test
     validator = validate(content)
 
     assert validator.valid?
-    refute validator.warnings.any? { |w| w.message.include?('transition') }
+    refute(validator.warnings.any? { |w| w.message.include?('transition') })
   end
 
   # Entry point validation
@@ -220,7 +220,7 @@ class ValidatorTest < Minitest::Test
     validator = validate(content)
 
     refute validator.valid?
-    assert validator.errors.any? { |e| e.message.include?('undefined function') }
+    assert(validator.errors.any? { |e| e.message.include?('undefined function') })
   end
 
   def test_defined_entry_point_is_valid
@@ -234,7 +234,7 @@ class ValidatorTest < Minitest::Test
     validator = validate(content)
 
     assert validator.valid?
-    refute validator.errors.any? { |e| e.message.include?('entry') }
+    refute(validator.errors.any? { |e| e.message.include?('entry') })
   end
 
   # Report output

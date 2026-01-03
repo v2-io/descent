@@ -86,7 +86,7 @@ module Descent
         when 'keywords' then keywords << parse_keywords
         else
           raise ParseError, "Line #{token.lineno}: Unknown top-level declaration '#{token.tag}'. " \
-                            "Expected: parser, entry-point, type, function, or keywords"
+                            'Expected: parser, entry-point, type, function, or keywords'
         end
       end
 
@@ -180,8 +180,8 @@ module Descent
       end
 
       AST::Function.new(
-        name:          name.gsub('-', '_'),
-        return_type:   rtype,
+        name: name.gsub('-', '_'),
+        return_type: rtype,
         params:,
         states:,
         eof_handler:,
@@ -240,15 +240,14 @@ module Descent
         case t.tag
         when '.'
           substate = t.rest.strip
-          advance
         else
           commands << parse_command(t)
-          advance
         end
+        advance
       end
 
       AST::Case.new(
-        chars:    chars_str,
+        chars: chars_str,
         substate:,
         commands:,
         lineno:
@@ -269,15 +268,14 @@ module Descent
         case t.tag
         when '.'
           substate = t.rest.strip
-          advance
         else
           commands << parse_command(t)
-          advance
         end
+        advance
       end
 
       AST::Case.new(
-        chars:    nil,
+        chars: nil,
         substate:,
         commands:,
         lineno:
@@ -298,14 +296,12 @@ module Descent
         # The return is final - nothing should follow in the same case.
         break if last_cmd_type == :return && command_like?(t.tag)
 
-        if t.tag == '.'
-          advance # Skip substate marker
-        else
+        unless t.tag == '.'
           cmd = parse_command(t)
           commands << cmd
           last_cmd_type = cmd.type
-          advance
         end
+        advance
       end
 
       AST::Case.new(condition:, commands:, lineno:)
@@ -319,12 +315,8 @@ module Descent
       commands = []
 
       while (t = current) && !CASE_STARTERS.include?(t.tag)
-        if t.tag == '.'
-          advance # Skip substate marker
-        else
-          commands << parse_command(t)
-          advance
-        end
+        commands << parse_command(t) unless t.tag == '.'
+        advance
       end
 
       AST::EOFHandler.new(commands:, lineno:)
@@ -366,7 +358,8 @@ module Descent
           [:prepend, content]
         end
       when /^([A-Z]\w*)\(USE_MARK\)$/  then [:inline_emit_mark, ::Regexp.last_match(1)]
-      when /^([A-Z]\w*)\(([^)]+)\)$/   then [:inline_emit_literal, { type: ::Regexp.last_match(1), literal: ::Regexp.last_match(2) }]
+      when /^([A-Z]\w*)\(([^)]+)\)$/   then [:inline_emit_literal,
+                                             { type: ::Regexp.last_match(1), literal: ::Regexp.last_match(2) }]
       when /^([A-Z]\w*)$/              then [:inline_emit_bare, ::Regexp.last_match(1)]
       else
         # Check if tag + rest forms an assignment (e.g., tag="depth", rest="= 1")
@@ -404,11 +397,12 @@ module Descent
       when /^(\w+)\s*-=\s*(.+)$/  then [:sub_assign, { var: ::Regexp.last_match(1), expr: ::Regexp.last_match(2) }]
       when /^(\w+)\s*=\s*(.+)$/   then [:assign, { var: ::Regexp.last_match(1), expr: ::Regexp.last_match(2) }]
       when /^([A-Z]\w*)\(USE_MARK\)$/  then [:inline_emit_mark, ::Regexp.last_match(1)]
-      when /^([A-Z]\w*)\(([^)]+)\)$/   then [:inline_emit_literal, { type: ::Regexp.last_match(1), literal: ::Regexp.last_match(2) }]
+      when /^([A-Z]\w*)\(([^)]+)\)$/   then [:inline_emit_literal,
+                                             { type: ::Regexp.last_match(1), literal: ::Regexp.last_match(2) }]
       when /^([A-Z]\w*)$/              then [:inline_emit_bare, ::Regexp.last_match(1)]
       else
         raise ParseError, "Unrecognized command: '#{cmd}'. " \
-                          "Expected: MARK, TERM, PREPEND, return, ->, /call, assignment, or TypeName"
+                          'Expected: MARK, TERM, PREPEND, return, ->, /call, assignment, or TypeName'
       end
     end
 

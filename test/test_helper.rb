@@ -15,9 +15,7 @@ end
 # Shared test utilities for descent tests
 module DescentTestHelpers
   # Tokenize a .desc string
-  def tokenize(content, source_file: '(test)')
-    Descent::Lexer.new(content, source_file:).tokenize
-  end
+  def tokenize(content, source_file: '(test)') = Descent::Lexer.new(content, source_file:).tokenize
 
   # Parse a .desc string to AST
   def parse(content, source_file: '(test)')
@@ -32,9 +30,7 @@ module DescentTestHelpers
   end
 
   # Generate Rust code from a .desc string
-  def generate(content, source_file: '(test)', **options)
-    Descent.generate(content, target: :rust, **options)
-  end
+  def generate(content, source_file: '(test)', **) = Descent.generate(content, target: :rust, **)
 
   # Validate IR and return validator
   def validate(content, source_file: '(test)')
@@ -43,14 +39,10 @@ module DescentTestHelpers
   end
 
   # Path to fixtures directory
-  def fixture_path(name)
-    File.join(__dir__, 'fixtures', name)
-  end
+  def fixture_path(name) = File.join(__dir__, 'fixtures', name)
 
   # Read a fixture file
-  def fixture(name)
-    File.read(fixture_path(name))
-  end
+  def fixture(name) = File.read(fixture_path(name))
 
   # Minimal valid .desc for testing
   def minimal_desc
@@ -66,6 +58,8 @@ module DescentTestHelpers
 end
 
 # Include helpers in all test classes
-class Minitest::Test
-  include DescentTestHelpers
+module Minitest
+  class Test
+    include DescentTestHelpers
+  end
 end

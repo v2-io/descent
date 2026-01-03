@@ -125,14 +125,14 @@ end
 input  = File.read(file)
 tokens = Descent::Lexer.new(input).tokenize
 
-dump_tokens(tokens) if [:tokens, :all].include?(mode)
+dump_tokens(tokens) if %i[tokens all].include?(mode)
 
-if [:ast, :ir, :all].include?(mode)
+if %i[ast ir all].include?(mode)
   ast = Descent::Parser.new(tokens).parse
-  dump_ast(ast) if [:ast, :all].include?(mode)
+  dump_ast(ast) if %i[ast all].include?(mode)
 end
 
-if [:ir, :all].include?(mode)
+if %i[ir all].include?(mode)
   ast ||= Descent::Parser.new(tokens).parse
   ir  = Descent::IRBuilder.new(ast).build
   dump_ir(ir)

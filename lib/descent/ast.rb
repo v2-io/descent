@@ -18,7 +18,8 @@ module Descent
 
     # Function definition
     Function = Data.define(:name, :return_type, :params, :states, :eof_handler, :entry_actions, :lineno) do
-      def initialize(name:, return_type: nil, params: [], states: [], eof_handler: nil, entry_actions: [], lineno: 0) = super
+      def initialize(name:, return_type: nil, params: [], states: [], eof_handler: nil, entry_actions: [],
+                     lineno: 0) = super
     end
 
     # State within a function

@@ -89,7 +89,7 @@ class ParserTest < Minitest::Test
         |state[:start]
           |default | -> |>>
     DESC
-    ast = parse(content)
+    ast  = parse(content)
     func = ast.functions[0]
     assert_equal 2, func.params.size
     # Params are stored as strings (the IR builder enriches them later)
@@ -109,7 +109,7 @@ class ParserTest < Minitest::Test
         |state[:second]
           |default | -> |>>
     DESC
-    ast = parse(content)
+    ast  = parse(content)
     func = ast.functions[0]
     assert_equal 2, func.states.size
     assert_equal 'first', func.states[0].name
@@ -126,7 +126,7 @@ class ParserTest < Minitest::Test
         |state[:start]
           |c[x] | -> |>>
     DESC
-    ast = parse(content)
+    ast  = parse(content)
     kase = ast.functions[0].states[0].cases[0]
     assert_equal 'x', kase.chars
     refute kase.default?
@@ -140,7 +140,7 @@ class ParserTest < Minitest::Test
         |state[:start]
           |default | -> |>>
     DESC
-    ast = parse(content)
+    ast  = parse(content)
     kase = ast.functions[0].states[0].cases[0]
     assert kase.default?
   end
@@ -153,7 +153,7 @@ class ParserTest < Minitest::Test
         |state[:start]
           |c[x] |.label | -> |>>
     DESC
-    ast = parse(content)
+    ast  = parse(content)
     kase = ast.functions[0].states[0].cases[0]
     assert_equal 'label', kase.substate
   end
@@ -166,7 +166,7 @@ class ParserTest < Minitest::Test
         |state[:start]
           |LETTER | -> |>>
     DESC
-    ast = parse(content)
+    ast  = parse(content)
     kase = ast.functions[0].states[0].cases[0]
     assert_equal 'LETTER', kase.chars
   end
@@ -181,7 +181,7 @@ class ParserTest < Minitest::Test
         |state[:start]
           |default | -> |>>
     DESC
-    ast = parse(content)
+    ast  = parse(content)
     cmds = ast.functions[0].states[0].cases[0].commands
     assert_equal :advance, cmds[0].type
   end
@@ -194,7 +194,7 @@ class ParserTest < Minitest::Test
         |state[:start]
           |default | ->['\\n'] |>>
     DESC
-    ast = parse(content)
+    ast  = parse(content)
     cmds = ast.functions[0].states[0].cases[0].commands
     assert_equal :advance_to, cmds[0].type
     assert_equal "'\\n'", cmds[0].value
@@ -211,7 +211,7 @@ class ParserTest < Minitest::Test
         |state[:start]
           |default | -> |>>
     DESC
-    ast = parse(content)
+    ast  = parse(content)
     cmds = ast.functions[0].states[0].cases[0].commands
     assert_equal :call, cmds[0].type
     # Value is the function name without leading slash
@@ -226,7 +226,7 @@ class ParserTest < Minitest::Test
         |state[:start]
           |default | MARK | -> | TERM |>>
     DESC
-    ast = parse(content)
+    ast  = parse(content)
     cmds = ast.functions[0].states[0].cases[0].commands
     assert_equal :mark, cmds[0].type
     assert_equal :advance, cmds[1].type
@@ -243,8 +243,8 @@ class ParserTest < Minitest::Test
         |state[:start]
           |default | -> |>>
     DESC
-    ast = parse(content)
-    cmds = ast.functions[0].states[0].cases[0].commands
+    ast        = parse(content)
+    cmds       = ast.functions[0].states[0].cases[0].commands
     transition = cmds.find { |c| c.type == :transition }
     assert_equal '', transition.value
   end
@@ -259,8 +259,8 @@ class ParserTest < Minitest::Test
         |state[:other]
           |default | -> |>>
     DESC
-    ast = parse(content)
-    cmds = ast.functions[0].states[0].cases[0].commands
+    ast        = parse(content)
+    cmds       = ast.functions[0].states[0].cases[0].commands
     transition = cmds.find { |c| c.type == :transition }
     assert_equal ':other', transition.value
   end
@@ -273,9 +273,9 @@ class ParserTest < Minitest::Test
         |state[:start]
           |default | -> |return
     DESC
-    ast = parse(content)
+    ast  = parse(content)
     cmds = ast.functions[0].states[0].cases[0].commands
-    ret = cmds.find { |c| c.type == :return }
+    ret  = cmds.find { |c| c.type == :return }
     refute_nil ret
   end
 
@@ -290,7 +290,7 @@ class ParserTest < Minitest::Test
           |default | -> |>>
           |eof | TERM |return
     DESC
-    ast = parse(content)
+    ast   = parse(content)
     state = ast.functions[0].states[0]
     refute_nil state.eof_handler
     assert_equal :term, state.eof_handler.commands[0].type

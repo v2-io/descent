@@ -6,61 +6,34 @@ require 'descent/generator'
 class GeneratorTest < Minitest::Test
   # Liquid filter tests
 
-  def test_escape_rust_char_newline
-    assert_equal "b'\\n'", filter.escape_rust_char("\n")
-  end
+  def test_escape_rust_char_newline = assert_equal "b'\\n'", filter.escape_rust_char("\n")
 
-  def test_escape_rust_char_tab
-    assert_equal "b'\\t'", filter.escape_rust_char("\t")
-  end
+  def test_escape_rust_char_tab = assert_equal "b'\\t'", filter.escape_rust_char("\t")
 
-  def test_escape_rust_char_single_quote
-    assert_equal "b'\\''", filter.escape_rust_char("'")
-  end
+  def test_escape_rust_char_single_quote = assert_equal "b'\\''", filter.escape_rust_char("'")
 
-  def test_escape_rust_char_regular_char
-    assert_equal "b'x'", filter.escape_rust_char('x')
-  end
+  def test_escape_rust_char_regular_char = assert_equal "b'x'", filter.escape_rust_char('x')
 
-  def test_escape_rust_char_nil
-    assert_equal "b'?'", filter.escape_rust_char(nil)
-  end
+  def test_escape_rust_char_nil = assert_equal "b'?'", filter.escape_rust_char(nil)
 
-  def test_pascalcase_snake_case
-    assert_equal 'AfterName', filter.pascalcase('after_name')
-  end
+  def test_pascalcase_snake_case = assert_equal 'AfterName', filter.pascalcase('after_name')
 
-  def test_pascalcase_single_word
-    assert_equal 'Main', filter.pascalcase('main')
-  end
+  def test_pascalcase_single_word = assert_equal 'Main', filter.pascalcase('main')
 
-  def test_pascalcase_preserves_existing
-    assert_equal 'UnclosedInterpolation', filter.pascalcase('UnclosedInterpolation')
-  end
+  def test_pascalcase_preserves_existing = assert_equal 'UnclosedInterpolation',
+                                                        filter.pascalcase('UnclosedInterpolation')
 
-  def test_pascalcase_nil
-    assert_equal '', filter.pascalcase(nil)
-  end
+  def test_pascalcase_nil = assert_equal '', filter.pascalcase(nil)
 
-  def test_rust_expr_col
-    assert_equal 'self.col()', filter.rust_expr('COL')
-  end
+  def test_rust_expr_col = assert_equal 'self.col()', filter.rust_expr('COL')
 
-  def test_rust_expr_line
-    assert_equal 'self.line as i32', filter.rust_expr('LINE')
-  end
+  def test_rust_expr_line = assert_equal 'self.line as i32', filter.rust_expr('LINE')
 
-  def test_rust_expr_prev
-    assert_equal 'self.prev()', filter.rust_expr('PREV')
-  end
+  def test_rust_expr_prev = assert_equal 'self.prev()', filter.rust_expr('PREV')
 
-  def test_rust_expr_param_reference
-    assert_equal 'col', filter.rust_expr(':col')
-  end
+  def test_rust_expr_param_reference = assert_equal 'col', filter.rust_expr(':col')
 
-  def test_rust_expr_function_call
-    assert_equal 'self.parse_helper(on_event)', filter.rust_expr('/helper')
-  end
+  def test_rust_expr_function_call = assert_equal 'self.parse_helper(on_event)', filter.rust_expr('/helper')
 
   def test_rust_expr_function_call_with_args
     # COL in function args should work correctly
@@ -209,11 +182,11 @@ class GeneratorTest < Minitest::Test
   # Trace mode
 
   def test_trace_mode_includes_trace_output
-    content = minimal_desc
+    content   = minimal_desc
     rust_code = Descent.generate(content, target: :rust, trace: true)
 
     assert_match(/TRACE:/, rust_code)
-    assert_match(/eprintln!/, rust_code)  # eprintln with 'ln'
+    assert_match(/eprintln!/, rust_code) # eprintln with 'ln'
   end
 
   def test_normal_mode_no_trace_output
@@ -250,7 +223,5 @@ class GeneratorTest < Minitest::Test
   private
 
   # Create a filter instance for testing
-  def filter
-    @filter ||= Object.new.extend(Descent::LiquidFilters)
-  end
+  def filter = @filter ||= Object.new.extend(Descent::LiquidFilters)
 end

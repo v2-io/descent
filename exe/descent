@@ -5,9 +5,9 @@ require 'devex/core'
 
 config = Devex::Core::Configuration.new(
   executable_name: 'descent',
-  flag_prefix:     'descent',
+  flag_prefix: 'descent',
   project_markers: %w[.desc Gemfile .git],
-  env_prefix:      'DESCENT'
+  env_prefix: 'DESCENT'
 )
 
 cli = Devex::Core::CLI.new(config:)

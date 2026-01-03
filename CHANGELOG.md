@@ -5,6 +5,33 @@ All notable changes to descent will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-01-02
+
+### Added
+- **Comprehensive test suite**: 148 tests covering Lexer, Parser, IRBuilder, Validator,
+  and Generator modules. Includes integration harness tests that compile and run parsers.
+- **SYNTAX.md reference**: Complete .desc DSL syntax reference document with BNF-style
+  grammar, all directives, actions, and character classes.
+- **Validator checks**: Missing parser name validation, duplicate types, undefined
+  function calls, invalid state transitions, and more.
+- **`streaming:` option**: Generator now accepts `streaming: false` to omit StreamingParser
+  infrastructure (~200 lines) when not needed.
+
+### Changed
+- **`/error` no longer auto-returns**: The `/error(Code)` command now only emits the
+  error event. Add explicit `|return` to exit. This enables error recovery patterns
+  like `/error(NoTabs) | ->['\n'] |>>`.
+- **Escape sequences consolidated**: Single `ESCAPE_SEQUENCES` constant used by both
+  `rust_expr` and `transform_call_args`, eliminating duplication.
+
+### Fixed
+- **COL in function args**: `/element(COL)` now correctly generates `self.parse_element(self.col(), on_event)`
+  instead of broken output. Function calls are processed before COL/LINE/PREV expansion.
+- **Unused variable warnings**: Locals only assigned at entry (not reassigned in body)
+  now emit `let` instead of `let mut`, eliminating `unused_mut` warnings.
+- **Double return warnings**: Fixed template generating two consecutive returns when
+  `/error` was followed by explicit `|return`.
+
 ## [0.6.17] - 2026-01-02
 
 ### Fixed

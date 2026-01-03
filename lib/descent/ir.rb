@@ -53,7 +53,8 @@ module Descent
     end
 
     # State with inferred optimizations
-    State = Data.define(:name, :cases, :eof_handler, :scan_chars, :is_self_looping, :has_default, :is_unconditional, :newline_injected, :lineno) do
+    State = Data.define(:name, :cases, :eof_handler, :scan_chars, :is_self_looping, :has_default, :is_unconditional, :newline_injected,
+                        :lineno) do
       # scan_chars: Array of chars for SIMD memchr scan, or nil if not applicable
       # is_self_looping: true if has default case that loops back to self
       # has_default: true if state has a default case (no chars, no condition)
@@ -75,7 +76,8 @@ module Descent
       # param_ref: Parameter name to match against (for |c[:param]|), or nil
       # condition: String condition for if-cases, or nil
       # lineno: Source line number from .desc file (for trace output)
-      def initialize(chars: nil, special_class: nil, param_ref: nil, condition: nil, substate: nil, commands: [], lineno: 0) = super
+      def initialize(chars: nil, special_class: nil, param_ref: nil, condition: nil, substate: nil, commands: [],
+                     lineno: 0) = super
 
       def default?     = chars.nil? && special_class.nil? && param_ref.nil? && condition.nil?
       def conditional? = !condition.nil?

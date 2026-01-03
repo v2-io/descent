@@ -8,8 +8,6 @@
 #        cluster-lines < file.desc
 #        grep "pattern" file.desc | cluster-lines
 
-require 'set'
-
 # Levenshtein distance - O(n*m) but good enough for line-length strings
 def levenshtein(a, b)
   return b.length if a.empty?

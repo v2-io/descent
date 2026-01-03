@@ -15,9 +15,9 @@ module Descent
   module CharacterClass
     # Predefined single-character classes (DSL-reserved chars)
     SINGLE_CHAR = {
-      'P'  => '|',
-      'L'  => '[',
-      'R'  => ']',
+      'P' => '|',
+      'L' => '[',
+      'R' => ']',
       'LB' => '{',
       'RB' => '}',
       'LP' => '(',
@@ -40,12 +40,12 @@ module Descent
 
     # Predefined multi-character classes (expanded to char sets)
     MULTI_CHAR = {
-      'LETTER'     => RANGES['a-z'] + RANGES['A-Z'],
-      'DIGIT'      => RANGES['0-9'],
-      'HEX_DIGIT'  => RANGES['0-9'] + RANGES['a-f'] + RANGES['A-F'],
-      'LABEL_CONT' => RANGES['a-z'] + RANGES['A-Z'] + RANGES['0-9'] + '_-',
-      'WS'         => " \t",
-      'NL'         => "\n"
+      'LETTER' => RANGES['a-z'] + RANGES['A-Z'],
+      'DIGIT' => RANGES['0-9'],
+      'HEX_DIGIT' => RANGES['0-9'] + RANGES['a-f'] + RANGES['A-F'],
+      'LABEL_CONT' => "#{RANGES['a-z']}#{RANGES['A-Z']}#{RANGES['0-9']}_-",
+      'WS' => " \t",
+      'NL' => "\n"
     }.freeze
 
     # Special classes that require runtime checks (can't be expanded to char list)
@@ -322,8 +322,8 @@ module Descent
       functions = transform_call_args_by_type(functions)
 
       IR::Parser.new(
-        name:               @ast.name,
-        entry_point:        @ast.entry_point,
+        name: @ast.name,
+        entry_point: @ast.entry_point,
         types:,
         functions:,
         keywords:,
@@ -349,11 +349,11 @@ module Descent
       end
 
       IR::Keywords.new(
-        name:          kw.name,
+        name: kw.name,
         fallback_func:,
         fallback_args:,
-        mappings:      kw.mappings,
-        lineno:        kw.lineno
+        mappings: kw.mappings,
+        lineno: kw.lineno
       )
     end
 
@@ -363,11 +363,11 @@ module Descent
         emits_end   = t.kind == :BRACKET
 
         IR::TypeInfo.new(
-          name:        t.name,
-          kind:        t.kind.downcase.to_sym,
+          name: t.name,
+          kind: t.kind.downcase.to_sym,
           emits_start:,
           emits_end:,
-          lineno:      t.lineno
+          lineno: t.lineno
         )
       end
     end
@@ -394,18 +394,18 @@ module Descent
       entry_actions = func.entry_actions&.map { |c| build_command(c) } || []
 
       IR::Function.new(
-        name:                   func.name,
-        return_type:            func.return_type,
-        params:                 func.params,
+        name: func.name,
+        return_type: func.return_type,
+        params: func.params,
         param_types:,
         locals:,
         states:,
-        eof_handler:            func_eof_commands,
+        eof_handler: func_eof_commands,
         entry_actions:,
         emits_events:,
         expects_char:,
         emits_content_on_close:,
-        lineno:                 func.lineno
+        lineno: func.lineno
       )
     end
 
@@ -434,20 +434,20 @@ module Descent
       # The template adds a match arm for '\n' that updates line/col and continues scanning.
       newline_injected = false
       if scan_chars && !scan_chars.include?("\n") && scan_chars.size < 6
-        scan_chars = ["\n"] + scan_chars  # Prepend so newline is checked first
+        scan_chars       = ["\n"] + scan_chars # Prepend so newline is checked first
         newline_injected = true
       end
 
       IR::State.new(
-        name:             state.name,
+        name: state.name,
         cases:,
-        eof_handler:      eof_commands,
+        eof_handler: eof_commands,
         scan_chars:,
         is_self_looping:,
         has_default:,
         is_unconditional:,
         newline_injected:,
-        lineno:           state.lineno
+        lineno: state.lineno
       )
     end
 
@@ -469,10 +469,10 @@ module Descent
         chars:,
         special_class:,
         param_ref:,
-        condition:     kase.condition,
-        substate:      kase.substate,
+        condition: kase.condition,
+        substate: kase.substate,
         commands:,
-        lineno:        kase.lineno
+        lineno: kase.lineno
       )
     end
 
@@ -523,7 +523,7 @@ module Descent
             clauses: cmd.clauses&.map do |c|
               {
                 'condition' => c.condition,
-                'commands'  => c.commands.map { |cc| build_command(cc) }
+                'commands' => c.commands.map { |cc| build_command(cc) }
               }
             end
           }
@@ -564,9 +564,7 @@ module Descent
     # Only literal bytes are supported (1-6 chars for SIMD memchr).
     # Special classes and param refs are NOT supported.
     def validate_advance_to(str, lineno)
-      if str.nil? || str.empty?
-        raise ValidationError, "L#{lineno}: ->[] requires at least one character"
-      end
+      raise ValidationError, "L#{lineno}: ->[] requires at least one character" if str.nil? || str.empty?
 
       result = CharacterClass.parse(str)
 
@@ -583,9 +581,7 @@ module Descent
       end
 
       bytes = result[:bytes] || ''
-      if bytes.empty?
-        raise ValidationError, "L#{lineno}: ->[] resolved to empty bytes from '#{str}'"
-      end
+      raise ValidationError, "L#{lineno}: ->[] resolved to empty bytes from '#{str}'" if bytes.empty?
 
       if bytes.length > 6
         raise ValidationError,
@@ -608,11 +604,11 @@ module Descent
 
     # Characters that SHOULD be quoted for clarity (warnings, not errors)
     SHOULD_QUOTE_CHARS = {
-      '{'  => '<LB>',
-      '}'  => '<RB>',
-      '('  => '<LP>',
-      ')'  => '<RP>',
-      '"'  => '<DQ>',
+      '{' => '<LB>',
+      '}' => '<RB>',
+      '(' => '<LP>',
+      ')' => '<RP>',
+      '"' => '<DQ>',
       '\\' => '<BS>'
     }.freeze
 
@@ -649,14 +645,14 @@ module Descent
       if chars_str.match?(/<[A-Z]+>/)
         raise ValidationError, "Line #{lineno}: Escape sequence like <SQ>, <P> etc. found outside " \
                                "class wrapper in c[#{chars_str}]. " \
-                               "Wrap everything in a class: c[<...>] not c[THING <ESC> ...]"
+                               'Wrap everything in a class: c[<...>] not c[THING <ESC> ...]'
       end
 
       # Check for combined class + chars (e.g., LETTER'[.?!)
       if chars_str.match?(/^[A-Z]+(?:_[A-Z]+)*'/)
         class_name = chars_str.match(/^([A-Z_]+)/)[1]
         raise ValidationError, "Line #{lineno}: Invalid character syntax in c[#{chars_str}]. " \
-                               "Bare quote after class name is ambiguous. " \
+                               'Bare quote after class name is ambiguous. ' \
                                "Use class syntax instead: c[<#{class_name} ...>]"
       end
 
@@ -664,7 +660,7 @@ module Descent
       quote_count = chars_str.count("'")
       if quote_count.odd?
         raise ValidationError, "Line #{lineno}: Unterminated quote in c[#{chars_str}]. " \
-                               "Single quotes must be paired. " \
+                               'Single quotes must be paired. ' \
                                "To match a literal quote, use c[<SQ>] or c['\\'']"
       end
 
@@ -782,10 +778,10 @@ module Descent
           in_angle += 1
           current << c
         when '>'
-          in_angle -= 1 if in_angle > 0
+          in_angle -= 1 if in_angle.positive?
           current << c
         when ','
-          if in_quote || in_angle > 0
+          if in_quote || in_angle.positive?
             current << c
           else
             args << current.strip
@@ -1170,7 +1166,10 @@ module Descent
                 # If arg looks like a bytes value, mark target param as :bytes
                 # BUT only if it's currently :i32 (default). Don't override :byte
                 # which means it's used in |c[:x]| for single-byte comparison.
-                target.param_types[target_param] = :bytes if bytes_like_value?(arg) && target.param_types[target_param] == :i32
+                if bytes_like_value?(arg) && target.param_types[target_param] == :i32
+                  target.param_types[target_param] =
+                    :bytes
+                end
               end
             end
           end
@@ -1271,19 +1270,19 @@ module Descent
 
           # Create updated function with prepend_values
           IR::Function.new(
-            name:                   func.name,
-            return_type:            func.return_type,
-            params:                 func.params,
-            param_types:            func.param_types,
-            locals:                 func.locals,
-            states:                 func.states,
-            eof_handler:            func.eof_handler,
-            entry_actions:          func.entry_actions,
-            emits_events:           func.emits_events,
-            expects_char:           func.expects_char,
+            name: func.name,
+            return_type: func.return_type,
+            params: func.params,
+            param_types: func.param_types,
+            locals: func.locals,
+            states: func.states,
+            eof_handler: func.eof_handler,
+            entry_actions: func.entry_actions,
+            emits_events: func.emits_events,
+            expects_char: func.expects_char,
             emits_content_on_close: func.emits_content_on_close,
-            prepend_values:         { param_name => values },
-            lineno:                 func.lineno
+            prepend_values: { param_name => values },
+            lineno: func.lineno
           )
         else
           func
@@ -1330,45 +1329,45 @@ module Descent
           new_cases = state.cases.map do |kase|
             new_commands = transform_commands_args(kase.commands, func_by_name)
             IR::Case.new(
-              chars:         kase.chars,
+              chars: kase.chars,
               special_class: kase.special_class,
-              param_ref:     kase.param_ref,
-              condition:     kase.condition,
-              substate:      kase.substate,
-              commands:      new_commands,
-              lineno:        kase.lineno
+              param_ref: kase.param_ref,
+              condition: kase.condition,
+              substate: kase.substate,
+              commands: new_commands,
+              lineno: kase.lineno
             )
           end
 
           new_eof = transform_commands_args(state.eof_handler || [], func_by_name)
 
           IR::State.new(
-            name:             state.name,
-            cases:            new_cases,
-            eof_handler:      new_eof.empty? ? nil : new_eof,
-            scan_chars:       state.scan_chars,
-            is_self_looping:  state.is_self_looping,
-            has_default:      state.has_default,
+            name: state.name,
+            cases: new_cases,
+            eof_handler: new_eof.empty? ? nil : new_eof,
+            scan_chars: state.scan_chars,
+            is_self_looping: state.is_self_looping,
+            has_default: state.has_default,
             is_unconditional: state.is_unconditional,
             newline_injected: state.newline_injected,
-            lineno:           state.lineno
+            lineno: state.lineno
           )
         end
 
         IR::Function.new(
-          name:                   func.name,
-          return_type:            func.return_type,
-          params:                 func.params,
-          param_types:            func.param_types,
-          locals:                 func.locals,
-          states:                 new_states,
-          eof_handler:            func.eof_handler,
-          entry_actions:          func.entry_actions,
-          emits_events:           func.emits_events,
-          expects_char:           func.expects_char,
+          name: func.name,
+          return_type: func.return_type,
+          params: func.params,
+          param_types: func.param_types,
+          locals: func.locals,
+          states: new_states,
+          eof_handler: func.eof_handler,
+          entry_actions: func.entry_actions,
+          emits_events: func.emits_events,
+          expects_char: func.expects_char,
           emits_content_on_close: func.emits_content_on_close,
-          prepend_values:         func.prepend_values,
-          lineno:                 func.lineno
+          prepend_values: func.prepend_values,
+          lineno: func.lineno
         )
       end
     end
@@ -1449,10 +1448,10 @@ module Descent
           in_angle += 1
           current << c
         when '>'
-          in_angle -= 1 if in_angle > 0
+          in_angle -= 1 if in_angle.positive?
           current << c
         when ','
-          if in_quote || in_angle > 0
+          if in_quote || in_angle.positive?
             current << c
           else
             args << current.strip
@@ -1473,7 +1472,7 @@ module Descent
       return nil if arg.nil? || arg.empty?
 
       case arg
-      when '0' then nil  # 0 means no prepend
+      when '0' then nil # 0 means no prepend
       # Legacy escape syntax
       when '<P>' then '|'
       when '<L>' then '['
@@ -1490,7 +1489,7 @@ module Descent
       when /^'\\(.)'$/ then parse_quoted_string("\\#{::Regexp.last_match(1)}")
       # Legacy: single char
       when /^.$/ then arg
-      else nil  # Unknown format
+      else nil # Unknown format
       end
     end
   end

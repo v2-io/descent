@@ -120,7 +120,7 @@ class HarnessTest < Minitest::Test
     assert_equal [
       'ParagraphStart @ 0..0',
       'Text "use " @ 0..4',
-      'Code "code" @ 5..9',    # span should exclude closing backtick
+      'Code "code" @ 5..9', # span should exclude closing backtick
       'Text " here" @ 10..15',
       'ParagraphEnd @ 16..16'
     ], output
