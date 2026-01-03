@@ -12,6 +12,22 @@ class ValidatorTest < Minitest::Test
     assert_empty validator.errors
   end
 
+  # Parser name validation
+
+  def test_missing_parser_name_is_error
+    content = <<~DESC
+      |type[X] BRACKET
+      |entry-point /main
+      |function[main]
+        |state[:main]
+          |default | -> |>>
+    DESC
+    validator = validate(content)
+
+    refute validator.valid?
+    assert validator.errors.any? { |e| e.message.include?('Missing parser name') }
+  end
+
   # Type validation
 
   def test_duplicate_type_is_error

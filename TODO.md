@@ -713,11 +713,6 @@ transition tables.
 - Detect dead code paths (never taken in practice)
 - Suggest grammar restructuring for better locality
 
-### Validation Gaps (discovered during test suite development)
-
-- **Missing parser name**: Neither the parser nor validator catches missing `|parser name`
-  directive. The AST/IR ends up with `name: nil` and passes validation. Should error early.
-
 ### Static Analysis
 The IR provides enough structure for useful static analysis:
 

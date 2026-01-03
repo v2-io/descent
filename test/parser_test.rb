@@ -321,8 +321,7 @@ class ParserTest < Minitest::Test
 
   # Error handling
 
-  # NOTE: Currently the parser allows missing parser name (returns nil).
-  # This is caught neither by the parser nor the validator - potential gap.
+  # Parser allows missing parser name (returns nil) - validator catches this
   def test_handles_missing_parser_name
     ast = parse('|type[X] BRACKET')
     assert_nil ast.name

@@ -17,6 +17,7 @@ module Descent
     end
 
     def validate
+      validate_parser_name
       validate_types
       validate_functions
       validate_entry_point
@@ -47,6 +48,15 @@ module Descent
     def warn(message, location: nil) = @warnings << Warning.new(message:, location:)
 
     def error(message, location: nil) = @errors << Error.new(message:, location:)
+
+    # ========== Parser Name Validation ==========
+
+    def validate_parser_name
+      return if @ir.name && !@ir.name.empty?
+
+      error 'Missing parser name: add |parser <name> directive',
+            location: 'L1'
+    end
 
     # ========== Type Validation ==========
 
