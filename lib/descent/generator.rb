@@ -5,6 +5,22 @@ require 'liquid'
 module Descent
   # Custom Liquid filters for code generation.
   module LiquidFilters
+    # Escape sequences: DSL placeholder -> Rust byte literal
+    ESCAPE_SEQUENCES = {
+      '<P>'  => "b'|'",
+      '<R>'  => "b']'",
+      '<L>'  => "b'['",
+      '<RB>' => "b'}'",
+      '<LB>' => "b'{'",
+      '<RP>' => "b')'",
+      '<LP>' => "b'('",
+      '<BS>' => "b'\\\\'",
+      '<SQ>' => "b'\\''",
+      '<DQ>' => "b'\"'",
+      '<NL>' => "b'\\n'",
+      '<WS>' => "b' '",
+      '<>'   => 'b""' # Empty byte slice
+    }.freeze
     # Convert a character to Rust byte literal format.
     # Examples: "\n" -> "b'\\n'", "|" -> "b'|'", " " -> "b' '"
     def escape_rust_char(char)
@@ -66,19 +82,7 @@ module Descent
 
       result
         .gsub(/(?<!b)'(\\.|.)'/, "b'\\1'")  # Convert char literals to byte literals (only if not already b'...')
-        # Escape sequences embedded in expressions (not just standalone args)
-        .gsub('<P>', "b'|'")
-        .gsub('<R>', "b']'")
-        .gsub('<L>', "b'['")
-        .gsub('<RB>', "b'}'")
-        .gsub('<LB>', "b'{'")
-        .gsub('<RP>', "b')'")
-        .gsub('<LP>', "b'('")
-        .gsub('<BS>', "b'\\\\'")
-        .gsub('<SQ>', "b'\\''")
-        .gsub('<DQ>', "b'\"'")
-        .gsub('<NL>', "b'\\n'")
-        .gsub('<WS>', "b' '")
+        .gsub(/<[A-Z]+>/) { |m| ESCAPE_SEQUENCES[m] || m }  # Escape sequences
     end
 
     # Expand special variables: COL, LINE, PREV, :param
@@ -92,32 +96,26 @@ module Descent
 
     # Transform function call arguments.
     # - :param -> param (parameter references)
-    # - <R> -> b']', <RB> -> b'}', <RP> -> b')', etc. (escape sequences to byte literals)
+    # - <R>, <RB>, etc. -> byte literals via ESCAPE_SEQUENCES
     # - Bare quotes: " -> b'"', ' -> b'\''
     def transform_call_args(args)
       args.split(',').map do |arg|
         arg = arg.strip
-        case arg
-        when /^:(\w+)$/           then ::Regexp.last_match(1) # :param -> param
-        when '<>'                 then 'b""' # Empty byte slice
-        when '<R>'                then "b']'"
-        when '<RB>'               then "b'}'"
-        when '<L>'                then "b'['"
-        when '<LB>'               then "b'{'"
-        when '<P>'                then "b'|'"
-        when '<BS>'               then "b'\\\\'"
-        when '<RP>'               then "b')'"  # Right paren
-        when '<LP>'               then "b'('"  # Left paren
-        when '<SQ>'               then "b'\\''" # Single quote
-        when '<DQ>'               then "b'\"'" # Double quote
-        when '"'                  then "b'\"'" # Bare double quote
-        when "'"                  then "b'\\''" # Bare single quote (escaped)
-        when /^\d+$/              then arg # numeric literals
-        when /^-?\d+$/            then arg # negative numbers
-        when /^'(.)'$/            then "b'#{::Regexp.last_match(1)}'" # char literal
-        when /^"(.)"$/            then "b'#{::Regexp.last_match(1)}'" # quoted char
-        when %r{^[!;:#*\-_<>/\\@$%^&+=?,.]$} then "b'#{arg}'" # Single punctuation → byte literal
-        else arg # pass through (variables, expressions)
+        # Try escape sequence lookup first
+        if (escaped = ESCAPE_SEQUENCES[arg])
+          escaped
+        else
+          case arg
+          when /^:(\w+)$/           then ::Regexp.last_match(1) # :param -> param
+          when '"'                  then "b'\"'" # Bare double quote
+          when "'"                  then "b'\\''" # Bare single quote (escaped)
+          when /^\d+$/              then arg # numeric literals
+          when /^-?\d+$/            then arg # negative numbers
+          when /^'(.)'$/            then "b'#{::Regexp.last_match(1)}'" # char literal
+          when /^"(.)"$/            then "b'#{::Regexp.last_match(1)}'" # quoted char
+          when %r{^[!;:#*\-_<>/\\@$%^&+=?,.]$} then "b'#{arg}'" # Single punctuation → byte literal
+          else arg # pass through (variables, expressions)
+          end
         end
       end.join(', ')
     end
