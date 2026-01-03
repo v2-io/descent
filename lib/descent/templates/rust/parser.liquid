@@ -930,6 +930,7 @@ impl<'a> Parser<'a> {
 {% endfor %}
 }
 
+{% if streaming %}
 // ============================================================================
 // Streaming Parser (multi-chunk support)
 // ============================================================================
@@ -1145,6 +1146,7 @@ impl StreamingParser {
         self.column
     }
 }
+{% endif %}
 
 #[cfg(test)]
 mod tests {

@@ -141,11 +141,12 @@ module Descent
   class Generator
     TEMPLATE_DIR = File.expand_path('templates', __dir__)
 
-    def initialize(ir, target:, trace: false, **options)
-      @ir      = ir
-      @target  = target
-      @trace   = trace
-      @options = options
+    def initialize(ir, target:, trace: false, streaming: true, **options)
+      @ir        = ir
+      @target    = target
+      @trace     = trace
+      @streaming = streaming
+      @options   = options
     end
 
     def generate
@@ -204,7 +205,8 @@ module Descent
         'uses_hex_digit'     => usage[:hex_digit],
         'uses_ws'            => usage[:ws],
         'uses_nl'            => usage[:nl],
-        'max_scan_arity'     => usage[:max_scan_arity]
+        'max_scan_arity'     => usage[:max_scan_arity],
+        'streaming'          => @streaming
       }
     end
 
