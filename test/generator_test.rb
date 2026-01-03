@@ -63,13 +63,14 @@ class GeneratorTest < Minitest::Test
   end
 
   def test_rust_expr_function_call_with_args
-    # NOTE: There's a known issue with the filter order of operations.
-    # When args contain COL, it gets transformed to self.col() before the
-    # function call regex runs, breaking the regex's [^)]* pattern.
-    # Using :param works correctly.
+    # COL in function args should work correctly
+    result = filter.rust_expr('/element(COL)')
+    assert_equal 'self.parse_element(self.col(), on_event)', result
+  end
+
+  def test_rust_expr_function_call_with_param
     result = filter.rust_expr('/element(:col)')
-    assert_match(/self\.parse_element/, result)
-    assert_match(/col, on_event/, result)
+    assert_equal 'self.parse_element(col, on_event)', result
   end
 
   def test_rust_expr_escape_sequences

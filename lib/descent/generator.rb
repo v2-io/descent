@@ -33,34 +33,38 @@ module Descent
     end
 
     # Transform DSL expressions to Rust.
+    # - /function(args) -> self.parse_function(transformed_args, on_event)
+    # - /function -> self.parse_function(on_event)
     # - COL -> self.col()
     # - LINE -> self.line as i32
     # - PREV -> self.prev()
-    # - /function(args) -> self.parse_function(args, on_event)
-    # - /function -> self.parse_function(on_event)
     # - Character literals: ' ' -> b' ', '\t' -> b'\t' (only if not already a byte literal)
     # - Escape sequences: <R> -> b']', <RB> -> b'}', <P> -> b'|', etc.
     # - Parameter references: :param -> param
     def rust_expr(str)
       return '' if str.nil?
 
-      # First, transform call arguments (handles :param, <R>, etc.)
-      # This catches standalone expressions like "<R>" or ":close"
-      # Note: <> (empty) is NOT transformed here - it's handled by type-aware
-      # transform_call_args_by_type in ir_builder.rb for :bytes params only
-      result = transform_call_args(str.to_s)
+      result = str.to_s
+
+      # IMPORTANT: Process function calls FIRST, before COL/LINE/PREV expansion.
+      # Otherwise /element(COL) becomes /element(self.col()) and the regex
+      # [^)]* breaks on the ) inside self.col().
+      result = result.gsub(%r{/(\w+)\(([^)]*)\)}) do
+        func = ::Regexp.last_match(1)
+        # Transform args: :param, <R>, COL, etc.
+        args = transform_call_args(::Regexp.last_match(2))
+        args = expand_special_vars(args)
+        "self.parse_#{func}(#{args}, on_event)"
+      end
+      result = result.gsub(%r{/(\w+)}) { "self.parse_#{::Regexp.last_match(1)}(on_event)" }
+
+      # Now expand special variables in the rest of the expression
+      result = expand_special_vars(result)
+
+      # Transform standalone args (handles :param, <R>, etc. outside function calls)
+      result = transform_call_args(result)
 
       result
-        .gsub(/\bCOL\b/, 'self.col()')
-        .gsub(/\bLINE\b/, 'self.line as i32')
-        .gsub(/\bPREV\b/, 'self.prev()')
-        .gsub(/:([a-z_]\w*)/i) { ::Regexp.last_match(1) }  # :param -> param
-        .gsub(%r{/(\w+)\(([^)]*)\)}) do
-          func = ::Regexp.last_match(1)
-          args = transform_call_args(::Regexp.last_match(2))
-          "self.parse_#{func}(#{args}, on_event)"
-        end
-        .gsub(%r{/(\w+)}) { "self.parse_#{::Regexp.last_match(1)}(on_event)" }
         .gsub(/(?<!b)'(\\.|.)'/, "b'\\1'")  # Convert char literals to byte literals (only if not already b'...')
         # Escape sequences embedded in expressions (not just standalone args)
         .gsub('<P>', "b'|'")
@@ -75,6 +79,15 @@ module Descent
         .gsub('<DQ>', "b'\"'")
         .gsub('<NL>', "b'\\n'")
         .gsub('<WS>', "b' '")
+    end
+
+    # Expand special variables: COL, LINE, PREV, :param
+    def expand_special_vars(str)
+      str
+        .gsub(/\bCOL\b/, 'self.col()')
+        .gsub(/\bLINE\b/, 'self.line as i32')
+        .gsub(/\bPREV\b/, 'self.prev()')
+        .gsub(/:([a-z_]\w*)/i) { ::Regexp.last_match(1) }  # :param -> param
     end
 
     # Transform function call arguments.
