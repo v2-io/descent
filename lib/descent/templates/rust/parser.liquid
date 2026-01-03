@@ -418,11 +418,15 @@ impl<'a> Parser<'a> {
 
 {% if max_scan_arity >= 4 %}
     /// Scan forward to find first occurrence of b1..b4 (chained memchr).
+    /// Limits second search to range of first hit to avoid O(n²) behavior.
     #[inline(always)]
     fn scan_to4(&mut self, b1: u8, b2: u8, b3: u8, b4: u8) -> Option<u8> {
         let haystack = &self.input[self.pos..];
         let p1 = memchr::memchr3(b1, b2, b3, haystack);
-        let p2 = memchr::memchr(b4, haystack);
+        let p2 = match p1 {
+            Some(limit) => memchr::memchr(b4, &haystack[..limit]),
+            None => memchr::memchr(b4, haystack),
+        };
         let offset = match (p1, p2) {
             (Some(x), Some(y)) => Some(x.min(y)),
             (Some(x), None) | (None, Some(x)) => Some(x),
@@ -445,11 +449,15 @@ impl<'a> Parser<'a> {
 
 {% if max_scan_arity >= 5 %}
     /// Scan forward to find first occurrence of b1..b5 (chained memchr).
+    /// Limits second search to range of first hit to avoid O(n²) behavior.
     #[inline(always)]
     fn scan_to5(&mut self, b1: u8, b2: u8, b3: u8, b4: u8, b5: u8) -> Option<u8> {
         let haystack = &self.input[self.pos..];
         let p1 = memchr::memchr3(b1, b2, b3, haystack);
-        let p2 = memchr::memchr2(b4, b5, haystack);
+        let p2 = match p1 {
+            Some(limit) => memchr::memchr2(b4, b5, &haystack[..limit]),
+            None => memchr::memchr2(b4, b5, haystack),
+        };
         let offset = match (p1, p2) {
             (Some(x), Some(y)) => Some(x.min(y)),
             (Some(x), None) | (None, Some(x)) => Some(x),
@@ -472,11 +480,15 @@ impl<'a> Parser<'a> {
 
 {% if max_scan_arity >= 6 %}
     /// Scan forward to find first occurrence of b1..b6 (chained memchr).
+    /// Limits second search to range of first hit to avoid O(n²) behavior.
     #[inline(always)]
     fn scan_to6(&mut self, b1: u8, b2: u8, b3: u8, b4: u8, b5: u8, b6: u8) -> Option<u8> {
         let haystack = &self.input[self.pos..];
         let p1 = memchr::memchr3(b1, b2, b3, haystack);
-        let p2 = memchr::memchr3(b4, b5, b6, haystack);
+        let p2 = match p1 {
+            Some(limit) => memchr::memchr3(b4, b5, b6, &haystack[..limit]),
+            None => memchr::memchr3(b4, b5, b6, haystack),
+        };
         let offset = match (p1, p2) {
             (Some(x), Some(y)) => Some(x.min(y)),
             (Some(x), None) | (None, Some(x)) => Some(x),
