@@ -121,6 +121,7 @@ module Descent
         end
       end.join(', ')
     end
+
   end
 
   # Custom file system for Liquid partials.
@@ -365,6 +366,9 @@ module Descent
       # This allows template to initialize locals directly instead of "= 0" then assignment
       local_init_values = extract_local_init_values(func.entry_actions || [])
 
+      # Determine which locals need to be mutable (reassigned in body or use +=/-=)
+      mutable_locals = find_mutable_locals(func)
+
       # Filter out pure assignments from entry_actions (they become initializers)
       # Keep conditionals and non-assignment commands
       filtered_entry_actions = (func.entry_actions || []).reject do |cmd|
@@ -378,6 +382,7 @@ module Descent
         'param_types'            => func.param_types.transform_keys(&:to_s).transform_values(&:to_s),
         'locals'                 => func.locals.transform_keys(&:to_s),
         'local_init_values'      => local_init_values,
+        'mutable_locals'         => mutable_locals,
         'states'                 => func.states.map { |s| state_to_hash(s) },
         'eof_handler'            => func.eof_handler&.map { |c| command_to_hash(c) } || [],
         'entry_actions'          => filtered_entry_actions.map { |c| command_to_hash(c) },
@@ -389,7 +394,8 @@ module Descent
       }
     end
 
-    # Extract initial values for locals from entry_actions assignments
+    # Extract initial values for locals from entry_actions assignments.
+    # We convert any expression to Rust syntax and use it as the initializer.
     def extract_local_init_values(entry_actions)
       init_values = {}
       entry_actions.each do |cmd|
@@ -397,10 +403,44 @@ module Descent
 
         var  = cmd.args[:var]
         expr = cmd.args[:expr]
-        # Only use simple literals as initializers
-        init_values[var] = expr if var && expr&.match?(/^-?\d+$/)
+        next unless var && expr
+
+        # Convert the expression to Rust (inline expansion for COL/LINE/PREV)
+        rust_expr = expr
+                    .gsub(/\bCOL\b/, 'self.col()')
+                    .gsub(/\bLINE\b/, 'self.line as i32')
+                    .gsub(/\bPREV\b/, 'self.prev()')
+                    .gsub(/:([a-z_]\w*)/i) { ::Regexp.last_match(1) }
+        init_values[var] = rust_expr
       end
       init_values
+    end
+
+    # Find locals that need to be mutable (reassigned in function body, not just entry)
+    def find_mutable_locals(func)
+      mutable = Set.new
+
+      func.states.each do |state|
+        state.cases.each do |kase|
+          collect_mutable_vars(kase.commands, mutable)
+        end
+        collect_mutable_vars(state.eof_handler || [], mutable)
+      end
+
+      mutable.to_a
+    end
+
+    def collect_mutable_vars(commands, mutable)
+      commands.each do |cmd|
+        case cmd.type
+        when :assign, :add_assign, :sub_assign
+          mutable << cmd.args[:var] if cmd.args[:var]
+        when :conditional
+          cmd.args[:clauses]&.each do |clause|
+            collect_mutable_vars(clause.commands, mutable)
+          end
+        end
+      end
     end
 
     def state_to_hash(state)

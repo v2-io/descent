@@ -242,8 +242,8 @@ Actions are pipe-separated, execute left-to-right:
 | TERM(-1)              ; Terminate slice excluding last N bytes
 | /function             ; Call function
 | /function(args)       ; Call with arguments
-| /error                ; Emit error event and return
-| /error(CustomCode)    ; Emit error with custom code and return
+| /error                ; Emit error event (add |return to exit)
+| /error(CustomCode)    ; Emit error with custom code
 | var = value           ; Assignment
 | var += 1              ; Increment
 | PREPEND('|')          ; Prepend literal to next accumulated content
@@ -255,8 +255,8 @@ Actions are pipe-separated, execute left-to-right:
 bytes only. Does NOT support character classes (LETTER, DIGIT) or parameter refs (:param).
 Use quoted chars for special bytes: `->['\n\t']`, `->['|']`.
 
-**Error handling (`/error`)**: Emits an Error event and returns. Custom error codes
-are converted to PascalCase:
+**Error handling (`/error`)**: Emits an Error event. Custom error codes
+are converted to PascalCase. Add `|return` to exit after the error:
 
 ```
 |c['\t']    | /error(no_tabs)   |return    ; Emits [Error, "NoTabs"]

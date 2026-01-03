@@ -145,8 +145,8 @@ Actions are pipe-separated and execute left-to-right:
 | `TERM(-N)`           | Terminate excluding last N bytes         |
 | `/<func>`            | Call function                            |
 | `/<func>(<args>)`    | Call with arguments                      |
-| `/error`             | Emit error, return                       |
-| `/error(<Code>)`     | Emit error with custom code, return      |
+| `/error`             | Emit error event                         |
+| `/error(<Code>)`     | Emit error with custom code              |
 | `<var> = <value>`    | Assignment                               |
 | `<var> += <N>`       | Increment                                |
 | `PREPEND('<lit>')`   | Prepend literal to accumulation          |

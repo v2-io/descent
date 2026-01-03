@@ -97,13 +97,12 @@
 {% when "call" %}
 {% comment %} Function call - use pre-parsed name and call_args from IR {% endcomment %}
 {% if cmd.args.is_error %}
-{% comment %} Built-in /error(ErrorCode) - emit error and return {% endcomment %}
+{% comment %} Built-in /error(ErrorCode) - emit error event (caller adds |return if needed) {% endcomment %}
 {% if cmd.args.call_args %}
                     on_event(Event::Error { code: ParseErrorCode::{{ cmd.args.call_args | pascalcase }}, span: self.span() });
 {% else %}
                     on_event(Event::Error { code: ParseErrorCode::UnexpectedChar, span: self.span() });
 {% endif %}
-                    return;
 {% elsif cmd.args.call_args %}
                     self.parse_{{ cmd.args.name }}({{ cmd.args.call_args | rust_expr }}, on_event);
 {% else %}

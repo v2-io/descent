@@ -589,9 +589,10 @@ impl<'a> Parser<'a> {
         {% endif %}
 
         {% comment %} Local variables - use initial value from entry_actions if available {% endcomment %}
+        {% comment %} Only add 'mut' if the variable is reassigned in the function body {% endcomment %}
         {% for local in func.locals %}
         {% assign init_val = func.local_init_values[local[0]] | default: "0" %}
-        let mut {{ local[0] }}: i32 = {{ init_val }};
+        {% if func.mutable_locals contains local[0] %}let mut {{ local[0] }}: i32 = {{ init_val }};{% else %}let {{ local[0] }}: i32 = {{ init_val }};{% endif %}
         {% endfor %}
 
         {% comment %} Entry actions (variable initialization on function entry) {% endcomment %}
