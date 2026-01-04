@@ -388,12 +388,12 @@ or when you need specific actions at EOF (like inline emits).
 
 |function[document]
   |state[:main]
-    |c['\n']      |.blank    | ->           |>>
+    |c['\n']    |.blank    | ->           |>>
     |default    |.start    | /line        |>>
 
 |function[line:Text]
   |state[:main]
-    |c['\n']      |.eol      | ->           |return
+    |c['\n']    |.eol      | ->           |return
     |default    |.collect  | ->           |>>
 ```
 
@@ -416,38 +416,35 @@ What the generator infers:
 
 |function[document]
   |state[:main]
-    |c['\n']      |.blank    | ->              |>>
-    |c[<P>]     |.pipe     | -> | /element(0)|>>
-    |default    |.text     | /text(0)        |>>
+    |c['\n']    |.blank    |->         |>>
+    |c[<P>]     |.pipe     |-> | /element(0)|>>
+    |default    |.text     |/text(0)   |>>
 
 |function[element:Element] :col
   |state[:identity]
-    |LETTER     |.name     | /name           |>> :after
-    |default    |.anon     |                 |>> :content
-
+    |LETTER     |.name     |/name      |>> :after
+    |default    |.anon     |           |>> :content
   |state[:after]
-    |c['\n']      |.eol      | ->              |>> :children
-    |default    |.text     | /text(col)      |>> :children
-
+    |c['\n']    |.eol      |->         |>> :children
+    |default    |.text     |/text(col) |>> :children
   |state[:children]
-    |c['\n']      |.blank    | ->              |>>
-    |c[' \t']     |.ws       | ->              |>> :check
-    |default    |.dedent   |return
-
+    |c['\n']    |.blank    |->         |>>
+    |c[' \t']   |.ws       |->         |>> :check
+    |default    |.dedent   |           |return
   |state[:check]
-    |if[COL <= col]        |return
-    |c[<P>]     |.child    | -> | /element(COL) |>> :children
-    |default    |.text     | /text(COL)        |>> :children
+    |if[COL <= col]        |                   |return
+    |c[<P>]     |.child    |-> | /element(COL) |>> :children
+    |default    |.text     |     /text(COL)    |>> :children
 
 |function[name:Name]
   |state[:main]
-    |LABEL_CONT |.cont     | ->              |>>
-    |default    |.done     |return
-
-|function[text:Text] :col
-  |state[:main]
-    |c['\n']      |.eol      |return
-    |default    |.collect  | ->              |>>
+    |LABEL_CONT |.cont     |->         |>>
+    |default    |.done     |           |return
+        
+|function[text:Text] :col        
+  |state[:main]        
+    |c['\n']    |.eol      |           |return
+    |default    |.collect  |->         |>>
 ```
 
 What the generator produces:
