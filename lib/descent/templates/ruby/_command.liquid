@@ -1,0 +1,139 @@
+{% comment %}
+  Command partial for Ruby target - generates Ruby code for a single IR::Command.
+
+  Variables available:
+    cmd - The command hash with 'type' and 'args'
+    func - The function context
+    return_type_info - Type info for the function's return type
+    states - Array of states (for multi-state transition validation)
+    indent - String of spaces for indentation (default: "")
+{% endcomment %}
+{% assign ind = indent | default: "" %}
+{% case cmd.type %}
+
+{% when "advance" %}
+{{ ind }}advance
+
+{% when "advance_to" %}
+{% assign target_chars = cmd.args.value | split: "" %}
+{% assign char_count = target_chars.size %}
+{{ ind }}scan_to{{ char_count }}({% for ch in target_chars %}{{ ch | escape_ruby_byte }}{% unless forloop.last %}, {% endunless %}{% endfor %})
+
+{% when "mark" %}
+{{ ind }}mark
+
+{% when "term" %}
+{% assign term_offset = cmd.args.offset | default: 0 %}
+{{ ind }}set_term({{ term_offset }})
+
+{% when "prepend" %}
+{{ ind }}prepend_bytes("{{ cmd.args.literal | escape_ruby_string }}")
+
+{% when "prepend_param" %}
+{% assign param_name = cmd.args.param_ref %}
+{{ ind }}prepend_bytes({{ param_name }})
+
+{% when "return" %}
+{% if cmd.args.return_value %}
+{{ ind }}return {{ cmd.args.return_value | ruby_expr }}
+{% elsif cmd.args.emit_type %}
+{% if cmd.args.emit_mode == "mark" %}
+{{ ind }}yield Event::{{ cmd.args.emit_type }}.new(term, span_from_mark)
+{{ ind }}return
+{% elsif cmd.args.emit_mode == "literal" %}
+{{ ind }}yield Event::{{ cmd.args.emit_type }}.new("{{ cmd.args.literal | escape_ruby_string }}", span)
+{{ ind }}return
+{% else %}
+{{ ind }}yield Event::{{ cmd.args.emit_type }}.new('', span)
+{{ ind }}return
+{% endif %}
+{% elsif return_type_info.kind == "internal" %}
+{{ ind }}return 0
+{% elsif cmd.args.suppress_auto_emit and return_type_info.kind == "content" %}
+{{ ind }}return
+{% elsif return_type_info.kind == "content" %}
+{{ ind }}yield Event::{{ func.return_type }}.new(term, span_from_mark)
+{{ ind }}return
+{% elsif return_type_info.kind == "bracket" %}
+{{ ind }}yield Event::{{ func.return_type }}End.new(span)
+{{ ind }}return
+{% else %}
+{{ ind }}return
+{% endif %}
+
+{% when "transition" %}
+{% if cmd.args.value == "" or cmd.args.value == nil %}
+{{ ind }}next
+{% else %}
+{{ ind }}state = :{{ cmd.args.value | remove: ":" }}
+{{ ind }}next
+{% endif %}
+
+{% when "call" %}
+{% if cmd.args.is_error %}
+{% if cmd.args.call_args %}
+{{ ind }}yield Event::Error.new(ErrorCode::{{ cmd.args.call_args | snakecase | upcase }}, span)
+{% else %}
+{{ ind }}yield Event::Error.new(ErrorCode::UNEXPECTED_CHAR, span)
+{% endif %}
+{% elsif cmd.args.call_args %}
+{{ ind }}parse_{{ cmd.args.name }}({{ cmd.args.call_args | ruby_expr }}, &on_event)
+{% else %}
+{{ ind }}parse_{{ cmd.args.name }}(&on_event)
+{% endif %}
+
+{% when "assign" %}
+{% if cmd.args.var and cmd.args.expr %}
+{{ ind }}{{ cmd.args.var }} = {{ cmd.args.expr | ruby_expr }}
+{% endif %}
+
+{% when "add_assign" %}
+{% if cmd.args.var and cmd.args.expr %}
+{{ ind }}{{ cmd.args.var }} += {{ cmd.args.expr | ruby_expr }}
+{% endif %}
+
+{% when "sub_assign" %}
+{% if cmd.args.var and cmd.args.expr %}
+{{ ind }}{{ cmd.args.var }} -= {{ cmd.args.expr | ruby_expr }}
+{% endif %}
+
+{% when "emit" %}
+{% assign emit_type = cmd.args.value %}
+{{ ind }}yield Event::{{ emit_type }}.new(term, span_from_mark)
+
+{% when "inline_emit_bare" %}
+{{ ind }}yield Event::{{ cmd.args.type }}.new('', span)
+
+{% when "inline_emit_mark" %}
+{{ ind }}yield Event::{{ cmd.args.type }}.new(term, span_from_mark)
+
+{% when "inline_emit_literal" %}
+{% assign literal = cmd.args.literal | remove_first: '$' %}
+{{ ind }}yield Event::{{ cmd.args.type }}.new("{{ literal | escape_ruby_string }}", span)
+
+{% when "error" %}
+{% assign error_code = cmd.args.value | snakecase | upcase %}
+{{ ind }}yield Event::Error.new(ErrorCode::{{ error_code }}, span)
+
+{% when "keywords_lookup" %}
+{{ ind }}lookup_{{ cmd.args.name }}_or_fallback(&on_event)
+
+{% when "conditional" %}
+{% for clause in cmd.args.clauses %}
+{% if forloop.first %}
+{{ ind }}if {{ clause.condition | ruby_expr }}
+{% elsif clause.condition %}
+{{ ind }}elsif {{ clause.condition | ruby_expr }}
+{% else %}
+{{ ind }}else
+{% endif %}
+{% for nested_cmd in clause.commands %}
+{% include 'command' cmd: nested_cmd, func: func, return_type_info: return_type_info, states: states, indent: ind | append: "  " %}
+{% endfor %}
+{% endfor %}
+{{ ind }}end
+
+{% else %}
+{{ ind }}# Unknown command type: {{ cmd.type }}
+
+{% endcase %}
