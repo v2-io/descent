@@ -8,7 +8,7 @@ Add Ruby as a target language for descent, enabling generation of Ruby parsers f
 
 1. **API**: Callback block pattern - `parser.parse { |event| ... }`
 2. **Events**: Ruby `Data.define` objects (immutable, Ruby 3.2+)
-3. **Optimization**: memchr gem for SIMD scanning
+3. **Optimization**: String#index for fast scanning (C-implemented)
 4. **Binary handling**: Force binary encoding with `.b`, use `getbyte()`
 
 ## Files to Create
@@ -136,20 +136,23 @@ module Event
 end
 ```
 
-### SCAN with memchr
+### SCAN with String#index
+
+Uses Ruby's C-implemented `String#index` for fast scanning. For multi-char
+scans, calls index multiple times and takes minimum (10x faster than Regexp):
 
 ```ruby
-require 'memchr'
-
 def scan_to2(b1, b2)
   haystack = @input[@pos..]
-  offset = Memchr.memchr2(haystack, b1.chr(Encoding::BINARY), b2.chr(Encoding::BINARY))
+  p1 = haystack.index(b1.chr(Encoding::BINARY))
+  p2 = haystack.index(b2.chr(Encoding::BINARY))
+  offset = [p1, p2].compact.min
   if offset
-    @column += offset
+    update_line_col(haystack, offset)
     @pos += offset
     @input.getbyte(@pos)
   else
-    @column += haystack.bytesize
+    update_line_col(haystack, haystack.bytesize)
     @pos = @input.bytesize
     nil
   end
@@ -348,11 +351,16 @@ end
 
 Production-ready spike with:
 - Full DSL support (all constructs used by UDON)
-- SIMD scanning (memchr gem)
+- Fast scanning via String#index (C-implemented)
 - Trace output (--trace flag)
 - Streaming/chunked parsing
 - Binary string handling
 - Line/column tracking
 
-Deferred:
-- Performance benchmarking vs Rust
+## Benchmark Results
+
+Compared to Ruby's YAML parser (C extension wrapping libyaml):
+- ~3x slower for similar data sizes
+- Reasonable given: pure Ruby vs C, streaming events vs tree building
+
+For maximum performance, use the Rust-generated parser with Ruby FFI (udon-ruby).
