@@ -132,10 +132,17 @@ module {{ parser | pascalcase }}
 {% endif %}
 
     # Prepend bytes to the accumulation buffer
+    # Accepts String or Integer (byte value)
     def prepend_bytes(bytes)
-      return if bytes.nil? || bytes.empty?
+      return if bytes.nil?
 
-      @prepend_buf << bytes.b
+      case bytes
+      when String
+        return if bytes.empty?
+        @prepend_buf << bytes.b
+      when Integer
+        @prepend_buf << bytes.chr(Encoding::BINARY)
+      end
     end
 
     # Get accumulated content from MARK to TERM
