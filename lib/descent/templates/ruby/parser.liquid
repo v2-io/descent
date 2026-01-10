@@ -292,10 +292,8 @@ module {{ parser | pascalcase }}
 
 {% if max_scan_arity > 0 %}
     # ========== SCAN Methods ==========
-    # SIMD-accelerated bulk character scanning using memchr gem.
-    # Falls back to byte-by-byte scan if memchr unavailable.
-
-    MEMCHR_AVAILABLE = defined?(Memchr)
+    # Fast character scanning using String#index (C-implemented).
+    # For multi-char scans, uses Regexp with character class.
 
 {% if max_scan_arity >= 1 %}
     # Scan forward to find first occurrence of b1
@@ -303,28 +301,16 @@ module {{ parser | pascalcase }}
       haystack = @input[@pos..]
       return nil if haystack.nil? || haystack.empty?
 
-      if MEMCHR_AVAILABLE
-        offset = Memchr.memchr(haystack, b1.chr(Encoding::BINARY))
-        if offset
-          # Update column for non-newline chars skipped
-          haystack[0...offset].each_byte { |b| b == 10 ? (@line += 1; @column = 1) : @column += 1 }
-          @pos += offset
-          return @input.getbyte(@pos)
-        end
+      offset = haystack.index(b1.chr(Encoding::BINARY))
+      if offset
+        update_line_col(haystack, offset)
+        @pos += offset
+        @input.getbyte(@pos)
       else
-        haystack.each_byte.with_index do |b, i|
-          if b == b1
-            @pos += i
-            return b
-          end
-          b == 10 ? (@line += 1; @column = 1) : @column += 1
-        end
+        update_line_col(haystack, haystack.bytesize)
+        @pos = @input.bytesize
+        nil
       end
-
-      # Not found - advance to end
-      haystack.each_byte { |b| b == 10 ? (@line += 1; @column = 1) : @column += 1 } unless MEMCHR_AVAILABLE
-      @pos = @input.bytesize
-      nil
     end
 {% endif %}
 
@@ -334,25 +320,19 @@ module {{ parser | pascalcase }}
       haystack = @input[@pos..]
       return nil if haystack.nil? || haystack.empty?
 
-      if MEMCHR_AVAILABLE
-        offset = Memchr.memchr2(haystack, b1.chr(Encoding::BINARY), b2.chr(Encoding::BINARY))
-        if offset
-          haystack[0...offset].each_byte { |b| b == 10 ? (@line += 1; @column = 1) : @column += 1 }
-          @pos += offset
-          return @input.getbyte(@pos)
-        end
+      # Multiple String#index is faster than Regexp
+      p1 = haystack.index(b1.chr(Encoding::BINARY))
+      p2 = haystack.index(b2.chr(Encoding::BINARY))
+      offset = [p1, p2].compact.min
+      if offset
+        update_line_col(haystack, offset)
+        @pos += offset
+        @input.getbyte(@pos)
       else
-        haystack.each_byte.with_index do |b, i|
-          if b == b1 || b == b2
-            @pos += i
-            return b
-          end
-          b == 10 ? (@line += 1; @column = 1) : @column += 1
-        end
+        update_line_col(haystack, haystack.bytesize)
+        @pos = @input.bytesize
+        nil
       end
-
-      @pos = @input.bytesize
-      nil
     end
 {% endif %}
 
@@ -362,90 +342,95 @@ module {{ parser | pascalcase }}
       haystack = @input[@pos..]
       return nil if haystack.nil? || haystack.empty?
 
-      if MEMCHR_AVAILABLE
-        offset = Memchr.memchr3(haystack, b1.chr(Encoding::BINARY), b2.chr(Encoding::BINARY), b3.chr(Encoding::BINARY))
-        if offset
-          haystack[0...offset].each_byte { |b| b == 10 ? (@line += 1; @column = 1) : @column += 1 }
-          @pos += offset
-          return @input.getbyte(@pos)
-        end
+      p1 = haystack.index(b1.chr(Encoding::BINARY))
+      p2 = haystack.index(b2.chr(Encoding::BINARY))
+      p3 = haystack.index(b3.chr(Encoding::BINARY))
+      offset = [p1, p2, p3].compact.min
+      if offset
+        update_line_col(haystack, offset)
+        @pos += offset
+        @input.getbyte(@pos)
       else
-        haystack.each_byte.with_index do |b, i|
-          if b == b1 || b == b2 || b == b3
-            @pos += i
-            return b
-          end
-          b == 10 ? (@line += 1; @column = 1) : @column += 1
-        end
+        update_line_col(haystack, haystack.bytesize)
+        @pos = @input.bytesize
+        nil
       end
-
-      @pos = @input.bytesize
-      nil
     end
 {% endif %}
 
 {% if max_scan_arity >= 4 %}
     # Scan forward to find first occurrence of b1..b4
     def scan_to4(b1, b2, b3, b4)
-      targets = [b1, b2, b3, b4]
       haystack = @input[@pos..]
       return nil if haystack.nil? || haystack.empty?
 
-      haystack.each_byte.with_index do |b, i|
-        if targets.include?(b)
-          haystack[0...i].each_byte { |c| c == 10 ? (@line += 1; @column = 1) : @column += 1 }
-          @pos += i
-          return b
-        end
+      positions = [b1, b2, b3, b4].map { |b| haystack.index(b.chr(Encoding::BINARY)) }.compact
+      offset = positions.min
+      if offset
+        update_line_col(haystack, offset)
+        @pos += offset
+        @input.getbyte(@pos)
+      else
+        update_line_col(haystack, haystack.bytesize)
+        @pos = @input.bytesize
+        nil
       end
-
-      haystack.each_byte { |b| b == 10 ? (@line += 1; @column = 1) : @column += 1 }
-      @pos = @input.bytesize
-      nil
     end
 {% endif %}
 
 {% if max_scan_arity >= 5 %}
     # Scan forward to find first occurrence of b1..b5
     def scan_to5(b1, b2, b3, b4, b5)
-      targets = [b1, b2, b3, b4, b5]
       haystack = @input[@pos..]
       return nil if haystack.nil? || haystack.empty?
 
-      haystack.each_byte.with_index do |b, i|
-        if targets.include?(b)
-          haystack[0...i].each_byte { |c| c == 10 ? (@line += 1; @column = 1) : @column += 1 }
-          @pos += i
-          return b
-        end
+      positions = [b1, b2, b3, b4, b5].map { |b| haystack.index(b.chr(Encoding::BINARY)) }.compact
+      offset = positions.min
+      if offset
+        update_line_col(haystack, offset)
+        @pos += offset
+        @input.getbyte(@pos)
+      else
+        update_line_col(haystack, haystack.bytesize)
+        @pos = @input.bytesize
+        nil
       end
-
-      haystack.each_byte { |b| b == 10 ? (@line += 1; @column = 1) : @column += 1 }
-      @pos = @input.bytesize
-      nil
     end
 {% endif %}
 
 {% if max_scan_arity >= 6 %}
     # Scan forward to find first occurrence of b1..b6
     def scan_to6(b1, b2, b3, b4, b5, b6)
-      targets = [b1, b2, b3, b4, b5, b6]
       haystack = @input[@pos..]
       return nil if haystack.nil? || haystack.empty?
 
-      haystack.each_byte.with_index do |b, i|
-        if targets.include?(b)
-          haystack[0...i].each_byte { |c| c == 10 ? (@line += 1; @column = 1) : @column += 1 }
-          @pos += i
-          return b
-        end
+      positions = [b1, b2, b3, b4, b5, b6].map { |b| haystack.index(b.chr(Encoding::BINARY)) }.compact
+      offset = positions.min
+      if offset
+        update_line_col(haystack, offset)
+        @pos += offset
+        @input.getbyte(@pos)
+      else
+        update_line_col(haystack, haystack.bytesize)
+        @pos = @input.bytesize
+        nil
       end
-
-      haystack.each_byte { |b| b == 10 ? (@line += 1; @column = 1) : @column += 1 }
-      @pos = @input.bytesize
-      nil
     end
 {% endif %}
+
+    # Update line/column counters for skipped bytes
+    def update_line_col(haystack, count)
+      return if count.zero?
+
+      haystack[0, count].each_byte do |b|
+        if b == 10
+          @line += 1
+          @column = 1
+        else
+          @column += 1
+        end
+      end
+    end
 {% endif %}
 
 {% for kw in keywords %}
