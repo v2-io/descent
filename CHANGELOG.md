@@ -5,7 +5,13 @@ All notable changes to descent will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.7.0] - 2026-01-02
+## [0.7.1] - 2026-01-09
+
+### Fixed
+- **Commands after /error preserved**: Removed stale `filter_unreachable_after_error`
+  that incorrectly dropped commands (including `|return`) after `/error` calls.
+
+## [0.7.0] - 2026-01-09
 
 ### Added
 - **Comprehensive test suite**: 148 tests covering Lexer, Parser, IRBuilder, Validator,
@@ -31,8 +37,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now emit `let` instead of `let mut`, eliminating `unused_mut` warnings.
 - **Double return warnings**: Fixed template generating two consecutive returns when
   `/error` was followed by explicit `|return`.
-- **Commands after /error preserved**: Removed stale `filter_unreachable_after_error`
-  that incorrectly dropped commands (including `|return`) after `/error` calls.
 
 ## [0.6.17] - 2026-01-02
 
