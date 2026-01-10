@@ -27,9 +27,9 @@ Gem::Specification.new do |spec|
   spec.metadata['rubygems_mfa_required'] = 'true'
 
   spec.files = Dir.chdir(__dir__) do
-    `git ls-files -z`.split("\x0").reject do |f|
-      (File.expand_path(f) == __FILE__) ||
-        f.start_with?(*%w[test/ .git .github Gemfile])
+    `git ls-files -z`.split("\x0").select do |f|
+      f.start_with?('lib/', 'exe/') ||
+        f.match?(/^(README|CHANGELOG|LICENSE|SYNTAX)/)
     end
   end
 
@@ -37,6 +37,6 @@ Gem::Specification.new do |spec|
   spec.executables   = ['descent']
   spec.require_paths = ['lib']
 
-  spec.add_dependency 'devex'
+  spec.add_dependency 'devex', '~> 0.3'
   spec.add_dependency 'liquid', '~> 5.0'
 end
