@@ -364,3 +364,17 @@ Compared to Ruby's YAML parser (C extension wrapping libyaml):
 - Reasonable given: pure Ruby vs C, streaming events vs tree building
 
 For maximum performance, use the Rust-generated parser with Ruby FFI (udon-ruby).
+
+---
+
+## Status (2026-07-08)
+
+**Paused, likely permanently.** The Ruby target reached a working prototype
+but surfaced structural debt (the IR bakes Rust byte-literals into what
+should be target-neutral form — see the `ruby_expr` reverse-conversion
+workaround in generator.rb), landed with no tests, and its own benchmark
+conclusion above points back to the Rust path. Direction since: Rust-first;
+descent's Rust target verified byte-identical across this detour, so nothing
+here affects it. Full assessment and the conditions under which descent gets
+further investment (explicit-stack streaming backend, literate-spec merge):
+`~/src/udon/REVIEW-JULY-2026.md` §5 and CTQ-E.
