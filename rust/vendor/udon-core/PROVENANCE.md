@@ -8,13 +8,18 @@ into ~/src/udon.
 
 ## Snapshot
 
-- Source repo: ~/src/udon (github: udon), commit `17bba19f06a5e86c90778b626ca3b8ccbac8c95b`
-  (2026-07-11 15:40:43 -0600), working tree clean at copy time.
+- Source repo: ~/src/udon (github: udon), commit `d0bc9f9090a2c318853e589282327708c7d44bcb`
+  (2026-07-11 16:45:27 -0600), working tree clean at copy time.
 - Files copied verbatim from `core/udon-core/src/`: lib.rs, parser.rs, span.rs, tree.rs.
 - sha256 at copy time:
-  - parser.rs `4daacd11300cae315ea800b3e2bfa216faf6a17942c78f610c2f5579b2f103c6`
-  - generated from `core/generator/udon.desc` `c4077f8e…` + `values.desc` `246d9d5e…`
-    (concatenated by `core/regenerate-parser`, Ruby descent, target: rust).
+  - parser.rs `a19d0bc486d126769ed15b1254e063e772fde9dce246d75c78997268024cdef3`
+  - generated from `core/generator/udon.desc` `f0a92185…` + `values.desc` `246d9d5e…`
+    (concatenated by `core/regenerate-parser`, Ruby descent @ 3f81c3c, target: rust).
+- Regeneration cross-check at bump time: libdescent (`descent-rs generate`,
+  minijinja templates) reproduces this parser.rs **byte-identically** from the
+  same concatenated grammars (rust/PROGRESS.md session 4).
+- Prior snapshot: udon `17bba19f` / parser.rs `4daacd11…` (pre U1-defect-sweep;
+  superseded by the three codegen fixes in descent 3f81c3c).
 - Cargo.toml here is NOT from upstream (upstream uses workspace inheritance);
   it pins the same deps: unicode-xid 0.2, memchr 2.7, phf 0.11 (macros).
 - Known upstream quirk carried verbatim: `unreachable_patterns` warnings in

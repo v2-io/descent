@@ -20,7 +20,8 @@
 //! ```
 
 use std::borrow::Cow;
-use crate::parser::{Event, Parser};
+use crate::parser::{Event, ParseErrorCode, Parser};
+use crate::span::Span;
 
 // ============================================================================
 // Core Types
@@ -46,6 +47,10 @@ struct NodeData<'a> {
     parent: Option<NodeId>,
     children: Vec<NodeId>,
     kind: NodeKind<'a>,
+    /// Source byte range covered by this node, derived from parser event
+    /// spans (Start-event start .. End-event end for container nodes; the
+    /// event's own span for leaf nodes).
+    span: Span,
 }
 
 /// The kind of node in the tree.
@@ -142,9 +147,10 @@ pub struct Document<'a> {
     root: NodeId,
 }
 
-/// Error returned when parsing fails.
+/// A single parse error with a human-readable message.
 #[derive(Debug)]
 pub struct ParseError {
+    pub code: ParseErrorCode,
     pub message: String,
     pub span: std::ops::Range<usize>,
 }
@@ -157,30 +163,93 @@ impl std::fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
+/// All errors encountered while parsing a document.
+///
+/// The parser recovers and continues after errors, so a single parse can
+/// surface every error in the input, not just the first.
+#[derive(Debug)]
+pub struct ParseErrors {
+    pub errors: Vec<ParseError>,
+}
+
+impl ParseErrors {
+    /// The first error (always present).
+    pub fn first(&self) -> &ParseError {
+        &self.errors[0]
+    }
+
+    pub fn len(&self) -> usize {
+        self.errors.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.errors.is_empty()
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<'_, ParseError> {
+        self.errors.iter()
+    }
+}
+
+impl std::fmt::Display for ParseErrors {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.errors.len() == 1 {
+            return write!(f, "{}", self.errors[0]);
+        }
+        writeln!(f, "{} parse errors:", self.errors.len())?;
+        for err in &self.errors {
+            writeln!(f, "  {}", err)?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for ParseErrors {}
+
+/// Human-readable message for an error code, e.g. `UnclosedArray` ->
+/// "unclosed array". Derived from the code name so new codes stay covered.
+fn describe_code(code: &ParseErrorCode) -> String {
+    let name = format!("{:?}", code);
+    let mut out = String::with_capacity(name.len() + 4);
+    for (i, ch) in name.chars().enumerate() {
+        if ch.is_ascii_uppercase() {
+            if i > 0 {
+                out.push(' ');
+            }
+            out.push(ch.to_ascii_lowercase());
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
 impl<'a> Document<'a> {
     /// Parse input bytes into a document tree.
-    pub fn parse(input: &'a [u8]) -> Result<Self, ParseError> {
+    ///
+    /// Collects *all* parse errors (the parser recovers and continues);
+    /// returns `Err` if any occurred.
+    pub fn parse(input: &'a [u8]) -> Result<Self, ParseErrors> {
         let mut builder = TreeBuilder::new();
-        let mut first_error: Option<ParseError> = None;
+        let mut errors: Vec<ParseError> = Vec::new();
 
         Parser::new(input).parse(|event| {
-            if first_error.is_none() {
-                if let Event::Error { code, span } = &event {
-                    first_error = Some(ParseError {
-                        message: format!("{:?}", code),
-                        span: span.clone(),
-                    });
-                } else {
-                    builder.handle_event(event);
-                }
+            if let Event::Error { code, span } = &event {
+                errors.push(ParseError {
+                    code: *code,
+                    message: describe_code(code),
+                    span: span.clone(),
+                });
+            } else {
+                builder.handle_event(event);
             }
         });
 
-        if let Some(err) = first_error {
-            return Err(err);
+        if !errors.is_empty() {
+            return Err(ParseErrors { errors });
         }
 
-        Ok(builder.finish())
+        Ok(builder.finish(input.len()))
     }
 
     /// Get the root node.
@@ -225,6 +294,16 @@ impl<'doc, 'a: 'doc> Node<'doc, 'a> {
     /// Get the node's kind.
     pub fn kind(&self) -> &NodeKind<'a> {
         &self.doc.node_data(self.id).kind
+    }
+
+    /// Source byte range covered by this node.
+    ///
+    /// Derived from parser event spans: container nodes cover Start-event
+    /// start through End-event end; leaf nodes use their event's span.
+    /// (Sigil prefixes such as `|` are currently not included in the Start
+    /// event's span — refining this is part of the node-span/error work.)
+    pub fn span(&self) -> Span {
+        self.doc.node_data(self.id).span
     }
 
     /// Get the parent node, if any.
@@ -297,6 +376,12 @@ impl<'doc, 'a: 'doc> Node<'doc, 'a> {
     }
 
     /// Recursively collect all text content under this node.
+    ///
+    /// Includes `Text` nodes and `Raw` (freeform/raw block) content;
+    /// excludes comments. Adjacent chunks are separated by a single space
+    /// unless one side already ends/starts with whitespace, so prose lines
+    /// don't run together ("Hello there" + "second line" ->
+    /// "Hello there second line").
     pub fn all_text(&self) -> String {
         let mut result = String::new();
         self.collect_text(&mut result);
@@ -305,7 +390,9 @@ impl<'doc, 'a: 'doc> Node<'doc, 'a> {
 
     fn collect_text(&self, buf: &mut String) {
         match self.kind() {
-            NodeKind::Text(s) => buf.push_str(s),
+            NodeKind::Text(s) => push_text_chunk(buf, s),
+            NodeKind::Raw { content, .. } => push_text_chunk(buf, content),
+            NodeKind::Comment(_) => {}
             _ => {
                 for child in self.children() {
                     child.collect_text(buf);
@@ -429,6 +516,9 @@ struct TreeBuilder<'a> {
     current_attr: Option<Cow<'a, str>>,
     /// Array nesting for values.
     array_stack: Vec<Vec<Value<'a>>>,
+    /// Node IDs (raw u32) that have received at least one content line
+    /// (Comment/Raw content accumulation).
+    content_started: std::collections::HashSet<u32>,
 }
 
 impl<'a> TreeBuilder<'a> {
@@ -438,12 +528,14 @@ impl<'a> TreeBuilder<'a> {
             parent: None,
             children: Vec::new(),
             kind: NodeKind::Document,
+            span: Span::empty(),
         };
         TreeBuilder {
             nodes: vec![root],
             stack: vec![NodeId::new(0)],
             current_attr: None,
             array_stack: Vec::new(),
+            content_started: std::collections::HashSet::new(),
         }
     }
 
@@ -451,16 +543,53 @@ impl<'a> TreeBuilder<'a> {
         *self.stack.last().unwrap()
     }
 
-    fn push_node(&mut self, kind: NodeKind<'a>) -> NodeId {
+    fn push_node(&mut self, kind: NodeKind<'a>, span: &std::ops::Range<usize>) -> NodeId {
         let parent = self.current();
         let id = NodeId::new(self.nodes.len());
         self.nodes.push(NodeData {
             parent: Some(parent),
             children: Vec::new(),
             kind,
+            span: Span::new(span.start, span.end),
         });
         self.nodes[parent.index()].children.push(id);
         id
+    }
+
+    /// Extend the current node's span to cover through `end`.
+    fn extend_current_span(&mut self, end: usize) {
+        let current = self.current();
+        let node = &mut self.nodes[current.index()];
+        if (end as u32) > node.span.end {
+            node.span.end = end as u32;
+        }
+    }
+
+    /// Append a line of content to a `Comment` or `Raw` node's content
+    /// field, joining lines with '\n'. Returns true if the node accepts
+    /// line content.
+    ///
+    /// The first appended line replaces the initial empty content wholesale
+    /// (tracked via `content_started`) so that a leading blank line is
+    /// preserved rather than confused with "no content yet".
+    fn append_line_content(&mut self, id: NodeId, line: Cow<'a, str>) -> bool {
+        let started = self.content_started.contains(&id.0);
+        let node = &mut self.nodes[id.index()];
+        let target = match &mut node.kind {
+            NodeKind::Comment(content) => content,
+            NodeKind::Raw { content, .. } => content,
+            _ => return false,
+        };
+        if !started {
+            // First line: keep it borrowed when possible (zero-copy).
+            *target = line;
+            self.content_started.insert(id.0);
+        } else {
+            let owned = target.to_mut();
+            owned.push('\n');
+            owned.push_str(&line);
+        }
+        true
     }
 
     fn handle_event(&mut self, event: Event<'a>) {
@@ -468,52 +597,54 @@ impl<'a> TreeBuilder<'a> {
 
         match event {
             // ---- Elements ----
-            ElementStart { .. } => {
+            ElementStart { span } => {
                 let id = self.push_node(NodeKind::Element {
                     name: Cow::Borrowed(""),
                     id: None,
                     classes: Vec::new(),
                     attrs: Vec::new(),
                     embedded: false,
-                });
+                }, &span);
                 self.stack.push(id);
             }
-            ElementEnd { .. } => {
+            ElementEnd { span } => {
+                self.extend_current_span(span.end);
                 self.stack.pop();
             }
 
-            EmbeddedStart { .. } => {
+            EmbeddedStart { span } => {
                 let id = self.push_node(NodeKind::Element {
                     name: Cow::Borrowed(""),
                     id: None,
                     classes: Vec::new(),
                     attrs: Vec::new(),
                     embedded: true,
-                });
+                }, &span);
                 self.stack.push(id);
             }
-            EmbeddedEnd { .. } => {
+            EmbeddedEnd { span } => {
+                self.extend_current_span(span.end);
                 self.stack.pop();
             }
 
             Name { content, .. } => {
                 let current = self.current();
-                if let NodeKind::Element { name, .. } | NodeKind::Directive { name, .. } =
-                    &mut self.nodes[current.index()].kind
-                {
-                    *name = bytes_to_cow(&content);
+                match &mut self.nodes[current.index()].kind {
+                    NodeKind::Element { name, .. } | NodeKind::Directive { name, .. } => {
+                        *name = bytes_to_cow(&content);
+                    }
+                    // Freeform fence info string (```lang) — wire it to the
+                    // Raw node's lang field.
+                    NodeKind::Raw { lang, .. } => {
+                        *lang = Some(bytes_to_cow(&content));
+                    }
+                    _ => {}
                 }
             }
 
             // ---- Attributes ----
             Attr { content, .. } => {
-                let name = bytes_to_cow(&content);
-                // Check for special id/class attributes
-                if name == "id" || name == "class" {
-                    self.current_attr = Some(name);
-                } else {
-                    self.current_attr = Some(name);
-                }
+                self.current_attr = Some(bytes_to_cow(&content));
             }
 
             // ---- Values ----
@@ -590,70 +721,128 @@ impl<'a> TreeBuilder<'a> {
             }
 
             // ---- Text ----
-            Text { content, .. } => {
-                self.push_node(NodeKind::Text(bytes_to_cow(&content)));
+            // Inside Comment/Raw nodes, text lines accumulate into the
+            // node's content field (single representation). Elsewhere they
+            // become Text child nodes.
+            Text { content, span } => {
+                let current = self.current();
+                if matches!(
+                    self.nodes[current.index()].kind,
+                    NodeKind::Comment(_) | NodeKind::Raw { .. }
+                ) {
+                    let line = bytes_to_cow(&content);
+                    self.append_line_content(current, line);
+                    self.extend_current_span(span.end);
+                } else {
+                    self.push_node(NodeKind::Text(bytes_to_cow(&content)), &span);
+                }
             }
 
             // ---- Comments ----
-            // Comments emit Text events between Start/End, which become the content
-            CommentStart { .. } => {
-                let id = self.push_node(NodeKind::Comment(Cow::Borrowed("")));
+            // Comment text lines accumulate into the Comment node's content
+            // (see Text handling above).
+            CommentStart { span } => {
+                let id = self.push_node(NodeKind::Comment(Cow::Borrowed("")), &span);
                 self.stack.push(id);
             }
-            CommentEnd { .. } => {
+            CommentEnd { span } => {
+                self.extend_current_span(span.end);
                 self.stack.pop();
             }
 
             // ---- Directives ----
-            DirectiveStart { .. } => {
+            DirectiveStart { span } => {
                 let id = self.push_node(NodeKind::Directive {
                     name: Cow::Borrowed(""),
                     attrs: Vec::new(),
-                });
+                }, &span);
                 self.stack.push(id);
             }
-            DirectiveEnd { .. } => {
+            DirectiveEnd { span } => {
+                self.extend_current_span(span.end);
                 self.stack.pop();
             }
 
             // ---- Interpolation ----
-            Interpolation { content, .. } => {
-                self.push_node(NodeKind::Interpolation(bytes_to_cow(&content)));
+            Interpolation { content, span } => {
+                self.push_node(NodeKind::Interpolation(bytes_to_cow(&content)), &span);
             }
 
             // ---- References ----
-            Reference { content, .. } => {
-                self.push_node(NodeKind::Reference(bytes_to_cow(&content)));
+            Reference { content, span } => {
+                self.push_node(NodeKind::Reference(bytes_to_cow(&content)), &span);
             }
 
             // ---- Raw/Freeform ----
-            FreeformStart { .. } => {
+            FreeformStart { span } => {
                 let id = self.push_node(NodeKind::Raw {
                     lang: None,
                     content: Cow::Borrowed(""),
-                });
+                }, &span);
                 self.stack.push(id);
             }
-            FreeformEnd { .. } => {
+            FreeformEnd { span } => {
+                self.extend_current_span(span.end);
                 self.stack.pop();
             }
-            RawContent { content, .. } | Raw { content, .. } => {
-                // Raw content might be a child of freeform, or standalone
+            // `Raw` is the raw-kind marker emitted by `!:kind:` directives
+            // (empty content); `RawContent` carries the actual lines.
+            Raw { content, span } => {
+                if !content.is_empty() {
+                    self.handle_raw_content(content, span);
+                }
+            }
+            RawContent { content, span } => {
+                self.handle_raw_content(content, span);
+            }
+
+            // ---- Blank lines ----
+            // Freeform blocks preserve blank lines as empty content lines.
+            // Elsewhere blank lines are not represented in the tree (yet).
+            BlankLine { span, .. } => {
                 let current = self.current();
-                if let NodeKind::Raw { content: c, .. } = &mut self.nodes[current.index()].kind {
-                    *c = bytes_to_cow(&content);
-                } else {
-                    // Standalone raw block
-                    self.push_node(NodeKind::Raw {
-                        lang: None,
-                        content: bytes_to_cow(&content),
-                    });
+                if matches!(self.nodes[current.index()].kind, NodeKind::Raw { .. }) {
+                    self.append_line_content(current, Cow::Borrowed(""));
+                    self.extend_current_span(span.end);
                 }
             }
 
-            // ---- Ignored (for now - tree builder doesn't preserve blank lines) ----
-            Error { .. } | Warning { .. } | BlankLine { .. } => {}
+            // ---- Ignored ----
+            Error { .. } | Warning { .. } => {}
         }
+    }
+
+    /// Raw line content from a `!:kind:` raw directive (or any RawContent
+    /// outside a freeform block): accumulate all lines into a single Raw
+    /// child node of the current node.
+    fn handle_raw_content(&mut self, content: Cow<'a, [u8]>, span: std::ops::Range<usize>) {
+        let current = self.current();
+        // Freeform/Raw node open on the stack: append directly.
+        if matches!(self.nodes[current.index()].kind, NodeKind::Raw { .. }) {
+            let line = bytes_to_cow(&content);
+            self.append_line_content(current, line);
+            self.extend_current_span(span.end);
+            return;
+        }
+        // Continue an existing Raw child if it's the most recent child.
+        if let Some(&last) = self.nodes[current.index()].children.last() {
+            if matches!(self.nodes[last.index()].kind, NodeKind::Raw { .. }) {
+                let line = bytes_to_cow(&content);
+                self.append_line_content(last, line);
+                let node = &mut self.nodes[last.index()];
+                if (span.end as u32) > node.span.end {
+                    node.span.end = span.end as u32;
+                }
+                return;
+            }
+        }
+        // First raw line: create the Raw child.
+        let id = self.push_node(NodeKind::Raw {
+            lang: None,
+            content: Cow::Borrowed(""),
+        }, &span);
+        let line = bytes_to_cow(&content);
+        self.append_line_content(id, line);
     }
 
     fn add_value(&mut self, value: Value<'a>) {
@@ -675,12 +864,28 @@ impl<'a> TreeBuilder<'a> {
         }
     }
 
-    fn finish(self) -> Document<'a> {
+    fn finish(mut self, input_len: usize) -> Document<'a> {
+        self.nodes[0].span = Span::new(0, input_len);
         Document {
             nodes: self.nodes,
             root: NodeId::new(0),
         }
     }
+}
+
+/// Append a text chunk to `buf`, inserting a single space separator when
+/// neither side supplies whitespace (used by `Node::all_text`).
+fn push_text_chunk(buf: &mut String, chunk: &str) {
+    if chunk.is_empty() {
+        return;
+    }
+    let needs_sep = !buf.is_empty()
+        && !buf.ends_with(|c: char| c.is_whitespace())
+        && !chunk.starts_with(|c: char| c.is_whitespace());
+    if needs_sep {
+        buf.push(' ');
+    }
+    buf.push_str(chunk);
 }
 
 /// Convert bytes to Cow<str>, using borrowed if valid UTF-8.
@@ -800,5 +1005,94 @@ mod tests {
         let text = p.all_text();
         assert!(text.contains("Hello"));
         assert!(text.contains("world"));
+    }
+
+    #[test]
+    fn test_all_text_separates_lines() {
+        let doc = Document::parse(b"|p\n  Hello there\n  second line\n").unwrap();
+        let p = doc.root().first_child().unwrap();
+        assert_eq!(p.all_text(), "Hello there second line");
+    }
+
+    #[test]
+    fn test_all_text_no_double_space_around_inline() {
+        // "Hello " already ends with whitespace; no extra separator.
+        let doc = Document::parse(b"|p Hello |{em world}\n").unwrap();
+        let p = doc.root().first_child().unwrap();
+        assert_eq!(p.all_text(), "Hello world");
+    }
+
+    #[test]
+    fn test_comment_content_populated() {
+        let doc = Document::parse(b"; first\n  second\n  third\n").unwrap();
+        let comment = doc.root().first_child().unwrap();
+        match comment.kind() {
+            NodeKind::Comment(content) => {
+                assert_eq!(content.as_ref(), " first\nsecond\nthird");
+            }
+            other => panic!("expected Comment, got {:?}", other),
+        }
+        // Single representation: no Text children under the comment.
+        assert!(comment.first_child().is_none());
+        // And comments are excluded from all_text.
+        assert_eq!(doc.root().all_text(), "");
+    }
+
+    #[test]
+    fn test_freeform_lang_and_content() {
+        let doc = Document::parse(b"```python\nx = 1\ny = 2\n```\n").unwrap();
+        let raw = doc.root().first_child().unwrap();
+        match raw.kind() {
+            NodeKind::Raw { lang, content } => {
+                assert_eq!(lang.as_deref(), Some("python"));
+                assert_eq!(content.as_ref(), "x = 1\ny = 2");
+            }
+            other => panic!("expected Raw, got {:?}", other),
+        }
+        // Single representation: content lives on the node, not Text children.
+        assert!(raw.first_child().is_none());
+    }
+
+    #[test]
+    fn test_raw_directive_single_node() {
+        let doc = Document::parse(b"!:sql:\n  SELECT 1\n  FROM t\n").unwrap();
+        let dir = doc.root().first_child().unwrap();
+        match dir.kind() {
+            NodeKind::Directive { name, .. } => assert_eq!(name.as_ref(), "sql"),
+            other => panic!("expected Directive, got {:?}", other),
+        }
+        // All raw lines consolidated into ONE Raw child.
+        let children: Vec<_> = dir.children().collect();
+        assert_eq!(children.len(), 1);
+        match children[0].kind() {
+            NodeKind::Raw { content, .. } => assert_eq!(content.as_ref(), "SELECT 1\nFROM t"),
+            other => panic!("expected Raw, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_node_spans_wired() {
+        let input = b"|p Hello world\n";
+        let doc = Document::parse(input).unwrap();
+        assert_eq!(doc.root().span().start, 0);
+        assert_eq!(doc.root().span().end as usize, input.len());
+
+        let p = doc.root().first_child().unwrap();
+        let text = p.first_child().unwrap();
+        // Text span covers its content bytes ("Hello world" at 3..14).
+        assert_eq!(text.span().start, 3);
+        assert_eq!(text.span().end, 14);
+        // Element span covers at least through its text content.
+        assert!(p.span().end >= text.span().end);
+        assert!(p.span().start <= text.span().start);
+    }
+
+    #[test]
+    fn test_parse_collects_all_errors_with_readable_messages() {
+        // Two tab-indented lines -> two NoTabs errors.
+        let err = Document::parse(b"\tx\n\ty\n").unwrap_err();
+        assert_eq!(err.len(), 2);
+        assert_eq!(err.first().message, "no tabs");
+        assert!(err.to_string().contains("no tabs"));
     }
 }
