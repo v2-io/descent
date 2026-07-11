@@ -157,7 +157,9 @@ impl Parser {
 
     fn parse_function(&mut self) -> Result<Function, ParseError> {
         let token = self.current().unwrap().clone();
-        let mut split = token.id.splitn(2, ':');
+        // Quirk mirror: Ruby `name, rtype = id.split(':')` silently DROPS any
+        // third-and-later colon segment ("a:b:c" -> rtype "b"). Ledgered.
+        let mut split = token.id.split(':');
         let name = split.next().unwrap_or("").to_string();
         let rtype = split.next().map(|s| s.to_string());
         let params: Vec<String> = re(r":(\w+)")
