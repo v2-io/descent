@@ -57,6 +57,37 @@ class HarnessTest < Minitest::Test
   end
 
   # ============================================================
+  # SCAN + parameterized terminator regression
+  # ============================================================
+
+  def test_param_terminator_not_skipped_by_scan
+    # A state with a static scan char ('\n') AND a param match (:term) must
+    # not be scan-optimized: the scan would skip right past the ']'.
+    output = run_parser('examples/scan_param.desc', "[a.md]\n")
+    assert_equal [
+      'BracketedStart @ 1..1',
+      'Content "a.md" @ 1..5',
+      'BracketedEnd @ 6..6'
+    ], output
+  end
+
+  # ============================================================
+  # PREPEND-aware spans
+  # ============================================================
+
+  def test_prepend_extends_span_over_restored_bytes
+    # '@' is consumed to peek, then PREPENDed back into the text. The Text
+    # span must cover the restored byte: 0..9, not 1..9.
+    output = run_parser('examples/prepend_span.desc', "@here now\n")
+    assert_equal ['Text "@here now" @ 0..9'], output
+  end
+
+  def test_span_unchanged_without_prepend
+    output = run_parser('examples/prepend_span.desc', "plain\n")
+    assert_equal ['Text "plain" @ 0..5'], output
+  end
+
+  # ============================================================
   # Markdown parser tests
   # ============================================================
 

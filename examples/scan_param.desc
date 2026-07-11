@@ -1,0 +1,32 @@
+; Regression test for SCAN inference vs parameterized terminators.
+;
+; The :content state mixes STATIC scan candidates ('\n') with a DYNAMIC
+; parameter match (|c[:close]|). SCAN inference must be disabled here:
+; a memchr scan for '\n' alone would skip straight past the closing
+; bracket byte, swallowing it into the content.
+; (Found via udon typed_value:string — `[a.md]` swallowed the `]`.)
+
+|parser scan_param
+
+|type[Bracketed] BRACKET
+|type[Content]   CONTENT
+
+|entry-point /document
+
+|function[document]
+  |state[:main]
+    |c[<L>]      |.bracket | -> | /bracketed(<R>)      |>>
+    |c['\n']     |.eol     | ->                        |>>
+    |default     |.other   | ->                        |>>
+
+|function[bracketed:Bracketed] :close
+  |state[:main]
+    |c[:close]   |.done    | ->                        |return
+    |default     |.content | /content(:close)          |>>
+
+; The bug shape: static '\n' case + param :term case + self-looping default.
+|function[content:Content] :term
+  |state[:main]
+    |c['\n']     |.eol     |                           |return
+    |c[:term]    |.done    |                           |return
+    |default     |.collect | ->                        |>>

@@ -93,6 +93,47 @@ class IRBuilderTest < Minitest::Test
     refute main_state.scannable?
   end
 
+  def test_param_match_case_disables_scan
+    # A |c[:param]| case matches a byte only known at runtime — memchr
+    # scanning for the static chars would skip right over it.
+    content = <<~DESC
+      |parser test
+      |entry-point /main
+      |function[main]
+        |state[:start]
+          |default | /inner(']') |return
+      |function[inner] :close
+        |state[:main]
+          |c['\\n']    | ->  |return
+          |c[:close]  | ->  |return
+          |default    | ->  |>>
+    DESC
+    ir         = build_ir(content)
+    inner      = ir.functions.find { |f| f.name == 'inner' }
+    main_state = inner.states.find { |s| s.name == 'main' }
+
+    refute main_state.scannable?
+  end
+
+  def test_class_match_case_disables_scan
+    # Character-class cases (LETTER etc.) can't be scan targets either.
+    content = <<~DESC
+      |parser test
+      |entry-point /main
+      |function[main]
+        |state[:main]
+          |c['\\n']  | ->  |return
+          |LETTER   | ->  |>> :word
+          |default  | ->  |>>
+        |state[:word]
+          |default |return
+    DESC
+    ir         = build_ir(content)
+    main_state = ir.functions[0].states.find { |s| s.name == 'main' }
+
+    refute main_state.scannable?
+  end
+
   def test_scan_collects_exit_characters
     content = <<~DESC
       |parser test
