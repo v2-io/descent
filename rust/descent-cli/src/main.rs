@@ -1,23 +1,34 @@
 //! descent-rs CLI: `generate` (parser generation) plus the
 //! differential-testing probe subcommands (tokens/ast/context).
+//!
+//! Front-end: udon-core reader by default; `--oracle` selects the
+//! hand-ported lexer (the differential oracle — used by diff_reader.sh as
+//! the reference side).
 
+use libdescent::Frontend;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
+    let frontend = if args.iter().any(|a| a == "--oracle") {
+        Frontend::OracleLexer
+    } else {
+        Frontend::UdonCore
+    };
     match (args.get(1).map(|s| s.as_str()), args.get(2)) {
-        (Some("tokens"), Some(path)) => dump(path, false),
-        (Some("ast"), Some(path)) => dump(path, true),
+        (Some("tokens"), Some(path)) => dump(path, false, frontend),
+        (Some("ast"), Some(path)) => dump(path, true, frontend),
         (Some("context"), Some(path)) => {
-            dump_context(path, args.get(3).map(|s| s.as_str()) == Some("true"))
+            let trace = args.iter().skip(3).any(|s| s == "true");
+            dump_context(path, trace, frontend)
         }
         (Some("generate"), Some(path)) => {
-            let trace = args.get(3).is_some_and(|s| s == "--trace" || s == "true");
-            generate(path, trace)
+            let trace = args.iter().skip(3).any(|s| s == "--trace" || s == "true");
+            generate(path, trace, frontend)
         }
         _ => {
-            eprintln!("usage: descent-rs <tokens|ast|context> <file.desc> [trace]");
-            eprintln!("       descent-rs generate <file.desc> [--trace]");
+            eprintln!("usage: descent-rs <tokens|ast|context> <file.desc> [trace] [--oracle]");
+            eprintln!("       descent-rs generate <file.desc> [--trace] [--oracle]");
             ExitCode::from(2)
         }
     }
@@ -26,7 +37,7 @@ fn main() -> ExitCode {
 /// Generate Rust parser source to stdout (mirrors Ruby
 /// `Descent.generate(file, target: :rust, trace:)` plus the regenerate
 /// driver's blank-run collapse — see emit::rust::engine::post_process).
-fn generate(path: &str, trace: bool) -> ExitCode {
+fn generate(path: &str, trace: bool, frontend: Frontend) -> ExitCode {
     let content = match std::fs::read_to_string(path) {
         Ok(c) => c,
         Err(e) => {
@@ -34,7 +45,7 @@ fn generate(path: &str, trace: bool) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let ir = match libdescent::build_ir(&content, path) {
+    let ir = match libdescent::build_ir_with(&content, path, frontend) {
         Ok(ir) => ir,
         Err(e) => {
             eprintln!("{e}");
@@ -56,7 +67,7 @@ fn generate(path: &str, trace: bool) -> ExitCode {
 
 /// Dump the Rust-emitter template context (differential vs
 /// rust/tools/dump_context.rb on the Ruby side).
-fn dump_context(path: &str, trace: bool) -> ExitCode {
+fn dump_context(path: &str, trace: bool, frontend: Frontend) -> ExitCode {
     let content = match std::fs::read_to_string(path) {
         Ok(c) => c,
         Err(e) => {
@@ -64,7 +75,7 @@ fn dump_context(path: &str, trace: bool) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let ir = match libdescent::build_ir(&content, path) {
+    let ir = match libdescent::build_ir_with(&content, path, frontend) {
         Ok(ir) => ir,
         Err(e) => {
             eprintln!("{e}");
@@ -77,7 +88,7 @@ fn dump_context(path: &str, trace: bool) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-fn dump(path: &str, ast: bool) -> ExitCode {
+fn dump(path: &str, ast: bool, frontend: Frontend) -> ExitCode {
     let content = match std::fs::read_to_string(path) {
         Ok(c) => c,
         Err(e) => {
@@ -85,7 +96,7 @@ fn dump(path: &str, ast: bool) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let tokens = match libdescent::Lexer::new(&content, path).tokenize() {
+    let tokens = match libdescent::tokenize(&content, path, frontend) {
         Ok(t) => t,
         Err(e) => {
             eprintln!("LexerError: {e}");

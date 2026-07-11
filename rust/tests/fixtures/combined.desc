@@ -72,13 +72,21 @@
 
   |state[:dispatch]
     |c['|']                   | ->                               |>> :check_pipe
-    |c[':']                   | -> | /block_attr                 |>> :line
+    |c[':']                   | ->                               |>> :check_attr
     |c['!']                   | -> | /block_directive(col)       |>> :line
     |c[';']                   | -> | /line_comment               |>> :line
     |c['@']                   | ->                               |>> :check_at
     |c['`']                   | ->                               |>> :check_freeform
     |c[<SQ>]                  | ->                               |>> :check_apos
     |default                  | /prose(col, -1, <>)              |>> :line
+
+  ; Line-initial attr must be followed by a name start, quoted name, or
+  ; reference bracket. Anything else falls back to INTACT prose — the
+  ; colon is restored, never eaten (defect #12 data-loss half; the
+  ; promotion boundary itself is open decision 9).
+  |state[:check_attr]
+    |c[<XLBL_START SQ '['>]   | /block_attr                      |>> :line
+    |default                  | /prose(col, -1, ':')             |>> :line
 
   ; Block-level reference: @[id] inserts element by id (SPEC 1473-1476)
   |state[:check_at]
@@ -203,11 +211,18 @@
   |state[:pre_content]
     |c['\n']                  | ->                               |>> :children
     |c[' \t']                 | ->                               |>>
-    |c[':']                   | -> | /sameline_attr              |>>
+    |c[':']                   | ->                               |>> :check_sameline_attr
     |c['|']                   | ->                               |>> :check_sameline_pipe
     |c[';']                   | ->                               |>> :check_sameline_semi
     |c['!']                   | ->                               |>> :check_sameline_bang
     |default                  | /sameline_text(:elem_col, <>)    |>> :after_content
+
+  ; Sameline attr guard: a ':' not followed by a name start / quoted name /
+  ; reference bracket is not an attr — fall back to intact text with the
+  ; ':' restored (defect #12 data-loss half).
+  |state[:check_sameline_attr]
+    |c[<XLBL_START SQ '['>]   | /sameline_attr                   |>> :pre_content
+    |default                  | /sameline_text(:elem_col, ':')   |>> :after_content
 
   |state[:check_sameline_pipe]
     |c['{']                   | -> | /embedded                   |>> :post_child
@@ -278,7 +293,7 @@
     |if[col <= :elem_col]                                        |return  ; dedent
     |c['\n']                  | -> | BlankLine                   |>> :after_newline  ; whitespace-only to content_base
     |c['|']                   | ->                               |>> :child_pipe
-    |c[':']                   | -> | /block_attr                 |>> :after_content
+    |c[':']                   | ->                               |>> :child_check_attr
     |c['!']                   | -> | /block_directive(col)       |>> :after_content
     |c[';']                   | -> | /line_comment               |>> :after_content
     |c['@']                   | ->                               |>> :child_check_at
@@ -303,7 +318,7 @@
 
   |state[:child_dispatch_do]
     |c['|']                   | ->                               |>> :child_pipe
-    |c[':']                   | -> | /block_attr                 |>> :after_content
+    |c[':']                   | ->                               |>> :child_check_attr
     |c['!']                   | -> | /block_directive(col)       |>> :after_content
     |c[';']                   | -> | /line_comment               |>> :after_content
     |c['@']                   | ->                               |>> :child_check_at
@@ -315,6 +330,12 @@
   |state[:child_check_at]
     |c['[']                   | -> | /block_reference            |>> :after_content
     |default                  | /prose(col, :elem_col, '@')      |>> :after_content
+
+  ; Line-initial attr guard (see document :check_attr): failed attr parse
+  ; falls back to intact prose with the ':' restored (defect #12).
+  |state[:child_check_attr]
+    |c[<XLBL_START SQ '['>]   | /block_attr                      |>> :after_content
+    |default                  | /prose(col, :elem_col, ':')      |>> :after_content
 
   |state[:do_prose]
     | /prose(col, :elem_col, <>)                                 |>> :after_content
@@ -596,13 +617,18 @@
     |default                  |                                  |>> :line_start
 
   ; Start of each content line - MARK immediately, then check content
+  ; Blank lines are content: freeform's contract is exact preservation
+  ; (defect #15), so they emit BlankLine instead of vanishing.
   |state[:line_start]
-    |c['\n']                  | ->                               |>>  ; blank line
+    |c['\n']                  | -> | BlankLine                   |>>  ; blank line preserved
     |default                  | MARK                             |>> :content
 
   ; Check if line is closing ``` (starts with optional ws then ```)
+  ; A whitespace-only line is exact content: emit it as Text rather than
+  ; letting its newline leak into the next line's Text (defect #15).
   |state[:content]
     |c[' \t']                 | ->                               |>>
+    |c['\n']                  | TERM | Text(USE_MARK) | ->       |>> :line_start  ; ws-only line
     |c['`']                   | ->                               |>> :maybe_end1
     |default                  | ->                               |>> :line
 
@@ -821,8 +847,14 @@
   |state[:pre_content]
     |c['}']                  | ->                               |return
     |c[' \t']                 | ->                               |>>
-    |c[':']                   | -> | /sameline_attr_embedded     |>>
+    |c[':']                   | ->                               |>> :check_attr
     |default                  | /embed_content                   |return
+
+  ; Embedded attr guard: failed attr parse falls back to intact content
+  ; with the ':' restored (defect #12 data-loss half).
+  |state[:check_attr]
+    |c[<XLBL_START SQ '['>]   | /sameline_attr_embedded          |>> :pre_content
+    |default                  | PREPEND(':') | /embed_content    |return
 
 
 ; embed_content - text content inside |{...}
@@ -918,11 +950,17 @@
 
   |state[:child_dispatch]
     |c['|']                   | ->                               |>> :child_pipe
-    |c[':']                   | -> | /block_attr                 |>> :children
+    |c[':']                   | ->                               |>> :child_check_attr
     |c['!']                   | -> | /block_directive(col)       |>> :children
     |c[';']                   | -> | /line_comment               |>> :children
     |c[<SQ>]                  | ->                               |>> :child_apos
     |default                  | /prose(col, :line_col, <>)       |>> :children
+
+  ; Line-initial attr guard (see document :check_attr): failed attr parse
+  ; falls back to intact prose with the ':' restored (defect #12).
+  |state[:child_check_attr]
+    |c[<XLBL_START SQ '['>]   | /block_attr                      |>> :children
+    |default                  | /prose(col, :line_col, ':')      |>> :children
 
   ; Block-level escape inside directive children
   |state[:child_apos]

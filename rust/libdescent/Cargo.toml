@@ -9,5 +9,6 @@ publish = false
 
 [dependencies]
 regex.workspace = true
+udon-core = { path = "../vendor/udon-core" }
 serde_json.workspace = true
 minijinja.workspace = true

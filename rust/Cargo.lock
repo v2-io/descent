@@ -54,6 +54,7 @@ dependencies = [
  "minijinja",
  "regex",
  "serde_json",
+ "udon-core",
 ]
 
 [[package]]
