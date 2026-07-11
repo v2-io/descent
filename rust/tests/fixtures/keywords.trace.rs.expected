@@ -68,6 +68,9 @@ pub struct Parser<'a> {
     mark_pos: usize,
     term_pos: usize,
     prepend_buf: Vec<u8>,
+    /// Prepend bytes consumed by the most recent term() — spans extend back
+    /// over them (PREPEND restores just-consumed source bytes).
+    term_prepend_len: usize,
     line: u32,
     column: u32,
 }
@@ -82,6 +85,7 @@ impl<'a> Parser<'a> {
             mark_pos: 0,
             term_pos: 0,
             prepend_buf: Vec::new(),
+            term_prepend_len: 0,
             line: 1,
             column: 1,
         }
@@ -146,10 +150,13 @@ impl<'a> Parser<'a> {
     #[inline(always)]
     fn advance(&mut self) {
         if self.pos < self.input.len() {
-            if self.input[self.pos] == b'\n' {
+            let b = self.input[self.pos];
+            if b == b'\n' {
                 self.line += 1;
                 self.column = 1;
-            } else {
+            } else if b & 0xC0 != 0x80 {
+                // Columns count characters, not bytes: UTF-8 continuation
+                // bytes don't advance the column.
                 self.column += 1;
             }
             self.pos += 1;
@@ -160,6 +167,7 @@ impl<'a> Parser<'a> {
     fn mark(&mut self) {
         self.mark_pos = self.pos;
         self.term_pos = usize::MAX; // Sentinel: TERM not yet called
+        self.term_prepend_len = 0;
         // Note: prepend_buf is NOT cleared here - it persists until term() consumes it.
         // This allows PREPEND to be called before a nested function that does MARK.
     }
@@ -186,6 +194,9 @@ impl<'a> Parser<'a> {
         // Use term_pos if set after mark, otherwise use current pos
         let end = if self.term_pos != usize::MAX { self.term_pos } else { self.pos };
         let slice = &self.input[self.mark_pos..end];
+        // Remember how many bytes were prepended so span_from_mark() can
+        // extend the span back over them (they restore consumed source bytes).
+        self.term_prepend_len = self.prepend_buf.len();
         if self.prepend_buf.is_empty() {
             std::borrow::Cow::Borrowed(slice)
         } else {
@@ -204,7 +215,15 @@ impl<'a> Parser<'a> {
     fn span_from_mark(&self) -> Range<usize> {
         // Use term_pos if set after mark, otherwise use current pos
         let end = if self.term_pos != usize::MAX { self.term_pos } else { self.pos };
-        self.mark_pos..end
+        // PREPEND restores source bytes consumed just before MARK (guard
+        // chars); the span extends back to cover them so that span length
+        // matches content length.
+        let plen = if self.prepend_buf.is_empty() {
+            self.term_prepend_len
+        } else {
+            self.prepend_buf.len()
+        };
+        self.mark_pos.saturating_sub(plen)..end
     }
 
     // ========== Keyword Lookup: bare ==========
@@ -382,7 +401,7 @@ impl StreamEvent {
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```text
 /// let mut parser = StreamingParser::new();
 /// loop {
 ///     match parser.parse(chunk, |event| handle(event)) {
@@ -485,7 +504,8 @@ impl StreamingParser {
             if b == b'\n' {
                 self.line += 1;
                 self.column = 1;
-            } else {
+            } else if b & 0xC0 != 0x80 {
+                // Columns are char-based: skip UTF-8 continuation bytes.
                 self.column += 1;
             }
         }

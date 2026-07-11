@@ -1,0 +1,174 @@
+{#
+  Command partial - generates Rust code for a single IR command.
+
+  Rendered by the `render_command(cmd, func, return_type_info)` function
+  (registered on the minijinja environment); recursion for conditionals goes
+  back through that same function.
+
+  Variables in scope:
+  - cmd: the command object {type, args}
+  - func: the function object
+  - return_type_info: the function's return type info (or undefined)
+#}
+{% if cmd.type == "advance" %}
+                    self.advance();
+
+{% elif cmd.type == "advance_to" %}
+{# Explicit advance-to: ->[chars] uses memchr to scan forward.
+   Limited to 1-6 chars (validated by IR builder). #}
+{% set target_chars = cmd.args.value | chars %}
+{% set char_count = target_chars | length %}
+{% if char_count == 1 %}
+                    self.scan_to1({{ target_chars[0] | escape_rust_char }});
+{% elif char_count == 2 %}
+                    self.scan_to2({{ target_chars[0] | escape_rust_char }}, {{ target_chars[1] | escape_rust_char }});
+{% elif char_count == 3 %}
+                    self.scan_to3({{ target_chars[0] | escape_rust_char }}, {{ target_chars[1] | escape_rust_char }}, {{ target_chars[2] | escape_rust_char }});
+{% elif char_count == 4 %}
+                    self.scan_to4({{ target_chars[0] | escape_rust_char }}, {{ target_chars[1] | escape_rust_char }}, {{ target_chars[2] | escape_rust_char }}, {{ target_chars[3] | escape_rust_char }});
+{% elif char_count == 5 %}
+                    self.scan_to5({{ target_chars[0] | escape_rust_char }}, {{ target_chars[1] | escape_rust_char }}, {{ target_chars[2] | escape_rust_char }}, {{ target_chars[3] | escape_rust_char }}, {{ target_chars[4] | escape_rust_char }});
+{% elif char_count == 6 %}
+                    self.scan_to6({{ target_chars[0] | escape_rust_char }}, {{ target_chars[1] | escape_rust_char }}, {{ target_chars[2] | escape_rust_char }}, {{ target_chars[3] | escape_rust_char }}, {{ target_chars[4] | escape_rust_char }}, {{ target_chars[5] | escape_rust_char }});
+{% else %}
+                    unreachable!("advance_to validated to 1-6 chars");
+{% endif %}
+
+{% elif cmd.type == "mark" %}
+                    self.mark();
+
+{% elif cmd.type == "term" %}
+{% set term_offset = cmd.args.offset | ldefault(0) %}
+                    self.set_term({{ term_offset }});
+
+{% elif cmd.type == "prepend" %}
+{# Prepend literal bytes to the accumulation buffer. Empty literals are
+   filtered as :noop at parse time, so we always have content here. #}
+                    self.prepend_bytes(b"{{ cmd.args.literal }}");
+
+{% elif cmd.type == "prepend_param" %}
+{# Prepend parameter bytes to accumulation buffer. Parameter is &'static [u8],
+   so empty slice is naturally a no-op, NUL bytes work fine. #}
+{% set param_name = cmd.args.param_ref %}
+                    self.prepend_bytes({{ param_name }});
+
+{% elif cmd.type == "return" %}
+{# Emit appropriate event based on return type, then return #}
+{% if cmd.args.return_value is ltruthy %}
+{# INTERNAL type returning a computed value #}
+                    return {{ cmd.args.return_value }};
+{% elif cmd.args.emit_type is ltruthy %}
+{# Explicit return type specified #}
+{% if cmd.args.emit_mode == "mark" %}
+                    on_event(Event::{{ cmd.args.emit_type }} { content: self.term(), span: self.span_from_mark() });
+{% elif cmd.args.emit_mode == "literal" %}
+                    on_event(Event::{{ cmd.args.emit_type }} { content: std::borrow::Cow::Borrowed(b"{{ cmd.args.literal }}"), span: self.span() });
+{% else %}
+                    on_event(Event::{{ cmd.args.emit_type }} { content: std::borrow::Cow::Borrowed(b""), span: self.span() });
+{% endif %}
+                    return;
+{% elif return_type_info.kind == "internal" %}
+{# INTERNAL type with no explicit return value - return 0 as default #}
+                    return 0;
+{% elif cmd.args.suppress_auto_emit is ltruthy and return_type_info.kind == "content" %}
+{# Fix #11: Inline emit already happened for CONTENT type - skip auto-emit.
+   Note: BRACKET types ALWAYS emit End event regardless of inline emits,
+   because End is structural, not a content event. #}
+                    return;
+{% elif return_type_info.kind == "content" %}
+                    on_event(Event::{{ func.return_type }} { content: self.term(), span: self.span_from_mark() });
+                    return;
+{% elif return_type_info.kind == "bracket" %}
+                    on_event(Event::{{ func.return_type }}End { span: self.span() });
+                    return;
+{% else %}
+                    return;
+{% endif %}
+
+{% elif cmd.type == "transition" %}
+{% if cmd.args.value == "" or cmd.args.value is undefined or cmd.args.value is none %}
+{# Self-loop - continue #}
+                    continue;
+{% else %}
+                    state = State::{{ cmd.args.value | replace(":", "") | pascalcase }};
+                    continue;
+{% endif %}
+
+{% elif cmd.type == "call" %}
+{# Function call - use pre-parsed name and call_args from IR #}
+{% if cmd.args.is_error is ltruthy %}
+{# Built-in /error(ErrorCode) - emit error event (caller adds |return if needed) #}
+{% if cmd.args.call_args is ltruthy %}
+                    on_event(Event::Error { code: ParseErrorCode::{{ cmd.args.call_args | pascalcase }}, span: self.span() });
+{% else %}
+                    on_event(Event::Error { code: ParseErrorCode::UnexpectedChar, span: self.span() });
+{% endif %}
+{% elif cmd.args.call_args is ltruthy %}
+                    self.parse_{{ cmd.args.name }}({{ cmd.args.call_args | rust_expr }}, on_event);
+{% else %}
+                    self.parse_{{ cmd.args.name }}(on_event);
+{% endif %}
+
+{% elif cmd.type == "assign" %}
+{% if cmd.args.var is ltruthy and cmd.args.expr is ltruthy %}
+                    {{ cmd.args.var }} = {{ cmd.args.expr | rust_expr }};
+{% endif %}
+
+{% elif cmd.type == "add_assign" %}
+{% if cmd.args.var is ltruthy and cmd.args.expr is ltruthy %}
+                    {{ cmd.args.var }} += {{ cmd.args.expr | rust_expr }};
+{% endif %}
+
+{% elif cmd.type == "sub_assign" %}
+{% if cmd.args.var is ltruthy and cmd.args.expr is ltruthy %}
+                    {{ cmd.args.var }} -= {{ cmd.args.expr | rust_expr }};
+{% endif %}
+
+{% elif cmd.type == "emit" %}
+{# Explicit emit - used for mid-function emissions #}
+{% set emit_type = cmd.args.value %}
+                    on_event(Event::{{ emit_type }} { content: self.term(), span: self.span_from_mark() });
+
+{% elif cmd.type == "inline_emit_bare" %}
+{# Inline emit with no payload: TypeName - CONTENT types still need content field #}
+                    on_event(Event::{{ cmd.args.type }} { content: std::borrow::Cow::Borrowed(b""), span: self.span() });
+
+{% elif cmd.type == "inline_emit_mark" %}
+{# Inline emit using accumulated content: TypeName(USE_MARK) #}
+                    on_event(Event::{{ cmd.args.type }} { content: self.term(), span: self.span_from_mark() });
+
+{% elif cmd.type == "inline_emit_literal" %}
+{# Inline emit with literal: TypeName(literal) - strip $ sigil if present #}
+{% set literal = cmd.args.literal | remove_first("$") %}
+                    on_event(Event::{{ cmd.args.type }} { content: std::borrow::Cow::Borrowed(b"{{ literal }}"), span: self.span() });
+
+{% elif cmd.type == "error" %}
+{% set error_code = cmd.args.value | pascalcase %}
+                    on_event(Event::Error { code: ParseErrorCode::{{ error_code }}, span: self.span() });
+
+{% elif cmd.type == "keywords_lookup" %}
+{# Look up accumulated content in keyword map, call fallback if not found #}
+                    self.lookup_{{ cmd.args.name }}_or_fallback(on_event);
+
+{% elif cmd.type == "conditional" %}
+{# Inline conditional: if/else chain #}
+{% for clause in cmd.args.clauses %}
+{% if loop.first %}
+                    if {{ clause.condition | rust_expr }} {
+{% else %}
+{% if clause.condition is ltruthy %}
+                    } else if {{ clause.condition | rust_expr }} {
+{% else %}
+                    } else {
+{% endif %}
+{% endif %}
+{% for nested_cmd in clause.commands %}
+{{ render_command(nested_cmd, func, return_type_info) }}
+{% endfor %}
+{% endfor %}
+                    }
+
+{% else %}
+                    compile_error!("Unknown command type passed to template: {{ cmd.type }}");
+
+{% endif %}

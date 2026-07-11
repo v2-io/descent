@@ -1,5 +1,5 @@
-//! descent-rs CLI. Current subcommands are differential-testing probes;
-//! `generate` arrives with the emitter (PROGRESS.md step 4-5).
+//! descent-rs CLI: `generate` (parser generation) plus the
+//! differential-testing probe subcommands (tokens/ast/context).
 
 use std::process::ExitCode;
 
@@ -11,9 +11,45 @@ fn main() -> ExitCode {
         (Some("context"), Some(path)) => {
             dump_context(path, args.get(3).map(|s| s.as_str()) == Some("true"))
         }
+        (Some("generate"), Some(path)) => {
+            let trace = args.get(3).is_some_and(|s| s == "--trace" || s == "true");
+            generate(path, trace)
+        }
         _ => {
             eprintln!("usage: descent-rs <tokens|ast|context> <file.desc> [trace]");
+            eprintln!("       descent-rs generate <file.desc> [--trace]");
             ExitCode::from(2)
+        }
+    }
+}
+
+/// Generate Rust parser source to stdout (mirrors Ruby
+/// `Descent.generate(file, target: :rust, trace:)` plus the regenerate
+/// driver's blank-run collapse — see emit::rust::engine::post_process).
+fn generate(path: &str, trace: bool) -> ExitCode {
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("{path}: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let ir = match libdescent::build_ir(&content, path) {
+        Ok(ir) => ir,
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let opts = libdescent::emit::rust::Options { trace, ..Default::default() };
+    match libdescent::emit::rust::generate(&ir, &opts) {
+        Ok(code) => {
+            print!("{code}");
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("template error: {e:#}");
+            ExitCode::FAILURE
         }
     }
 }

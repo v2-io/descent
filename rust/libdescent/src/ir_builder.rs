@@ -681,11 +681,26 @@ fn infer_scan_chars(cases: &[Case]) -> Option<Vec<String>> {
         return None;
     }
 
+    let non_default: Vec<&Case> = cases
+        .iter()
+        .filter(|c| !c.is_default() && !c.is_conditional())
+        .collect();
+
+    // SCAN can only target statically-known bytes. If any case matches a
+    // parameter (|c[:param]|) or a character class (LETTER, XLBL_CONT, ...),
+    // a memchr scan for the static chars would skip right past positions
+    // those cases must inspect — the state is not scannable at all.
+    // (Found via udon typed_value:string, where the `c[:bracket]` case was
+    // silently skipped and `[a.md]` swallowed the closing `]`.)
+    if non_default
+        .iter()
+        .any(|c| c.param_ref.is_some() || c.special_class.is_some())
+    {
+        return None;
+    }
+
     let mut explicit_chars: Vec<String> = vec![];
-    for kase in cases {
-        if kase.is_default() || kase.is_conditional() {
-            continue;
-        }
+    for kase in non_default {
         if let Some(chars) = &kase.chars {
             for c in chars {
                 if !explicit_chars.contains(c) {

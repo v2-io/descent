@@ -15,6 +15,7 @@
 //!   (COL/LINE/PREV/:param only — no escapes/char-literals).
 //! - prepend_values render with Ruby's pre-escaping (`\` -> `\\`).
 
+pub mod engine;
 pub mod literals;
 
 use crate::charclass;
@@ -36,6 +37,15 @@ impl Default for Options {
     fn default() -> Self {
         Options { trace: false, streaming: true }
     }
+}
+
+/// Generate Rust parser source from the IR (Ruby: Generator#generate):
+/// build the context, render the minijinja templates, post-process.
+pub fn generate(ir: &ParserIR, opts: &Options) -> Result<String, minijinja::Error> {
+    let ctx = build_context(ir, opts);
+    let env = engine::make_env()?;
+    let rendered = env.get_template("parser.j2")?.render(&ctx)?;
+    Ok(engine::post_process(&rendered))
 }
 
 /// Build the full template context (Ruby: Generator#build_context).
