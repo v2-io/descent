@@ -1,7 +1,23 @@
 # libdescent — Rust rewrite of descent — session trail
 
 Assume 100% context turnover between sessions. This file is the state, the
-decisions, and the next step. Session 1: 2026-07-07. Session 2: 2026-07-11.
+decisions, and the next step. Session 1: 2026-07-07. Sessions 2-3:
+2026-07-11.
+
+## Session-3 headline
+
+**Context differential green 10/10** (30/30 counting tokens+ast+context;
+`rust/tools/diff_frontend.sh`, non-vacuous, trace=true also identical).
+charclass/ir/ir_builder ported; the January flaw is fixed as designed: IR is
+target-neutral, and `emit::rust::build_context` (port of Ruby's
+`Generator#build_context` PLUS `transform_call_args_by_type`) is the only
+place Rust literals are rendered — producing context JSON identical to
+Ruby's despite the relocation. Two normalization spikes landed
+(`rust/spikes/normalizations/NOTES.md`): **#7 quote-aliases ORACLE-BLESSED**
+(byte-identical plain+trace; reader sentinel bridge 999→825; token-identity
+preserved) and **#2 comment-rule audit** (97.5%+ corpus agreement; every
+disagreement is class-4 quoted-`;` or class-1 degradation, never the rule —
+nothing to normalize, proposal confirmed). Templates NOT started (next).
 
 ## Session-2 headline
 
@@ -100,8 +116,29 @@ Branch `rust-rewrite` in ~/src/descent. Workspace at `rust/`
   comment blanking), raw-source bracket-id extraction, orphaned-pipe
   detection. NOTES.md there = mismatch classes + classifications + metrics.
 - `rust/spikes/normalizations/` — oracle-blessed grammar normalization
-  evidence (placeholder cells, so far).
-- charclass / IR / ir_builder / emitter / templates — **not started**.
+  evidence + NOTES.md (placeholder cells #0, quote-aliases #7, comment-rule
+  audit #2; `comment_audit` probe binary lives in spikes/udon-reader).
+- `rust/libdescent/src/charclass.rs` — **done, corpus-verified**:
+  CharacterClass port MINUS the Rust-literal renderers (those live in
+  emit::rust::literals — the January-flaw fix).
+- `rust/libdescent/src/ir.rs`, `ir_builder.rs` — **done, corpus-verified**
+  (via context differential): target-neutral IR. Deliberate divergences
+  from Ruby, context-JSON-neutral by construction:
+  (a) `transform_call_args_by_type` NOT run in the builder (moved to emit);
+  (b) prepend_values stored as neutral bytes (`<BS>` -> `\`, not `\\`);
+  emit::rust re-escapes. Command args are the Ruby args-hash as a JSON
+  object with raw DSL values; conditional clauses hoisted into a typed
+  `clauses` field, re-nested at serialization.
+- `rust/libdescent/src/emit/rust/` — **context builder done,
+  corpus-verified** (`build_context` + call-arg transform + literals.rs).
+  Reproduces Ruby quirks on purpose: states-only call-arg transform
+  (function-level eof handlers + entry actions keep RAW args), helper-usage
+  COL/PREV blind spot, mini init-value transpiler, pre-escaped prepend
+  values. `descent-rs context FILE [trace]` dumps it; Ruby side is
+  `rust/tools/dump_context.rb` (Generator#build_context via #send).
+- templates / minijinja rendering / post-process — **not started** (the
+  whole of Ruby's Liquid layer: parser.liquid 1163 lines, _command.liquid
+  174, filters incl. rust_expr, 4-regex post-process).
 - `rust/tests/fixtures/` — **complete oracle corpus**: 10 .desc grammars
   (combined.desc = cat of udon's udon.desc+values.desc, + 9 descent
   examples), each with `.rs.expected` and `.trace.rs.expected` generated
@@ -171,6 +208,18 @@ suite, the real acceptance).
 - Ruby parse_function: `id.split(':')` silently drops third+ colon segments
   of a function id ("a:b:c" → rtype "b") — mirrored in Rust for oracle
   fidelity; make it an error in the improved front-end.
+- (session 3) Ruby's call-arg type transform only walks *states*: call args
+  in function-level eof handlers and entry actions stay RAW in the context
+  (templates happen to re-render them via rust_expr). Mirrored in
+  emit::rust for context parity; unify once byte-identity is retired.
+- (session 3) `collect_prepend_values` parses the WHOLE call_args string as
+  ONE byte literal, so only single-arg calls ever contribute — on this
+  corpus every prepend_values array is empty ([] for text/sameline_text).
+  Mirrored; either fix the tracer or drop the feature (templates don't use
+  prepend_values — see below).
+- (session 3) prepend_values are template-unused AND pre-Rust-escaped in
+  Ruby; our IR stores neutral bytes, emit::rust re-escapes only for the
+  context diff. Candidate for deletion from the context entirely.
 - udon-core upstream defects found by the reader spike (flag to umbrella):
   Text span/content off-by-one on pipe-led runs; Text spans at line start in
   continuation mode; ElementEnd spans past the next line's pipe;
@@ -199,6 +248,30 @@ explicitly authorized — keep spikes in `rust/spikes/` with short notes.
    load-bearing (terminates the previous part), and row-leading pipes may
    still win on table legibility — a fmt-policy choice, not grammar.
    Umbrella-side landing flagged, not done from this repo.
+
+Session-3 spike results (full write-ups in
+`rust/spikes/normalizations/NOTES.md`):
+
+- **#7 quote-aliases: ORACLE-BLESSED.**
+  `combined-quote-aliases.desc` (83 lines): quoted DSL chars → aliases in
+  the four CharacterClass contexts (`c[...]`, class members, `->[...]`,
+  PREPEND/call args). Byte-identical Ruby output (plain AND trace); reader
+  sentinel bridge 999→825 (−17%); reader token-identity preserved; comment
+  disagreements 26→16 as a side effect. Hazard contexts (conditions —
+  quotes are load-bearing for byte-param inference; keywords fallback args
+  — raw-interpolated) untouched and empty of such sites in combined.desc.
+  **Valve proposal** (Ruby-side, not oracle-normalizable): add `SC` (`;`),
+  maybe `EX`/`BT`/`TAB`, to CharacterClass SINGLE_CHAR — removes most of
+  the remaining ~55 quoted-special sites. Umbrella-side landing of the
+  grammar edit: flagged, not done from this repo.
+- **#2 comment rule: MEASURED, nothing to normalize.** `comment_audit`
+  probe (Ruby strip_comments rule vs udon-core comment events, raw bytes):
+  452/471 exact matches on combined, 100% on 6 fixtures; ALL disagreements
+  are quoted-`;` tails (class 4 → #1/`<SC>` valve) or indent-degradation
+  regions (class 1, incl. full-line comments between substate rows). The
+  three Ruby scanner quirks are never load-bearing on the corpus —
+  "adopt UDON's single comment rule" is corpus-compatible today, gated
+  only on class-1 handling. Classification: lexer artifact, removable.
 
 Inventory (1-8 from session 1, classifications added session 2):
 
@@ -284,38 +357,42 @@ incidental sync. The udon-core-as-front-end construction itself is
 3. Crate name for eventual publication (`descent` squatted; REBOOT-PLAN
    floats `descent-parser`, `udon-descent`). No urgency; publish=false.
 
-## Exact next steps (session 3, in order)
+## Exact next steps (session 4, in order)
 
-1. **Ruby-side context dump** (`rust/tools/dump_context.rb`):
-   `Generator#build_context.to_json` per fixture (Ruby side untouched — new
-   file under rust/tools only).
-2. **charclass.rs (neutral parts) + ir.rs + ir_builder.rs ports**; then the
-   emit/rust context-builder (port of transform_call_args_by_type +
-   to_rust_byte/bytes — the ONLY place Rust literals get baked); verify via
-   context-JSON diff vs Ruby on all 10 fixtures (extend diff_frontend.sh).
-3. minijinja templates translated from parser.liquid/_command.liquid +
-   filters (rust_expr etc.) + 4-regex post-process; converge to
+1. **Templates**: minijinja templates translated from
+   parser.liquid (1163 lines) / _command.liquid (174) + filters (rust_expr,
+   escape_rust_char, pascalcase — LiquidFilters in generator.rb) + the
+   4-regex post-process + the driver's `\n{3,}→\n\n`; converge to
    byte-identity on the 20 expected files (instrument, not contract — log
    deliberate divergences in the improvements ledger instead of chasing
-   warts; the Liquid quirks list above is the map).
-4. Real acceptance: regenerate udon's parser.rs with descent-rs, run udon
+   warts; the Liquid quirks list above is the map). The context builder is
+   done and verified — template input is exactly `descent-rs context`'s
+   JSON. Wire a `descent-rs generate FILE [--trace]` subcommand and a
+   diff_generate.sh over the 20 `.rs.expected` fixtures.
+2. Real acceptance: regenerate udon's parser.rs with descent-rs, run udon
    fixture suite (`cd ~/src/udon/core && cargo test`), event-stream equal.
    Then the self-hosting fixed-point check (regenerate→rebuild→regenerate
    stable) — and promote the reader from spike to libdescent's default
    front-end (oracle lexer stays as differential fallback).
-5. Ongoing, interleaved: more normalization spikes (per-proposal oracle
-   checks — quote-alias adoption #7 and comment-rule #2 look nearest);
-   classifications per the table-scan criterion; flag umbrella-side items
-   (grammar edits + udon-core defect list) to the coordinator.
-6. Keep commits local on `rust-rewrite`; no push (Joseph reviews).
+3. Ongoing, interleaved: remaining normalization spikes per the oracle rule
+   (#4 bracket-id quoting looks nearest now; #7 second pass needs the `<SC>`
+   valve = Ruby-side change, coordinate first); flag umbrella-side items
+   (grammar edits: placeholder-cells #0 + quote-aliases #7; udon-core
+   defect list incl. degradation-region comment leakage) to the
+   coordinator.
+4. Keep commits local on `rust-rewrite`; no push (Joseph reviews).
 
 ## Oracle status per corpus (contract instrument)
 
-- Front-end differential (Rust lexer+parser vs Ruby): **20/20 OK**
-  (10 grammars × {tokens, ast}; `rust/tools/diff_frontend.sh`; harness
-  verified non-vacuous via cross-fixture diff).
+- Front-end differential (Rust vs Ruby): **30/30 OK**
+  (10 grammars × {tokens, ast, context}; `rust/tools/diff_frontend.sh`;
+  harness verified non-vacuous via cross-fixture diff; context also
+  verified with trace=true on combined).
 - udon-core reader vs oracle lexer: **10/10 token-identical**
-  (`rust/tools/diff_reader.sh`; 6,926 tokens).
-- Generated-output comparison: **not yet attempted** (emitter not built).
+  (`rust/tools/diff_reader.sh`; 6,926 tokens) — also token-identical on
+  the #7-normalized combined grammar.
+- Generated-output comparison: **not yet attempted** (templates not built).
   Fixtures ready for all 10 grammars × {plain, trace}.
-- Normalization checks run so far: placeholder-cells (byte-identical ✓).
+- Normalization checks run: placeholder-cells #0 (byte-identical ✓),
+  quote-aliases #7 (byte-identical plain+trace ✓), comment-rule #2
+  (audit only — no grammar change needed).
