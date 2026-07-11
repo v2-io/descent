@@ -1,7 +1,23 @@
 # libdescent — Rust rewrite of descent — session trail
 
 Assume 100% context turnover between sessions. This file is the state, the
-decisions, and the next step. Session 1: 2026-07-07.
+decisions, and the next step. Session 1: 2026-07-07. Session 2: 2026-07-11.
+
+## Session-2 headline
+
+Front-end differential **green 20/20** (10 grammars × {tokens, ast}, Rust
+port vs Ruby, jq-normalized JSON). udon-core reader spike **green 10/10**
+(token-identical to the oracle on the whole corpus, 6,926 tokens) — the
+udon-core-as-front-end construction is now *empirically validated*, with
+three bridges (see `rust/spikes/udon-reader/NOTES.md` for the mismatch
+classes, metrics, and classifications). Stage-0 vendored per policy
+(`rust/vendor/udon-core/`, PROVENANCE.md). First normalization
+oracle-verified (empty placeholder cells — byte-identical output; evidence
+in `rust/spikes/normalizations/`, umbrella-side landing flagged, not done).
+New evaluative criterion from Joseph recorded at
+`~/src/udon/notes/desc-design-principles.md` (**read it**): .desc reads like
+a bit lookup table; every proposal is judged on cursor-advance/table-scan
+legibility, and every quirk classified *principled* vs *lexer artifact*.
 
 ## Mission (as amended during session 1)
 
@@ -62,18 +78,30 @@ production path.
 
 ## State of the code (what exists, what's verified)
 
-Branch `rust-rewrite` in ~/src/descent. Workspace at `rust/`.
+Branch `rust-rewrite` in ~/src/descent. Workspace at `rust/`
+(members: libdescent, descent-cli, spikes/udon-reader, vendor/udon-core).
 
-- `rust/libdescent/src/lexer.rs` — **done, compiles untested-against-corpus**:
-  faithful port of lexer.rb's three scanning layers (documented inline as
-  quirks). Role: differential oracle + the `Token` seam + the reusable
-  quote-aware pipe splitter.
-- `rust/libdescent/src/ast.rs`, `parser.rs` — **done, not yet
-  corpus-verified**: port of parser.rb (AST + classify_command command
-  regexes, incl. quirk mirrors — see ledger).
-- `rust/libdescent/src/lib.rs` — **NOT YET WRITTEN** (crate won't build until
-  a lib.rs declares the modules; session 2 first task).
-- charclass / IR / ir_builder / emitter / templates / CLI — **not started**.
+- `rust/libdescent/src/lexer.rs` — **done, corpus-verified** (20/20 vs Ruby):
+  faithful port of lexer.rb's three scanning layers. Role: differential
+  oracle + the `Token` seam. `split_on_pipes`, `parse_part`,
+  `extract_bracketed_id` are `pub` (reader seams).
+- `rust/libdescent/src/ast.rs`, `parser.rs` — **done, corpus-verified**
+  (AST JSON identical to Ruby on all 10 grammars).
+- `rust/libdescent/src/dump.rs` — canonical JSON for tokens/AST; MUST stay in
+  lockstep with `rust/tools/dump_tokens.rb` / `dump_ast.rb` (Ruby side).
+- `rust/descent-cli` — `descent-rs tokens|ast FILE` dump subcommands.
+- `rust/tools/diff_frontend.sh` — Rust-vs-Ruby differential (needs jq).
+- `rust/tools/diff_reader.sh` — reader-vs-oracle differential.
+- `rust/vendor/udon-core/` — vendored stage-0 (policy-compliant; see
+  PROVENANCE.md there for SHAs + bump procedure).
+- `rust/spikes/udon-reader/` — **the production front-end candidate,
+  token-identical 10/10**: udon events → parts → shared `parse_part`.
+  Bridges: sentinel pre-pass (quoted pipes/semicolons, quotes in brackets,
+  comment blanking), raw-source bracket-id extraction, orphaned-pipe
+  detection. NOTES.md there = mismatch classes + classifications + metrics.
+- `rust/spikes/normalizations/` — oracle-blessed grammar normalization
+  evidence (placeholder cells, so far).
+- charclass / IR / ir_builder / emitter / templates — **not started**.
 - `rust/tests/fixtures/` — **complete oracle corpus**: 10 .desc grammars
   (combined.desc = cat of udon's udon.desc+values.desc, + 9 descent
   examples), each with `.rs.expected` and `.trace.rs.expected` generated
@@ -140,11 +168,39 @@ suite, the real acceptance).
   (Phase-2 feature; REBOOT-PLAN H3 defers to it).
 - prepend_values stored pre-Rust-escaped in Ruby IR (`'\\\\'` for `<BS>`) —
   unused by templates; keep neutral bytes in our IR.
+- Ruby parse_function: `id.split(':')` silently drops third+ colon segments
+  of a function id ("a:b:c" → rtype "b") — mirrored in Rust for oracle
+  fidelity; make it an error in the improved front-end.
+- udon-core upstream defects found by the reader spike (flag to umbrella):
+  Text span/content off-by-one on pipe-led runs; Text spans at line start in
+  continuation mode; ElementEnd spans past the next line's pipe;
+  "Inconsistent indentation" → text-mode degradation drops structural pipes;
+  bracket-ids not scoped (space-fragmented, quoted-whitespace garbled).
 
 ## desc-format proposals (lexer-conformance artifacts → UDON-friendly .desc)
 
 Joseph confirmed the frame: bridge-friction points are exactly where .desc
-syntax conformed to what was easy for the Ruby lexer. Inventory so far:
+syntax conformed to what was easy for the Ruby lexer. **Evaluative criterion
+(2026-07-11, `~/src/udon/notes/desc-design-principles.md`):** .desc began as
+a literal bit-lookup table (RTMP parser, still running at Twitch); the
+load-bearing property is table-scan/cursor-advance legibility. Classify every
+quirk *principled* (serves the table — keep, spec it) vs *lexer artifact*
+(accident of the Ruby scanner — normalize under the oracle rule or redesign).
+Session-2 quantification: bridging .desc onto udon-core needed 999 sentineled
+bytes + 82 degradation sites in combined.desc alone (full table in
+`rust/spikes/udon-reader/NOTES.md`). Spiking on alternative constructs is
+explicitly authorized — keep spikes in `rust/spikes/` with short notes.
+
+0. **Empty placeholder cells in continuation rows** — VERIFIED lexer
+   artifact, oracle-blessed removal (byte-identical output; evidence
+   `rust/spikes/normalizations/combined-no-placeholder-cells.desc`). Ruby
+   discards whitespace-only parts; the leading pipe of an empty first cell
+   is pure alignment. Nuance: the pipe before the first real command IS
+   load-bearing (terminates the previous part), and row-leading pipes may
+   still win on table legibility — a fmt-policy choice, not grammar.
+   Umbrella-side landing flagged, not done from this repo.
+
+Inventory (1-8 from session 1, classifications added session 2):
 
 1. **Sameline command soup** (`| -> |>> :next`): exists because Ruby splits
    the whole file on pipes before any structure. UDON-friendly: sameline
@@ -180,9 +236,20 @@ syntax conformed to what was easy for the Ruby lexer. Inventory so far:
    have ad-hoc regexes; as a UDON dialect these become attrs/values (udon
    already parses `document:Text` as one clean BareValue).
 
+Session-2 classifications (per the table-scan criterion): #2 #3 #4 #5 #6 #8
+are **lexer artifacts** (normalize/redesign); #1 is **mixed** — the aligned
+one-line case row is principled (it IS the table), the three implicit
+splitters behind it are artifact; #7 is **artifact-born but keepable sugar**
+(aliases like `<SQ>` may read better in a table cell than quoted literals —
+Joseph's call). The reader-spike mismatch classes map onto these: dropped
+pipes/degradation → #1+#5, quoted pipes → #1/#7, bracket-id quoting → #4,
+semicolons → #1/#2 (details in `rust/spikes/udon-reader/NOTES.md`).
+
 Endpoint: .desc as a **pure UDON dialect + schema**, bridge layer → zero;
 grammars become first-class UDON documents that udon's own tooling (lint,
-paths, schema, agentic edits) applies to.
+paths, schema, agentic edits) applies to. The fusion succeeds only if the
+UDON rendering stays *at least as table-legible* as today's .desc (rendered
+lookup-table views are part of the answer — see the design-principles note).
 
 ### Normalization rule (RATIFIED, coordinator 2026-07-11)
 
@@ -217,35 +284,38 @@ incidental sync. The udon-core-as-front-end construction itself is
 3. Crate name for eventual publication (`descent` squatted; REBOOT-PLAN
    floats `descent-parser`, `udon-descent`). No urgency; publish=false.
 
-## Exact next steps (session 2, in order)
+## Exact next steps (session 3, in order)
 
-1. `libdescent/src/lib.rs` declaring modules; `cargo build`; fix port
-   compile errors.
-2. Ruby-side dump scripts (`rust/tools/`): tokens-as-JSON and
-   build_context-as-JSON. Differential-test lexer.rs+parser.rs tokens/AST
-   against Ruby on all 10 fixtures. (Ruby side of repo stays untouched —
-   new files under rust/tools only.)
-3. **udon-core reader spike** (`rust/spikes/`): udon-core events → Tokens;
-   diff against lexer.rs tokens corpus-wide; produce the mismatch list
-   (feeds the proposals ledger + per-proposal oracle checks). Wire stage-0
-   vendoring per the ratified policy (vendored parser.rs + provenance note;
-   optional feature-gated path-dep for local iteration).
-4. charclass.rs (neutral parts only) + ir.rs + ir_builder.rs ports;
-   emit/rust context-builder (bakes Rust literals); verify via context-JSON
-   diff vs Ruby on all fixtures.
-5. minijinja templates translated from parser.liquid/_command.liquid +
-   filters (rust_expr etc.) + post-process; converge to byte-identity on
-   the 20 expected files (instrument, not contract — log deliberate
-   divergences in the ledger instead of chasing warts).
-6. Real acceptance: regenerate udon's parser.rs with descent-rs, run udon
+1. **Ruby-side context dump** (`rust/tools/dump_context.rb`):
+   `Generator#build_context.to_json` per fixture (Ruby side untouched — new
+   file under rust/tools only).
+2. **charclass.rs (neutral parts) + ir.rs + ir_builder.rs ports**; then the
+   emit/rust context-builder (port of transform_call_args_by_type +
+   to_rust_byte/bytes — the ONLY place Rust literals get baked); verify via
+   context-JSON diff vs Ruby on all 10 fixtures (extend diff_frontend.sh).
+3. minijinja templates translated from parser.liquid/_command.liquid +
+   filters (rust_expr etc.) + 4-regex post-process; converge to
+   byte-identity on the 20 expected files (instrument, not contract — log
+   deliberate divergences in the improvements ledger instead of chasing
+   warts; the Liquid quirks list above is the map).
+4. Real acceptance: regenerate udon's parser.rs with descent-rs, run udon
    fixture suite (`cd ~/src/udon/core && cargo test`), event-stream equal.
    Then the self-hosting fixed-point check (regenerate→rebuild→regenerate
-   stable).
-7. Keep commits local on `rust-rewrite`; no push (Joseph reviews).
+   stable) — and promote the reader from spike to libdescent's default
+   front-end (oracle lexer stays as differential fallback).
+5. Ongoing, interleaved: more normalization spikes (per-proposal oracle
+   checks — quote-alias adoption #7 and comment-rule #2 look nearest);
+   classifications per the table-scan criterion; flag umbrella-side items
+   (grammar edits + udon-core defect list) to the coordinator.
+6. Keep commits local on `rust-rewrite`; no push (Joseph reviews).
 
 ## Oracle status per corpus (contract instrument)
 
-Generated-output comparison: **not yet attempted** (emitter not built).
-Fixtures ready for all 10 grammars × {plain, trace}. Front-end differential:
-not yet run. Nothing is verified beyond the probes and the fixture
-generation itself.
+- Front-end differential (Rust lexer+parser vs Ruby): **20/20 OK**
+  (10 grammars × {tokens, ast}; `rust/tools/diff_frontend.sh`; harness
+  verified non-vacuous via cross-fixture diff).
+- udon-core reader vs oracle lexer: **10/10 token-identical**
+  (`rust/tools/diff_reader.sh`; 6,926 tokens).
+- Generated-output comparison: **not yet attempted** (emitter not built).
+  Fixtures ready for all 10 grammars × {plain, trace}.
+- Normalization checks run so far: placeholder-cells (byte-identical ✓).

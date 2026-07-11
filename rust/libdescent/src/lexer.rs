@@ -168,7 +168,10 @@ fn split_lines_keep_nl(s: &str) -> Vec<&str> {
 }
 
 /// Layer 2: split content on pipes, but not inside bracket context or quotes.
-fn split_on_pipes(content: &str, source_file: &str) -> Result<Vec<String>, LexerError> {
+///
+/// `pub`: reader seam — the udon-core front-end re-splits sameline command
+/// tails (UDON Text runs containing pipes) with this exact splitter.
+pub fn split_on_pipes(content: &str, source_file: &str) -> Result<Vec<String>, LexerError> {
     let mut parts: Vec<String> = Vec::new();
     let mut current = String::new();
     let mut in_bracket = false;
@@ -247,7 +250,12 @@ fn split_on_pipes(content: &str, source_file: &str) -> Result<Vec<String>, Lexer
 
 /// Extract the content inside [...] from a part, respecting single quotes.
 /// Returns (content, Some(end_char_pos)) or ("", None) if no brackets found.
-fn extract_bracketed_id(part: &[char]) -> (String, Option<usize>) {
+///
+/// `pub`: reader seam — the udon-core front-end re-extracts bracket-ids from
+/// raw source with these exact rules (single quotes only, true nesting),
+/// because udon-core fragments/garbles ids containing spaces or quoted
+/// whitespace.
+pub fn extract_bracketed_id(part: &[char]) -> (String, Option<usize>) {
     let start_pos = match part.iter().position(|&c| c == '[') {
         Some(p) => p,
         None => return (String::new(), None),
@@ -290,7 +298,11 @@ fn extract_bracketed_id(part: &[char]) -> (String, Option<usize>) {
 
 /// Layer 3: per-part comment strip (brackets + parens + single quotes),
 /// then tag/id/rest decomposition.
-fn parse_part(part: &str, lineno: usize, source_file: &str) -> Result<Option<Token>, LexerError> {
+///
+/// `pub`: reader seam — the udon-core front-end reconstructs descent *parts*
+/// from UDON events and feeds them through this shared decomposition, so
+/// tag-casing/id/rest quirks live in exactly one place.
+pub fn parse_part(part: &str, lineno: usize, source_file: &str) -> Result<Option<Token>, LexerError> {
     // Comment strip round 2, per line within the part.
     let mut kept_lines: Vec<String> = Vec::new();
     for (line_idx, line) in split_lines_keep_nl(part).iter().enumerate() {
