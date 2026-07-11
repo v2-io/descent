@@ -1,8 +1,45 @@
 # libdescent — Rust rewrite of descent — session trail
 
 Assume 100% context turnover between sessions. This file is the state, the
-decisions, and the next step. Session 1: 2026-07-07. Sessions 2-3:
+decisions, and the next step. Session 1: 2026-07-07. Sessions 2-4:
 2026-07-11.
+
+## Session-4 headline
+
+**Templates done, acceptance trio green, self-hosting fixed point closed.**
+minijinja templates (`rust/libdescent/templates/rust/{parser,_command}.j2`,
+translated from the Liquid pair) + `emit::rust::engine` (filter ports,
+Liquid-parity semantics, 4-regex post-process) + `descent-rs generate FILE
+[--trace] [--oracle]` + `rust/tools/diff_generate.sh`: **20/20
+byte-identical** to the Ruby oracle fixtures (plain+trace) — no deliberate
+output divergence was needed; identity achieved exactly. **Acceptance:**
+(1) descent-rs regenerates udon's committed parser.rs **byte-identically**
+from `core/generator/udon.desc+values.desc`; (2) udon suite green (83
+tests, `cd ~/src/udon/core && cargo test --workspace`); (3) **self-hosting
+fixed point holds**: reader promoted from spike to `libdescent::reader`
+(default front-end; oracle lexer behind `Frontend::OracleLexer` /
+`--oracle`), and stage-0 (Ruby-generated vendored parser.rs) == stage-1
+(libdescent generating through stage-0) == stage-2 (after
+rebuild-with-stage-1), plain and trace — Ruby has exited the toolchain.
+
+Mid-session base reconciliation (coordinator directive): merged descent
+origin/main **3f81c3c** (U1 defect sweep: char-aware columns, SCAN vetoed
+by param/class cases, PREPEND span restoration) — the scannability fix
+ported into `ir_builder.rs`, the parser.liquid changes mirrored into
+parser.j2, all 20 fixtures regenerated from updated Ruby, front-end
+differential re-proven 30/30. Stage-0 bumped to udon-core @ **d0bc9f9**
+(deliberate act per policy, PROVENANCE.md updated); reader token-identity
+re-verified 10/10 on the new events; `combined.desc` refreshed to the
+current grammar pair (`combined.rs.expected` == udon's committed
+parser.rs).
+
+minijinja gotchas learned (they cost the only iteration cycles):
+`preserve_order` feature REQUIRED (else map iteration sorts keys — locals
+declaration order); `set_keep_trailing_newline(true)`; custom formatter for
+Liquid's nil→"" (minijinja prints "none"); `ltruthy` test for Liquid
+truthiness ("" and 0 are truthy); `lsize`/`ldefault`/`dstr` filters for
+nil-tolerant size/default/concat. Templates are embedded `include_str!`
+(standalone builds; editing a template = rebuild).
 
 ## Session-3 headline
 
@@ -136,9 +173,18 @@ Branch `rust-rewrite` in ~/src/descent. Workspace at `rust/`
   COL/PREV blind spot, mini init-value transpiler, pre-escaped prepend
   values. `descent-rs context FILE [trace]` dumps it; Ruby side is
   `rust/tools/dump_context.rb` (Generator#build_context via #send).
-- templates / minijinja rendering / post-process — **not started** (the
-  whole of Ruby's Liquid layer: parser.liquid 1163 lines, _command.liquid
-  174, filters incl. rust_expr, 4-regex post-process).
+- `rust/libdescent/templates/rust/{parser,_command}.j2` +
+  `src/emit/rust/engine.rs` — **done, byte-identical 20/20** (plain+trace):
+  minijinja env (Chainable undefined, keep_trailing_newline, nil→""
+  formatter), filter ports (rust_expr/pascalcase/escape_rust_char +
+  ltruthy/ldefault/lsize/dstr Liquid-parity helpers), `render_command()`
+  global fn in place of `{% include 'command' %}` (recursion + the 20-space
+  indent quirk preserved), post_process = the 4 regexes + driver collapse.
+- `rust/libdescent/src/reader.rs` — **promoted production front-end**
+  (moved from spikes/udon-reader, which keeps a re-export shim + probes).
+  `Frontend::{UdonCore (default), OracleLexer}` on
+  tokenize/parse_with/build_ir_with; CLI `--oracle` selects the lexer
+  (diff_reader.sh uses it for the reference side).
 - `rust/tests/fixtures/` — **complete oracle corpus**: 10 .desc grammars
   (combined.desc = cat of udon's udon.desc+values.desc, + 9 descent
   examples), each with `.rs.expected` and `.trace.rs.expected` generated
@@ -148,9 +194,9 @@ Branch `rust-rewrite` in ~/src/descent. Workspace at `rust/`
     File.write(ARGV[1], Descent.generate(ARGV[0], target: :rust,
     trace: ARGV[2]=="true").gsub(/\n{3,}/, "\n\n"))' IN.desc OUT.rs true|false
   ```
-- Note: shipped udon parser.rs differs from current-Ruby-descent output by
-  exactly one word (`/// \`\`\`ignore` vs `\`\`\`text`, template drifted after
-  last regeneration). Harmless; the oracle is current Ruby descent.
+- (session 4) shipped udon parser.rs, current Ruby descent (3f81c3c), and
+  descent-rs now all agree byte-exactly; the earlier one-word drift note is
+  obsolete.
 
 ## Verified knowledge about the Ruby pipeline (read-once dividend)
 
@@ -357,42 +403,55 @@ incidental sync. The udon-core-as-front-end construction itself is
 3. Crate name for eventual publication (`descent` squatted; REBOOT-PLAN
    floats `descent-parser`, `udon-descent`). No urgency; publish=false.
 
-## Exact next steps (session 4, in order)
+## Exact next steps (session 5)
 
-1. **Templates**: minijinja templates translated from
-   parser.liquid (1163 lines) / _command.liquid (174) + filters (rust_expr,
-   escape_rust_char, pascalcase — LiquidFilters in generator.rb) + the
-   4-regex post-process + the driver's `\n{3,}→\n\n`; converge to
-   byte-identity on the 20 expected files (instrument, not contract — log
-   deliberate divergences in the improvements ledger instead of chasing
-   warts; the Liquid quirks list above is the map). The context builder is
-   done and verified — template input is exactly `descent-rs context`'s
-   JSON. Wire a `descent-rs generate FILE [--trace]` subcommand and a
-   diff_generate.sh over the 20 `.rs.expected` fixtures.
-2. Real acceptance: regenerate udon's parser.rs with descent-rs, run udon
-   fixture suite (`cd ~/src/udon/core && cargo test`), event-stream equal.
-   Then the self-hosting fixed-point check (regenerate→rebuild→regenerate
-   stable) — and promote the reader from spike to libdescent's default
-   front-end (oracle lexer stays as differential fallback).
-3. Ongoing, interleaved: remaining normalization spikes per the oracle rule
-   (#4 bracket-id quoting looks nearest now; #7 second pass needs the `<SC>`
-   valve = Ruby-side change, coordinate first); flag umbrella-side items
-   (grammar edits: placeholder-cells #0 + quote-aliases #7; udon-core
-   defect list incl. degradation-region comment leakage) to the
-   coordinator.
+Sessions 1-4 delivered the whole Phase-1 pipeline with the acceptance trio
+green. What remains is judgment + cleanup + Phase-2, roughly in order:
+
+1. **Decide byte-identity retirement with Joseph/coordinator.** The
+   instrument has served its purpose (everything is proven equal); keeping
+   it live blocks executing the improvements ledger (every ledger item
+   changes output bytes). Proposal: retire diff_generate byte-identity to
+   an on-demand check, promote udon's fixture suite + diff_frontend to the
+   standing contract, then execute ledger items (helper-usage blind spot,
+   silent arg-drops → errors, doc-comment post-process mangling,
+   prepend_values deletion, `a:b:c` id error, unreachable_patterns /
+   determinism check). Each divergence gets a ledger entry + fixture
+   regeneration.
+2. **Normalization track:** re-bless #0/#7 against the 3f81c3c base (cheap
+   rerun), then #4 (bracket-id quoting, nearest), and coordinate the `<SC>`
+   valve (Ruby-side SINGLE_CHAR addition) for #7's second pass.
+   Umbrella-side grammar edits stay flagged, not landed from here.
+3. **Housekeeping candidates:** spike crate is now a shim + probes (keep —
+   NOTES.md and comment_audit are the normalization evidence base);
+   `dump_context.rb`/diff harnesses unchanged; consider `descent-rs
+   generate -o FILE` and wiring udon's regenerate-parser to descent-rs as
+   the umbrella-side switch (flag to coordinator, needs their call).
 4. Keep commits local on `rust-rewrite`; no push (Joseph reviews).
 
 ## Oracle status per corpus (contract instrument)
 
+All current as of session 4, on the reconciled base (descent 3f81c3c merged,
+stage-0 = udon d0bc9f9, fixtures regenerated from updated Ruby):
+
 - Front-end differential (Rust vs Ruby): **30/30 OK**
-  (10 grammars × {tokens, ast, context}; `rust/tools/diff_frontend.sh`;
-  harness verified non-vacuous via cross-fixture diff; context also
-  verified with trace=true on combined).
+  (10 grammars × {tokens, ast, context}; `rust/tools/diff_frontend.sh`) —
+  now runs THROUGH the promoted reader front-end, so it checks
+  reader==Ruby end-to-end; harness non-vacuous (caught real divergences
+  during template bring-up).
 - udon-core reader vs oracle lexer: **10/10 token-identical**
-  (`rust/tools/diff_reader.sh`; 6,926 tokens) — also token-identical on
-  the #7-normalized combined grammar.
-- Generated-output comparison: **not yet attempted** (templates not built).
-  Fixtures ready for all 10 grammars × {plain, trace}.
+  (`rust/tools/diff_reader.sh`, oracle side via `descent-rs tokens
+  --oracle`; 6,937 tokens) — re-verified after the stage-0 bump (udon's
+  event-stream changes did not break token identity).
+- Generated output vs Ruby fixtures: **20/20 byte-identical**
+  (10 grammars × {plain, trace}; `rust/tools/diff_generate.sh`).
+- **Acceptance trio (all green):** udon parser.rs regenerated
+  byte-identically from `~/src/udon/core/generator/*.desc`; udon fixture
+  suite 83/83 (`cargo test --workspace` in ~/src/udon/core);
+  regenerate→rebuild→regenerate fixed point stable (stage-0==1==2,
+  plain+trace).
 - Normalization checks run: placeholder-cells #0 (byte-identical ✓),
   quote-aliases #7 (byte-identical plain+trace ✓), comment-rule #2
-  (audit only — no grammar change needed).
+  (audit only — no grammar change needed). NOTE: these were blessed
+  against pre-3f81c3c Ruby; re-bless #0/#7 against the new base before
+  landing umbrella-side (cheap: rerun the oracle check).
