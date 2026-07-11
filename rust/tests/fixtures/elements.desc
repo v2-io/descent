@@ -1,0 +1,73 @@
+; Pipe-prefixed element parser
+;
+; Demonstrates:
+; - BRACKET types: auto ElementStart on entry, ElementEnd on return
+; - CONTENT types: auto MARK on entry, emit on return
+; - Recursive element calls for nesting
+; - Column-based dedent detection
+; - Minimal explicit code - generator infers the rest
+
+|parser elements
+
+|type[Element] BRACKET
+|type[Name]    CONTENT
+|type[Text]    CONTENT
+
+|entry-point /document
+
+; Document: dispatch on first non-whitespace
+; No return type = void, no auto emissions
+|function[document]
+  |state[:main]
+    |c['\n']      |.blank    | ->              |>>
+    |c[' \t']     |.ws       | ->              |>>
+    |c[<P>]     |.pipe     | -> | /element(0)|>>
+    |default    |.text     | /text(0)        |>>
+
+; Element: BRACKET type
+; - ElementStart emitted on entry (auto)
+; - ElementEnd emitted on return (auto)
+; - Recursive /element calls handle child nesting
+|function[element:Element] :col
+  |state[:identity]
+    |letter     |.name     | /name           |>> :after_name
+    |c[<SQ>]    |.quoted   | -> | /name      |>> :after_name
+    |default    |.anon     |                 |>> :content
+
+  |state[:after_name]
+    |c['\n']      |.eol      | ->              |>> :children
+    |c[' \t']     |.ws       | ->              |>> :content
+    |default    |.inline   | /text(:col)     |>> :children
+
+  |state[:content]
+    |c['\n']      |.eol      | ->              |>> :children
+    |c[' \t']     |.ws       | ->              |>>
+    |default    |.text     | /text(:col)     |>> :children
+
+  |state[:children]
+    |c['\n']      |.blank    | ->              |>>
+    |c[' \t']     |.ws       | ->              |>> :check
+    |default    |.dedent   |return
+
+  |state[:check]
+    |c[' \t']     |.ws       | ->               |>>
+    |if[COL <= col]        |return
+    |c[<P>]     |.child    | -> | /element(COL) |>> :children
+    |default    |.text     | /text(COL)        |>> :children
+
+; Name: CONTENT type
+; - MARK at entry (auto)
+; - emit Name on return (auto)
+|function[name:Name]
+  |state[:main]
+    |label_cont |.cont     | ->              |>>
+    |default    |.done     |return
+
+; Text: CONTENT type
+; - MARK at entry (auto)
+; - emit Text on return (auto)
+; - SCAN inferred (\n case + self-loop default)
+|function[text:Text] :col
+  |state[:main]
+    |c['\n']      |.eol      |return
+    |default    |.collect  | ->              |>>

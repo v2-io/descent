@@ -1,0 +1,13 @@
+[workspace]
+resolver = "2"
+members = ["libdescent", "descent-cli"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+publish = false
+
+[workspace.dependencies]
+regex = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
+minijinja = { version = "2", features = ["loader"] }

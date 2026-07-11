@@ -1,0 +1,16 @@
+; Minimal parser - just collects all input as text
+;
+; CONTENT type means:
+; - MARK at function entry (automatic)
+; - emit(Text) on return (automatic)
+; - EOF: emit accumulated content and return (automatic)
+
+|parser minimal
+
+|type[Text] CONTENT
+
+|entry-point /document
+
+|function[document:Text]
+  |state[:main]
+    |default    |.collect   | ->  |>>
