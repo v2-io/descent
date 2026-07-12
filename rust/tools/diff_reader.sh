@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 # Reader differential: udon-core front-end tokens (descent-rs default) vs
 # oracle lexer tokens (descent-rs --oracle) on all fixture grammars. Per-fixture mismatch counts; details on demand with
 # VERBOSE=1. Usage: rust/tools/diff_reader.sh  (from the descent repo root)

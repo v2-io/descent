@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 # Differential test: Rust vs Ruby descent on all fixture grammars, at three
 # checkpoints: tokens (lexer), ast (parser), context (ir_builder + emitter
 # context — the full template input).
