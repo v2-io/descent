@@ -920,10 +920,18 @@ module Descent
       return nil unless default_case
       return nil unless simple_self_loop?(default_case)
 
+      non_default = cases.reject(&:default?).reject(&:conditional?)
+
+      # SCAN can only target statically-known bytes. If any case matches a
+      # parameter (|c[:param]|) or a character class (LETTER, XLBL_CONT, ...),
+      # a memchr scan for the static chars would skip right past positions
+      # those cases must inspect — the state is not scannable at all.
+      # (Found via udon typed_value:string, where the `c[:bracket]` case was
+      # silently skipped and `[a.md]` swallowed the closing `]`.)
+      return nil if non_default.any? { |c| c.param_ref || c.special_class }
+
       # Collect all explicit characters from non-default cases
-      explicit_chars = cases
-                       .reject(&:default?)
-                       .reject(&:conditional?) # Skip conditional cases
+      explicit_chars = non_default
                        .flat_map { |c| c.chars || [] }
                        .uniq
 

@@ -1,0 +1,1317 @@
+; UDON Parser - Main Grammar Definition
+;
+; This file defines the core UDON grammar: elements, attributes, nesting,
+; prose, comments, directives, and embedded content.
+;
+; DEPENDENCIES:
+;   This file is concatenated with values.desc before generation.
+;   Values.desc provides: /typed_value (emits Integer or Float)
+;
+; GENERATION:
+;   ./regenerate-parser  # concatenates *.desc files and runs descent
+;
+; Design:
+;   1. Type system declares emit behavior
+;   2. EOF handling inferred from context
+;   3. No explicit emit() calls
+;   4. DSL describes grammar, generator infers mechanics
+;
+; Type categories:
+;   BRACKET  - emits Start on entry, End on exit (Element, Embedded, Directive, Array)
+;   CONTENT  - emits event on return (Name, Text, Comment, Attr, Value, etc.)
+;   INTERNAL - no emit, used for intermediate values (indent count, flags)
+
+|parser udon
+
+; ============================================================================
+; Type Declarations
+; ============================================================================
+
+|type[Element]       BRACKET    ; ElementStart on entry, ElementEnd on exit
+|type[Embedded]      BRACKET    ; EmbeddedStart/End
+|type[Directive]     BRACKET    ; DirectiveStart/End
+|type[Array]         BRACKET    ; ArrayStart/End
+|type[Freeform]      BRACKET    ; FreeformStart/End
+
+|type[Name]          CONTENT    ; emits Name event on return
+|type[Text]          CONTENT    ; emits Text event
+|type[Comment]       BRACKET    ; CommentStart/End - block structure like Element
+|type[Attr]          CONTENT    ; emits Attr event
+|type[StringValue]   CONTENT    ; emits StringValue event
+|type[BareValue]     CONTENT    ; emits BareValue event
+|type[BoolTrue]      CONTENT    ; emits BoolTrue event
+|type[BoolFalse]     CONTENT    ; emits BoolFalse event
+|type[Nil]           CONTENT    ; emits Nil event
+|type[Interpolation] CONTENT    ; emits Interpolation event
+|type[Reference]     CONTENT    ; emits Reference event
+|type[RawContent]    CONTENT    ; emits RawContent event
+|type[Raw]           CONTENT    ; emits Raw flag event
+|type[Integer]       CONTENT    ; emits Integer event (from values.desc)
+|type[Float]         CONTENT    ; emits Float event (from values.desc)
+|type[Rational]      CONTENT    ; emits Rational event (1/3r)
+|type[Complex]       CONTENT    ; emits Complex event (3+4i, 5i)
+|type[Warning]       CONTENT    ; emits Warning event (parser warnings)
+
+|type[INT]           INTERNAL   ; no emit - internal integer
+|type[BOOL]          INTERNAL   ; no emit - internal boolean
+
+
+; ============================================================================
+; Entry Point
+; ============================================================================
+
+|entry-point /document
+
+|function[document]
+  |state[:line]
+    |c['\n']                  | ->                               |>>
+    |c[' ']                   | col = /count_indent              |>> :dispatch
+    |c['\t']                  | /error(NoTabs) | ->['\n']       |>> :line
+    |default                  | col = COL - 1                    |>> :dispatch  ; use actual column
+
+  |state[:dispatch]
+    |c['|']                   | ->                               |>> :check_pipe
+    |c[':']                   | -> | /block_attr                 |>> :line
+    |c['!']                   | -> | /block_directive(col)       |>> :line
+    |c[';']                   | -> | /line_comment               |>> :line
+    |c['@']                   | ->                               |>> :check_at
+    |c['`']                   | ->                               |>> :check_freeform
+    |c[<SQ>]                  | ->                               |>> :check_apos
+    |default                  | /prose(col, -1, <>)              |>> :line
+
+  ; Block-level reference: @[id] inserts element by id (SPEC 1473-1476)
+  |state[:check_at]
+    |c['[']                   | -> | /block_reference            |>> :line
+    |default                  | /prose(col, -1, '@')             |>> :line
+
+  ; Block-level escape: ' followed by marker char outputs that char literally
+  ; Per FULL-SPEC.md lines 104-124: '+ |;:!' = escape, else preserve '
+  |state[:check_apos]
+    |c['|']                   | -> | /prose(col, -1, '|')        |>> :line
+    |c[';']                   | -> | /prose(col, -1, ';')        |>> :line
+    |c[':']                   | -> | /prose(col, -1, ':')        |>> :line
+    |c['!']                   | -> | /prose(col, -1, '!')        |>> :line
+    |c[<SQ>]                  | -> | /prose(col, -1, <SQ>)       |>> :line
+    |default                  | /prose(col, -1, <SQ>)            |>> :line  ; not escape, preserve '
+
+  |state[:check_freeform]
+    |c['`']                   | ->                               |>> :check_freeform2
+    |default                  | /prose(col, -1, '`')             |>> :line
+
+  |state[:check_freeform2]
+    |c['`']                   | -> | /freeform                   |>> :line
+    |default                  | /prose_backticks(col, -1)        |>> :line
+
+  |state[:check_pipe]
+    |c[<XLBL_START SQ '[' '.?!*+'>]  | /element(col, -1)               |>> :line
+    |c['{']                   | -> | /embedded                   |>> :line
+    |default                  | /prose(col, -1, '|')             |>> :line
+
+
+; ============================================================================
+; Utilities
+; ============================================================================
+
+|function[count_indent:INT]  | result = 0
+  |state[:main]
+    |c[' ']                   | -> | result += 1                 |>>
+    |default                  |                                  |return result
+
+
+; NOTE: Error events are emitted inline where needed, e.g. Error(no_tabs)
+; No separate error function needed - the generator handles error codes.
+
+
+; ============================================================================
+; Element Identity Parsing (shared between element and embedded)
+; ============================================================================
+
+; DRYed: parse_element_identity(:close) - void helper for element identity
+; Parses: name?[id].class (suffix can appear before [id] and .class per SPEC 200-215)
+; :close = closer byte (} for embedded, 0 for block element)
+; Returns when identity complete or closer hit. Caller handles content.
+|function[parse_element_identity]  :close
+  |state[:identity]
+    |c[:close]                |                                  |return  ; closer hit (empty)
+    |c[XLBL_START]            | /name                            |>> :post_name
+    |c[<SQ>]                  | ->                               |>> :quoted_name
+    |c['[']                   | ->                               |>> :bracket
+    |c['.']                   |                                  |>> :class
+    |c['?!*+']                | /suffix                          |>> :post_suffix
+    |default                  |                                  |return  ; anonymous, identity done
+
+  |state[:quoted_name]
+    |c[<SQ>]                  | ->                               |>> :post_name
+    |default                  | /quoted_name                     |>> :post_name
+
+  |state[:post_name]
+    |c[:close]                |                                  |return
+    |c['[']                   | ->                               |>> :bracket
+    |c['.']                   |                                  |>> :class
+    |c['?!*+']                | /suffix                          |>> :post_suffix
+    |default                  |                                  |return
+
+  ; After suffix, can still have [id] and .class (SPEC 204-205: |name?[id].class)
+  |state[:post_suffix]
+    |c[:close]                |                                  |return
+    |c['[']                   | ->                               |>> :bracket
+    |c['.']                   |                                  |>> :class
+    |default                  |                                  |return
+
+  |state[:bracket]
+    |c[']']                   | ->                               |>> :post_bracket
+    |default                  | Attr($id) | /value_bracket       |>> :bracket_close
+
+  |state[:bracket_close]
+    |c[']']                   | ->                               |>> :post_bracket
+    |default                  |                                  |return  ; unclosed
+
+  |state[:post_bracket]
+    |c[:close]                |                                  |return
+    |c['.']                   |                                  |>> :class
+    |c['?!*+']                | /suffix                          |>> :post_suffix
+    |default                  |                                  |return
+
+  |state[:class]
+    |c['.']                   | ->                               |>>
+    |c[XLBL_START]            | Attr($class) | /class_name       |>> :post_class
+    |c[<SQ>]                  | Attr($class) | -> | /quoted_class |>> :post_class
+    |default                  |                                  |return  ; no more classes
+
+  |state[:post_class]
+    |c[:close]                |                                  |return
+    |c['.']                   |                                  |>> :class
+    |c['?!*+']                | /suffix                          |>> :post_suffix
+    |default                  |                                  |return
+
+
+; ============================================================================
+; Element (block form - indent-based children)
+; ============================================================================
+
+|function[element:Element]  :elem_col :parent_col  | content_base = -1
+
+  |state[:identity]
+    | /parse_element_identity(<>)                                |>> :post_identity
+
+  |state[:post_identity]
+    |c['\n']                  | ->                               |>> :children
+    |c[' \t']                 | ->                               |>> :pre_content
+    |default                  | /sameline_text(:elem_col, <>)     |>> :children
+
+  |state[:pre_content]
+    |c['\n']                  | ->                               |>> :children
+    |c[' \t']                 | ->                               |>>
+    |c[':']                   | -> | /sameline_attr              |>>
+    |c['|']                   | ->                               |>> :check_sameline_pipe
+    |c[';']                   | ->                               |>> :check_sameline_semi
+    |c['!']                   | ->                               |>> :check_sameline_bang
+    |default                  | /sameline_text(:elem_col, <>)     |>> :children
+
+  |state[:check_sameline_pipe]
+    |c['{']                   | -> | /embedded                   |>> :post_child
+    |c[<XLBL_START SQ '[' '.?!*+'>]  |                               |>> :check_sameline_elem_col
+    |default                  | /sameline_text(:elem_col, '|')   |>> :children
+
+  ; Check if new element's column requires closing current element first (sibling detection)
+  ; Per SPEC: "pop while new_column <= stack_top.base_column"
+  |state[:check_sameline_elem_col]
+    |if[COL - 1 <= :elem_col]                                     |return
+    |                       | /element(COL - 1, :elem_col)        |>> :post_child
+
+  |state[:check_sameline_semi]
+    |c['{']                   | -> | /brace_comment              |>> :post_sameline_inline
+    |default                  | /line_comment_content            |>> :children
+
+  |state[:check_sameline_bang]
+    |c['{']                   | -> | /sameline_directive           |>> :post_sameline_inline
+    |default                  | /sameline_text(:elem_col, '!')   |>> :children
+
+  ; After inline directive on sameline - don't skip spaces, they're content now
+  |state[:post_sameline_inline]
+    |c['\n']                  | ->                               |>> :children
+    |eof                      |                                  |return
+    |default                  | /sameline_text(:elem_col, <>)    |>> :children
+
+  |state[:post_child]
+    |c['\n']                  | ->                               |>> :children
+    |c[' \t']                 | ->                               |>>
+    |c['|']                   |                                  |>> :check_post_pipe_col
+    |default                  | /sameline_text(:elem_col, <>)     |>> :children
+
+  ; Check if '|' is at a sibling/dedent column - if so, let :children handle it
+  ; This avoids consuming the '|' before knowing if it belongs to a sibling
+  |state[:check_post_pipe_col]
+    |if[COL <= :elem_col]                                        |>> :children
+    |default             | ->                                    |>> :check_sameline_pipe
+
+  ; === Children Loop ===
+  ; content_base tracks first prose line's column for dedentation/warnings
+  ; For prose lines beyond content_base, extra spaces are preserved in output
+  |state[:children]
+    |c['\n']                  | ->                               |>>
+    |c[' ']                   | -> | col = 1                     |>> :children_ws
+    |c['\t']                  | /error(NoTabs) | ->['\n']       |>>
+    |default                  | col = COL - 1                    |>> :check_child
+
+  ; Count spaces, but stop at content_base if set (to preserve extra for prose)
+  |state[:children_ws]
+    ; If content_base is set and we've reached it, stop counting
+    |if[content_base >= 0 && col >= content_base]               |>> :at_content_base
+    |c[' ']                   | -> | col += 1                    |>>
+    |default                  |                                  |>> :check_child
+
+  ; At content_base - check what follows
+  ; We've reached content_base column, now dispatch on character type
+  |state[:at_content_base]
+    |if[col <= :elem_col]                                        |return  ; dedent
+    |c['|']                   | ->                               |>> :child_pipe
+    |c[':']                   | -> | /block_attr                 |>> :children
+    |c['!']                   | -> | /block_directive(col)       |>> :children
+    |c[';']                   | -> | /line_comment               |>> :children
+    |c['@']                   | ->                               |>> :child_check_at
+    |c['`']                   | ->                               |>> :child_check_freeform
+    |c[<SQ>]                  | ->                               |>> :child_apos
+    ; For prose (default includes space), extra spaces beyond content_base are content
+    |default                  | /prose(col, :elem_col, <>)       |>> :children
+
+  |state[:check_child]
+    |if[col <= :elem_col]                                        |return  ; dedent
+    |                                                            |>> :child_dispatch
+
+  ; First prose line (content_base not yet set) or lines with less indent
+  |state[:child_dispatch]
+    |c['|']                   | ->                               |>> :child_pipe
+    |c[':']                   | -> | /block_attr                 |>> :children
+    |c['!']                   | -> | /block_directive(col)       |>> :children
+    |c[';']                   | -> | /line_comment               |>> :children
+    |c['@']                   | ->                               |>> :child_check_at
+    |c['`']                   | ->                               |>> :child_check_freeform
+    |c[<SQ>]                  | ->                               |>> :child_apos
+    |default                  |                                  |>> :prose_check_base
+
+  ; Block-level reference in element: @[id]
+  |state[:child_check_at]
+    |c['[']                   | -> | /block_reference            |>> :children
+    |default                  | /prose(col, :elem_col, '@')      |>> :children
+
+  ; Check content_base for prose lines
+  ; - If not set: this is first prose line, set it
+  ; - If col < content_base: inconsistent indent warning, update content_base
+  ; - If col >= content_base: handled in :at_content_base (shouldn't reach here)
+  |state[:prose_check_base]
+    |if[content_base < 0]     | content_base = col               |>> :do_prose
+    ; col < content_base (since >= would have gone to :at_content_base)
+    |default                  | Warning(Inconsistent indentation) | content_base = col |>> :do_prose
+
+  |state[:do_prose]
+    | /prose(col, :elem_col, <>)                                 |>> :children
+
+  |state[:child_check_freeform]
+    |c['`']                   | ->                               |>> :child_check_freeform2
+    |default                  | /prose(col, :elem_col, '`')      |>> :children
+
+  |state[:child_check_freeform2]
+    |c['`']                   | -> | /freeform                   |>> :children
+    |default                  | /prose_backticks(col, :elem_col) |>> :children
+
+  ; Block-level escape inside element children (same as document-level)
+  |state[:child_apos]
+    |c['|']                   | -> | /prose(col, :elem_col, '|') |>> :children
+    |c[';']                   | -> | /prose(col, :elem_col, ';') |>> :children
+    |c[':']                   | -> | /prose(col, :elem_col, ':') |>> :children
+    |c['!']                   | -> | /prose(col, :elem_col, '!') |>> :children
+    |c[<SQ>]                  | -> | /prose(col, :elem_col, <SQ>)|>> :children
+    |default                  | /prose(col, :elem_col, <SQ>)     |>> :children
+
+  |state[:child_pipe]
+    |c['{']                   | -> | /embedded                   |>> :after_child
+    |c[<XLBL_START SQ '[' '.?!*+'>] | /element(col, :elem_col)         |>> :after_child
+    |default                  | /prose(col, :elem_col, '|')      |>> :children
+
+  ; After child element/embedded returns - always re-check column for potential dedent
+  |state[:after_child]
+    |                                                            |>> :children
+
+
+; ============================================================================
+; Names (element/class names)
+; ============================================================================
+
+|function[name:Name]  | MARK
+  |state[:main]
+    |c[XLBL_CONT]             | ->                               |>>
+    |default                  | TERM                             |return
+
+
+; DRYed: skip_single_quoted - void helper for '-quoted content with escapes
+; Stops AT closing ' (doesn't consume). Caller does TERM | -> to consume.
+; NOTE: Can't use ->[<SQ>] because we need to handle \' escapes
+|function[skip_single_quoted]
+  |state[:main]
+    |c[<SQ>]                  |                                  |return  ; don't consume
+    |c[<BS>]                  | -> | ->                          |>>
+    |default                  | ->                               |>>
+
+
+|function[quoted_name:Name]  | MARK
+  |state[:main]
+    | /skip_single_quoted | TERM | ->                            |return
+
+
+|function[class_name:BareValue]  | MARK
+  |state[:main]
+    |c[XLBL_CONT]             | ->                               |>>
+    |default                  | TERM                             |return
+
+
+|function[quoted_class:BareValue]  | MARK
+  |state[:main]
+    | /skip_single_quoted | TERM | ->                            |return
+
+
+; ============================================================================
+; Attributes
+; ============================================================================
+
+|function[suffix]
+  |state[:main]
+    |c['?']                   | Attr(?) | BoolTrue | ->          |return
+    |c['!']                   | Attr(!) | BoolTrue | ->          |return
+    |c['*']                   | Attr(*) | BoolTrue | ->          |return
+    |c['+']                   | Attr(+) | BoolTrue | ->          |return
+    |default                  |                                  |return
+
+
+|function[block_attr]
+  |state[:key]
+    |c['[']                   | -> | /attr_reference              |return  ; :[id] reference
+    |c[XLBL_START]            | /attr_key                        |>> :value_start
+    |c[<SQ>]                  | -> | /attr_key_quoted            |>> :value_start
+
+  |state[:value_start]
+    |c[' \t']                 | ->                               |>>
+    |c['\n']                  | BoolTrue                         |return
+    |default                  | /value(0, '\0')                  |>> :post_value
+
+  ; After value, check for trailing comment (per SPEC: ` ;` terminates values)
+  |state[:post_value]
+    |c[';']                   | -> | /line_comment_content        |return
+    |default                  |                                  |return
+
+
+|function[sameline_attr]
+  |state[:key]
+    |c['[']                   | -> | /attr_reference              |return  ; :[id] reference
+    |c[XLBL_START]            | /attr_key                        |>> :value_start
+    |c[<SQ>]                  | -> | /attr_key_quoted            |>> :value_start
+
+  |state[:value_start]
+    |c[' \t']                 | ->                               |>>
+    |c['\n:|']                | BoolTrue                         |return
+    |default                  | /value(1, '\0')                  |return
+
+
+|function[sameline_attr_embedded]
+  |state[:key]
+    |c['[']                   | -> | /attr_reference              |return  ; :[id] reference
+    |c[XLBL_START]            | /attr_key                        |>> :value_start
+    |c[<SQ>]                  | -> | /attr_key_quoted            |>> :value_start
+
+  |state[:value_start]
+    |c[' \t']                 | ->                               |>>
+    |c[<'\n:|' '}'>]           | BoolTrue                         |return
+    |default                  | /value(1, '}')                   |return
+
+
+|function[attr_key:Attr]  | MARK
+  |state[:main]
+    |c[XLBL_CONT]             | ->                               |>>
+    |default                  | TERM                             |return
+
+
+|function[attr_key_quoted:Attr]  | MARK
+  |state[:main]
+    | /skip_single_quoted | TERM | ->                            |return
+
+
+; ============================================================================
+; References
+; ============================================================================
+;
+; Two reference forms (SPEC 1450-1488):
+;   @[id] - Block-level: insert entire element structure
+;   :[id] - Attribute position: merge attributes from referenced element
+
+; Block-level reference: @[id] inserts element by id
+; Called after @[ consumed
+|function[block_reference:Reference]  | MARK | ->[']'] | TERM | ->
+
+
+; Attribute merge reference: :[id] merges attributes
+; Called after :[ consumed
+|function[attr_reference:Reference]  | MARK | ->[']'] | TERM | ->
+
+
+; ============================================================================
+; Values
+; ============================================================================
+
+; Value parsing - unified function with context parameters
+;   :space_term = 0 (block: space is content) or 1 (space terminates)
+;   :bracket = 0 (none), '}' (embedded), ']' (array)
+|function[value]  :space_term :bracket
+  |state[:start]
+    |c[<DQ>]                  | -> | /double_quoted              |return
+    |c[<SQ>]                  | -> | /single_quoted              |return
+    |c['[']                   | /array                           |return  ; array owns its delimiter
+    |default                  | MARK | /typed_value(:space_term, :bracket) |return
+
+; Bracket ID value - IDs are always BareValue (no type detection)
+; Space or ] terminates
+|function[value_bracket:BareValue]  | MARK
+  |state[:main]
+    |c[']']                   | TERM                             |return
+    |c[' ']                   | TERM                             |return
+    |default                  | ->                               |>>
+
+; Quoted string parsing - separate functions for each quote type
+; (parameterized version had scan optimization issues with :quote)
+|function[double_quoted:StringValue]  | MARK
+  |state[:main]
+    |c[<DQ>]                  | TERM | ->                        |return
+    |c[<BS>]                  | -> | ->                          |>>
+    |default                  | ->                               |>>
+
+|function[single_quoted:StringValue]  | MARK
+  |state[:main]
+    |c[<SQ>]                  | TERM | ->                        |return
+    |c[<BS>]                  | -> | ->                          |>>
+    |default                  | ->                               |>>
+
+; Array - items are space-separated, ] terminates
+; Array owns its delimiter; items are values (quotes, nested arrays, typed values)
+|function[array:Array]
+  |state[:entry]
+    |c['[']  | ->                                                 |>> :items
+  |state[:items]
+    |c[']']  | ->                                                 |return
+    |c[' \t\n'] | ->                                              |>>
+    |default | /value(1, ']')                                     |>>
+
+
+; ============================================================================
+; Prose / Text
+; ============================================================================
+
+; prose - block-level text content with optional prepend character
+; :prepend = <> (none), '|' (pipe prefix), '`' (backtick prefix)
+|function[prose]  :line_col :parent_col :prepend
+  |if[:parent_col >= 0 && :line_col <= :parent_col]          |return  ; dedent
+
+  |state[:content]
+    | /text(:line_col, :parent_col, :prepend)                    |return
+
+
+; prose_backticks - two backticks (not freeform, just text starting with ``)
+|function[prose_backticks]  :line_col :parent_col
+  |if[:parent_col >= 0 && :line_col <= :parent_col]          |return
+
+  |state[:content]
+    | /text_backticks(:line_col, :parent_col)                    |return
+
+
+; text_backticks - text that starts with `` (for non-freeform case)
+; Manual emit control, no :Text auto-emit
+; Semicolons in prose are LITERAL - only `;{...}` triggers inline comment
+|function[text_backticks]  :line_col :parent_col
+  |state[:entry]
+    | MARK | PREPEND('`') | PREPEND('`')                         |>> :main
+
+  |state[:main]
+    |eof                      | TERM | Text(USE_MARK)            |return
+    |c['\n']                  | TERM | Text(USE_MARK)            |return
+    |c['|']                   | ->                               |>> :check_pipe
+    |c[';']                   | ->                               |>> :check_semi
+    |c['!']                   | ->                               |>> :check_bang
+    |default                  | ->                               |>>
+
+  |state[:check_pipe]
+    |eof                      | TERM | Text(USE_MARK)            |return  ; include | in text
+    |c['{']                   | TERM(-1) | Text(USE_MARK) | -> | /embedded |>> :after_inline
+    |default                  |                                  |>> :main
+
+  ; Semicolons in prose are LITERAL - only `;{...}` triggers inline comment
+  |state[:check_semi]
+    |eof                      | TERM | Text(USE_MARK)            |return  ; include ; in text
+    |c['{']                   | TERM(-1) | Text(USE_MARK) | -> | /brace_comment |>> :after_inline
+    |default                  |                                  |>> :main  ; semicolon is literal
+
+  |state[:check_bang]
+    |eof                      | TERM | Text(USE_MARK)            |return  ; include ! in text
+    |c['{']                   | TERM(-1) | Text(USE_MARK) | -> | /sameline_directive |>> :after_inline
+    |default                  |                                  |>> :main
+
+  ; After inline construct - only set MARK if more content follows
+  |state[:after_inline]
+    |c['\n']                  |                                  |return  ; at end, no emit
+    |eof                      |                                  |return  ; at end, no emit
+    |default                  | MARK                             |>> :main
+
+
+; ============================================================================
+; Freeform Blocks (```)
+; ============================================================================
+
+; Freeform block - captures content until closing ``` at start of any line
+; Preserves exact whitespace - no dedentation
+; Closing ``` detected when line starts with optional whitespace then ```
+|function[freeform:Freeform]
+  |state[:lang]
+    |c['\n']                  | ->                               |>> :line_start
+    |c[XLBL_START]            | /name | ->['\n'] | ->            |>> :line_start
+    |default                  |                                  |>> :line_start
+
+  ; Start of each content line - MARK immediately, then check content
+  |state[:line_start]
+    |c['\n']                  | ->                               |>>  ; blank line
+    |default                  | MARK                             |>> :content
+
+  ; Check if line is closing ``` (starts with optional ws then ```)
+  |state[:content]
+    |c[' \t']                 | ->                               |>>
+    |c['`']                   | ->                               |>> :maybe_end1
+    |default                  | ->                               |>> :line
+
+  |state[:line]
+    | ->['\n'] | TERM | Text(USE_MARK) | ->                      |>> :line_start
+
+  ; Check for ``` sequence
+  |state[:maybe_end1]
+    |c['`']                   | ->                               |>> :maybe_end2
+    |default                  |                                  |>> :line  ; only one `, continue
+
+  |state[:maybe_end2]
+    |c['`']                   | ->                               |return  ; found ```, done
+    |default                  |                                  |>> :line  ; only ``, continue
+
+
+; text - block-level prose content (manual emit control, no :Text auto-emit)
+; Same pattern as sameline_text: advance past special chars, check what follows.
+; :prepend = <> (none), '|' (pipe prefix), '`' (backtick prefix)
+; Semicolons in prose are LITERAL - only `;{...}` triggers inline comment
+; (`;` at line start is handled by document/element children loop, not here)
+|function[text]  :line_col :parent_col :prepend
+  |state[:entry]
+    | MARK | PREPEND(:prepend)                                   |>> :main
+
+  |state[:main]
+    |eof                      | TERM | Text(USE_MARK)            |return
+    |c['\n']                  | TERM | Text(USE_MARK)            |return
+    |c['|']                   | ->                               |>> :check_pipe
+    |c[';']                   | ->                               |>> :check_semi
+    |c['!']                   | ->                               |>> :check_bang
+    |default                  | ->                               |>>
+
+  |state[:check_pipe]
+    |eof                      | TERM | Text(USE_MARK)            |return  ; include | in text
+    |c['{']                   | TERM(-1) | Text(USE_MARK) | -> | /embedded |>> :after_inline
+    |default                  |                                  |>> :main
+
+  ; Semicolons in prose are LITERAL - only `;{...}` triggers inline comment
+  |state[:check_semi]
+    |eof                      | TERM | Text(USE_MARK)            |return  ; include ; in text
+    |c['{']                   | TERM(-1) | Text(USE_MARK) | -> | /brace_comment |>> :after_inline
+    |default                  |                                  |>> :main  ; semicolon is literal
+
+  |state[:check_bang]
+    |eof                      | TERM | Text(USE_MARK)            |return  ; include ! in text
+    |c['{']                   | TERM(-1) | Text(USE_MARK) | -> | /sameline_directive |>> :after_inline
+    |default                  |                                  |>> :main
+
+  ; After inline construct - only set MARK if more content follows
+  |state[:after_inline]
+    |c['\n']                  |                                  |return  ; at end, no emit
+    |eof                      |                                  |return  ; at end, no emit
+    |default                  | MARK                             |>> :main
+
+
+; sameline_text - text on same line as element (manual emit control, no :Text auto-emit)
+; When special chars (|;!) are encountered, we advance past them, then check
+; what follows. If special construct, emit text before it and parse construct.
+; If not special, just continue (char is included in text).
+; :prepend = <> (none), '|' (pipe prefix), '!' (bang prefix)
+|function[sameline_text]  :elem_col :prepend
+  |state[:entry]
+    | MARK | PREPEND(:prepend)                                   |>> :main
+
+  |state[:main]
+    |eof                      | TERM | Text(USE_MARK)            |return
+    |c['\n']                  | TERM | Text(USE_MARK)            |return
+    |c['|']                   | ->                               |>> :check_pipe
+    |c[';']                   | ->                               |>> :check_semi
+    |c['!']                   | ->                               |>> :check_bang
+    |default                  | ->                               |>>
+
+  |state[:check_pipe]
+    |eof                      | TERM | Text(USE_MARK)            |return  ; include | in text
+    |c['{']                   | TERM(-1) | Text(USE_MARK) | -> | /embedded |>> :after_inline
+    |c[<XLBL_START SQ '[' '.?!*+'>] |                               |>> :check_pipe_elem_col
+    |default                  |                                  |>> :main
+
+  ; Check if inline element's column requires closing current element first
+  |state[:check_pipe_elem_col]
+    |if[COL - 1 <= :elem_col] | TERM(-1) | Text(USE_MARK)         |return
+    |                        | TERM(-1) | Text(USE_MARK) | /element(COL - 1, :elem_col) |>> :after_inline
+
+  |state[:check_semi]
+    |eof                      | TERM | Text(USE_MARK)            |return  ; include ; in text
+    |c['{']                   | TERM(-1) | Text(USE_MARK) | -> | /brace_comment |>> :after_inline
+    |default                  | TERM(-1) | Text(USE_MARK) | /line_comment_content |return
+
+  |state[:check_bang]
+    |eof                      | TERM | Text(USE_MARK)            |return  ; include ! in text
+    |c['{']                   | TERM(-1) | Text(USE_MARK) | -> | /sameline_directive |>> :after_inline
+    |default                  |                                  |>> :main
+
+  ; After inline construct - only set MARK if more content follows
+  |state[:after_inline]
+    |c['\n']                  |                                  |return  ; at end, no emit
+    |eof                      |                                  |return  ; at end, no emit
+    |default                  | MARK                             |>> :main
+
+
+; ============================================================================
+; Comments
+; ============================================================================
+;
+; Comment is a BRACKET type (like Element, Directive) - emits CommentStart/End.
+; Content inside is emitted as Text events.
+;
+; This allows comment continuation (SPEC 419-428) to use the same "children loop"
+; pattern as Element and Directive, DRYing the indentation-based block handling.
+
+; Block-level line comment - can have continuation (SPEC 419-428)
+; Called after `;` consumed at block level
+; Uses content_base like prose: first continuation line sets the base column,
+; subsequent lines are normalized relative to that base.
+|function[line_comment:Comment]  | comment_col = COL - 1 | content_base = -1
+  |state[:check]
+    |c['{']                   | -> | /comment_text_braced        |return
+    |default                  | MARK                             |>> :first_line
+
+  ; First line of comment content (the part after `;`)
+  |state[:first_line]
+    |eof                      | TERM | Text(USE_MARK)            |return
+    |c['\n']                  | TERM | Text(USE_MARK) | ->       |>> :children
+    |default                  | ->                               |>>
+
+  ; Children loop - check for continuation lines
+  ; Per SPEC 419-428: more-indented lines without prefix are continuation
+  |state[:children]
+    |eof                      |                                  |return
+    |c['\n']                  | ->                               |>>  ; blank line
+    |c[' ']                   | -> | col = 1                     |>> :children_ws
+    |c['\t']                  |                                  |return  ; tab = end
+    |default                  |                                  |return  ; non-indented = end
+
+  ; Count spaces, but stop at content_base if set (like prose does)
+  |state[:children_ws]
+    ; If content_base is set and we've reached it, stop counting here
+    |if[content_base >= 0 && col >= content_base]               |>> :at_content_base
+    |c[' ']                   | -> | col += 1                    |>>
+    |default                  |                                  |>> :check_continuation
+
+  ; Finished counting (hit non-space) - check if valid continuation
+  |state[:check_continuation]
+    |if[col <= comment_col]                                      |return  ; dedent or same col
+    |c['|:!;']                |                                  |return  ; prefix ends comment
+    ; col > comment_col: this is a continuation line
+    ; If content_base not set, first continuation sets it
+    |if[content_base < 0]     | content_base = col | MARK        |>> :cont_line
+    ; col < content_base: inconsistent indent, warn and reset
+    |default                  | Warning(Inconsistent indentation) | content_base = col | MARK |>> :cont_line
+
+  ; Reached content_base while counting - MARK here, extra spaces are content
+  |state[:at_content_base]
+    |c['|:!;']                |                                  |return  ; prefix ends comment
+    |default                  | MARK                             |>> :cont_content
+
+  ; Consume extra spaces (beyond content_base) as content
+  |state[:cont_content]
+    |c[' ']                   | ->                               |>>
+    |default                  |                                  |>> :cont_line
+
+  |state[:cont_line]
+    |eof                      | TERM | Text(USE_MARK)            |return
+    |c['\n']                  | TERM | Text(USE_MARK) | ->       |>> :children
+    |default                  | ->                               |>>
+
+
+; Sameline comment - no continuation possible (content ends at newline/EOF)
+; Called after `;` consumed in sameline context
+|function[line_comment_content:Comment]  | MARK | ->['\n'] | TERM | Text(USE_MARK)
+
+
+; DRYed: skip_brace_balanced - void helper for {}-counting
+; Caller handles MARK/TERM and emit type. Assumes opening { already consumed.
+; Returns with position AT the closing } (not consumed)
+|function[skip_brace_balanced]  | depth = 1
+  |state[:main]
+    |c['{']                   | -> | depth += 1                  |>>
+    |c['}']                   | depth -= 1                       |>> :check
+    |default                  | ->                               |>>
+
+  |state[:check]
+    |if[depth == 0]                                              |return  ; stop before }
+    | ->                                                         |>> :main  ; consume } and continue
+
+
+; Brace comment ;{...} - BRACKET type like line_comment
+; Called after ;{ consumed
+|function[brace_comment:Comment]
+  |state[:main]
+    | /comment_text_braced                                       |return
+
+
+; Helper: capture brace-balanced content as Text
+|function[comment_text_braced]  | MARK
+  |state[:main]
+    | /skip_brace_balanced | TERM | Text(USE_MARK) | ->          |return
+
+
+; ============================================================================
+; Embedded |{...}
+; ============================================================================
+
+; DRYed: embedded uses shared parse_element_identity with } as closer
+|function[embedded:Embedded]
+
+  |state[:identity]
+    | /parse_element_identity('}')                               |>> :post_identity
+
+  |state[:post_identity]
+    |c['}']                  | ->                               |return  ; empty or identity-only
+    |c[' \t']                 | ->                               |>> :pre_content
+    |default                  | /embed_content                   |return
+
+  |state[:pre_content]
+    |c['}']                  | ->                               |return
+    |c[' \t']                 | ->                               |>>
+    |c[':']                   | -> | /sameline_attr_embedded     |>>
+    |default                  | /embed_content                   |return
+
+
+; embed_content - text content inside |{...}
+; Handles: text, embedded elements, comments, directives, quoted strings
+; Quoted strings are emitted as StringValue to avoid brace confusion
+|function[embed_content:Text]  | MARK
+  |state[:main]
+    |c['}']                  | TERM | ->                        |return
+    |c['|']                   | TERM | ->                        |>> :check_pipe
+    |c[';']                   | TERM | ->                        |>> :check_semi
+    |c['!']                   | TERM | ->                        |>> :check_bang
+    |c[<DQ>]                  | TERM | Text(USE_MARK) | -> | /double_quoted | MARK |>> :main
+    |c[<SQ>]                  | TERM | Text(USE_MARK) | -> | /single_quoted | MARK |>> :main
+    |default                  | ->                               |>>
+
+  |state[:check_pipe]
+    ; Inside embedded, only |{...} allowed - emit accumulated text first
+    |c['{']                   | Text(USE_MARK) | -> | /embedded | MARK |>> :main
+    |default                  | MARK | PREPEND('|')              |>> :main
+
+  |state[:check_semi]
+    ; Brace comment - emit accumulated text first
+    |c['{']                   | Text(USE_MARK) | -> | /brace_comment | MARK |>> :main
+    |default                  | MARK | PREPEND(';')              |>> :main
+
+  |state[:check_bang]
+    ; Inline directive - emit accumulated text first
+    |c['{']                   | Text(USE_MARK) | -> | /sameline_directive | MARK |>> :main
+    |default                  | MARK | PREPEND('!')              |>> :main
+
+
+; ============================================================================
+; Block Directives
+; ============================================================================
+
+; Block directive - !name or !:lang: for raw, or !{...} inline at document level
+|function[block_directive:Directive]  :line_col
+  |state[:dispatch]
+    |c[':']                   | ->                               |>> :raw_kind
+    |c['{']                   | -> | /sameline_directive            |return  ; !{...} inline form
+    |c[XLBL_START]                | /name                            |>> :after_name
+    |default                  |                                  |return  ; malformed
+
+  ; Raw block !:lang: - parse kind name
+  |state[:raw_kind]
+    |c[XLBL_START]                | /name | Raw                      |>> :raw_colon
+    |default                  |                                  |return  ; malformed !:
+
+  |state[:raw_colon]
+    |c[':']                   | ->                               |>> :raw_eol
+    |default                  |                                  |return  ; missing second :
+
+  |state[:raw_eol]
+    |c['\n']                  | ->                               |>> :raw_content
+    |c[' \t']                 | ->                               |>>
+    |default                  | ->                               |>>  ; consume rest of line
+
+  ; Raw content - capture everything at greater indent
+  |state[:raw_content]
+    |c['\n']                  | ->                               |>>
+    |c[' ']                   | col = /count_indent              |>> :raw_check
+    |default                  |                                  |return  ; non-indented, done
+
+  |state[:raw_check]
+    |if[col <= :line_col]                                         |return  ; dedent
+    |default                  | MARK                             |>> :raw_line
+
+  |state[:raw_line]
+    |eof                      | TERM | RawContent(USE_MARK)      |return
+    |c['\n']                  | TERM | RawContent(USE_MARK) | -> |>> :raw_content
+    |default                  | ->                               |>>
+
+  ; Regular directive - parse condition/args and children
+  |state[:after_name]
+    |c['\n']                  | ->                               |>> :children
+    |c[' \t']                 | ->                               |>> :condition
+    |default                  |                                  |>> :children
+
+  |state[:condition]
+    |c['\n']                  | ->                               |>> :children
+    |default                  | MARK | /directive_args           |>> :children
+
+  ; Children at greater indent
+  |state[:children]
+    |c['\n']                  | ->                               |>>
+    |c[' ']                   | col = /count_indent              |>> :check_child
+    |c['\t']                  | /error(NoTabs) | ->['\n']       |>>
+    |default                  | col = COL - 1                    |>> :check_child
+
+  |state[:check_child]
+    |if[col <= :line_col]                                         |return
+    |                                                            |>> :child_dispatch
+
+  |state[:child_dispatch]
+    |c['|']                   | ->                               |>> :child_pipe
+    |c[':']                   | -> | /block_attr                 |>> :children
+    |c['!']                   | -> | /block_directive(col)       |>> :children
+    |c[';']                   | -> | /line_comment               |>> :children
+    |c[<SQ>]                  | ->                               |>> :child_apos
+    |default                  | /prose(col, :line_col, <>)       |>> :children
+
+  ; Block-level escape inside directive children
+  |state[:child_apos]
+    |c['|']                   | -> | /prose(col, :line_col, '|') |>> :children
+    |c[';']                   | -> | /prose(col, :line_col, ';') |>> :children
+    |c[':']                   | -> | /prose(col, :line_col, ':') |>> :children
+    |c['!']                   | -> | /prose(col, :line_col, '!') |>> :children
+    |c[<SQ>]                  | -> | /prose(col, :line_col, <SQ>)|>> :children
+    |default                  | /prose(col, :line_col, <SQ>)     |>> :children
+
+  |state[:child_pipe]
+    |c['{']                   | -> | /embedded                   |>> :children
+    |c[<XLBL_START SQ '[' '.?!*+'>] | /element(col, :line_col)         |>> :children
+    |default                  | /prose(col, :line_col, '|')      |>> :children
+
+
+; Directive arguments - capture until newline or EOF
+|function[directive_args:Text]  | ->['\n'] | TERM
+
+
+; Inline dynamics - dispatch based on first char after {
+; Called with position at first char inside braces
+|function[sameline_directive]
+  |state[:dispatch]
+    |c['{']                   | -> | /interpolation              |return  ; !{{expr}}
+    |c[':']                   | -> | /sameline_raw                 |return  ; !{:kind: content}
+    |default                  | /sameline_dir_body                 |return  ; !{name args}
+
+
+; Interpolation !{{expr}} - double-brace, must close with }}
+|function[interpolation:Interpolation]  | MARK
+  |state[:main]
+    |eof                      | TERM | Interpolation(USE_MARK) | /error(UnclosedInterpolation)   |return
+    |c['}']                   | TERM | ->                              |>> :closing
+    |default                  | ->                                     |>>
+
+  |state[:closing]
+    |c['}']                   | ->                                     |return  ; found }}
+    |default                  | Interpolation(USE_MARK) | /error(UnclosedInterpolation) |return  ; only single }
+
+
+; Inline raw !{:kind: content}
+; sameline_raw - raw content inside !{:kind:...}
+; Per FULL-SPEC.md lines 796-797: uses brace-counting for nested {} pairs
+|function[sameline_raw:Directive]  | depth = 0
+  |state[:kind]
+    |c[':']                   | ->                               |>> :content
+    |default                  | /name                            |>>  ; kind name
+
+  |state[:content]
+    | MARK                                                       |>> :scan
+
+  |state[:scan]
+    |c['{']                   | -> | depth += 1                  |>>  ; nested open
+    |c['}']                   |                                  |>> :check_close
+    |default                  | ->                               |>>
+
+  |state[:check_close]
+    |if[depth > 0]            | -> | depth -= 1                  |>> :scan  ; nested close
+    |default                  | TERM | RawContent(USE_MARK) | -> |return    ; final close
+
+
+; Regular inline directive !{name args}
+|function[sameline_dir_body:Directive]
+  |state[:name]
+    |c[XLBL_START]                | /name                            |>> :after_name
+    |default                  | /skip_brace_balanced             |return  ; malformed
+
+  |state[:after_name]
+    |c['}']                  | ->                               |return
+    |c[' \t']                 | ->                               |>> :args
+    |default                  | /skip_brace_balanced             |return
+
+  |state[:args]
+    |c['}']                  | ->                               |return
+    |default                  | /skip_brace_balanced             |return  ; TODO: parse args properly
+; UDON Value Type Parser Functions
+;
+; This file provides typed value parsing for UDON. It is concatenated
+; with udon.desc during parser generation.
+;
+; CONCATENATED WITH:
+;   udon.desc - Main UDON grammar (provides type declarations, entry point)
+;
+; GENERATION:
+;   ./regenerate-parser  # concatenates *.desc files and runs descent
+;
+; PROVIDES:
+;   /typed_value(:space_term, :bracket) - Main entry point
+;     :space_term = 0 (block: space is content) or 1 (space terminates)
+;     :bracket = 0 (none), } (embedded), or ] (array)
+;
+; EMITS:
+;   BoolTrue   - true
+;   BoolFalse  - false
+;   Nil        - null, nil
+;   Integer    - decimal, hex (0x), octal (0o), binary (0b)
+;   Float      - with decimal point or exponent
+;   Rational   - integer/integer + r (e.g., 1/3r, 22/7r)
+;   Complex    - number +/- number + i, or number + i (e.g., 3+4i, 5i)
+;   BareValue  - unrecognized (string)
+
+; ============================================================================
+; Keyword Lookup (phf perfect hash)
+; ============================================================================
+
+; O(1) keyword lookup for boolean/nil literals
+|keywords[bare_kw] :fallback /emit_bare_value
+  | true   => BoolTrue
+  | false  => BoolFalse
+  | null   => Nil
+  | nil    => Nil
+
+; Fallback: emit accumulated content as BareValue
+; MUST be void - uses caller's MARK, not its own
+|function[emit_bare_value]
+  |state[:main]
+    |eof                      | BareValue(USE_MARK)              |return
+    |default                  | BareValue(USE_MARK)              |return
+
+; ============================================================================
+; Main Entry - Context-Aware Value Parser
+; ============================================================================
+
+; typed_value parses a bare (unquoted) value with context-aware termination.
+; Void function - emits polymorphic types (Integer, Float, BoolTrue, etc.)
+; All emits are explicit inline; no auto-emit on return.
+|function[typed_value]  :space_term :bracket  | MARK
+  |state[:main]
+    |eof                      | BareValue(USE_MARK)              |return
+    |c['\n']                  | BareValue(USE_MARK)              |return
+    |c[' ']                   |                                  |>> :check_space
+    |c[:bracket]              | BareValue(USE_MARK)              |return
+    |c['@']                   | ->                               |>> :maybe_ref
+    |c['0']                   | ->                               |>> :num_zero
+    |c['123456789']           |                                  |>> :num_dec
+    |c['+-']                  | ->                               |>> :num_sign
+    |LETTER                   | ->                               |>> :accumulate
+    |default                  | ->                               |>>
+
+  ; === Reference @[name] ===
+  |state[:maybe_ref]
+    |c[<L>]                   | -> | MARK                        |>> :reference
+    |default                  |                                  |>> :string
+
+  |state[:reference]
+    |c[<R>]                   | TERM | Reference(USE_MARK) | ->  |return
+    |default                  | ->                               |>>
+
+  |state[:check_space]
+    |if[space_term == 0]     | ->                               |>> :block_space
+    |default                  | BareValue(USE_MARK)              |return
+
+  |state[:block_space]
+    |c[';']                | TERM(-1) | BareValue(USE_MARK)   |return  ; comment (;)
+    |default                  |                                  |>> :main
+
+  ; === Accumulate identifier for keyword lookup ===
+  ; If we see non-label chars (like .), it's not a keyword - continue as string
+  |state[:accumulate]
+    |eof                      | TERM | KEYWORDS(bare_kw)         |return
+    |c['\n']                  | TERM | KEYWORDS(bare_kw)         |return
+    |c[' ']                   |                                  |>> :accum_space
+    |c[:bracket]              | TERM | KEYWORDS(bare_kw)         |return
+    |LABEL_CONT               | ->                               |>>
+    |default                  | ->                               |>> :string
+  |state[:accum_space]
+    |if[space_term == 0]     | ->                               |>> :accum_block
+    |default                  | TERM | KEYWORDS(bare_kw)         |return
+  |state[:accum_block]
+    |c[';']                | TERM(-1) | KEYWORDS(bare_kw)     |return
+    |default                  |                                  |>> :accumulate
+
+  ; === Numbers: after sign ===
+  |state[:num_sign]
+    |c['0']                   | ->                               |>> :num_zero
+    |c['123456789']           |                                  |>> :num_dec
+    |default                  |                                  |>> :accumulate
+
+  ; === Numbers: zero prefix (check for 0x, 0o, 0b) ===
+  |state[:num_zero]
+    |eof                      | Integer(USE_MARK)                |return
+    |c['xX']                  | ->                               |>> :num_hex
+    |c['oO']                  | ->                               |>> :num_oct
+    |c['bB']                  | ->                               |>> :num_bin
+    |c['.']                   | ->                               |>> :num_float_frac
+    |c['eE']                  | ->                               |>> :num_float_exp
+    |c[<0-9 '_'>]              | ->                               |>> :num_dec
+    |c['\n']                  | Integer(USE_MARK)                |return
+    |c[' ']                   |                                  |>> :num_zero_space
+    |c[:bracket]              | Integer(USE_MARK)                |return
+    |default                  |                                  |>> :string
+  |state[:num_zero_space]
+    |if[space_term == 0]     | ->                               |>> :num_zero_block
+    |default                  | Integer(USE_MARK)                |return
+  |state[:num_zero_block]
+    |c[';']                | Integer(USE_MARK)                |return
+    |default                  |                                  |>> :string
+
+  ; === Numbers: decimal digits ===
+  |state[:num_dec]
+    |eof                      | Integer(USE_MARK)                |return
+    |c[<0-9 '_'>]             | ->                               |>>
+    |c['.']                   | ->                               |>> :num_float_frac
+    |c['eE']                  | ->                               |>> :num_float_exp
+    |c['/']                   | ->                               |>> :num_rational_denom
+    |c['i']                   | -> | Complex(USE_MARK)           |return
+    |c['+-']                  | ->                               |>> :num_complex_sign
+    |c['\n']                  | Integer(USE_MARK)                |return
+    |c[' ']                   |                                  |>> :num_dec_space
+    |c[:bracket]              | Integer(USE_MARK)                |return
+    |default                  |                                  |>> :string
+  |state[:num_dec_space]
+    |if[space_term == 0]     | ->                               |>> :num_dec_block
+    |default                  | Integer(USE_MARK)                |return
+  |state[:num_dec_block]
+    |c[';']                | Integer(USE_MARK)                |return
+    |default                  |                                  |>> :string
+
+  ; === Numbers: hex (0xFF) ===
+  |state[:num_hex]
+    |eof                      | Integer(USE_MARK)                |return
+    |c[<0-9 a-f A-F '_'>]     | ->                               |>>
+    |c['\n']                  | Integer(USE_MARK)                |return
+    |c[' ']                   |                                  |>> :num_hex_space
+    |c[:bracket]              | Integer(USE_MARK)                |return
+    |default                  |                                  |>> :string
+  |state[:num_hex_space]
+    |if[space_term == 0]     | ->                               |>> :num_hex_block
+    |default                  | Integer(USE_MARK)                |return
+  |state[:num_hex_block]
+    |c[';']                | Integer(USE_MARK)                |return
+    |default                  |                                  |>> :string
+
+  ; === Numbers: octal (0o755) ===
+  |state[:num_oct]
+    |eof                      | Integer(USE_MARK)                |return
+    |c[<0-7 '_'>]              | ->                               |>>
+    |c['\n']                  | Integer(USE_MARK)                |return
+    |c[' ']                   |                                  |>> :num_oct_space
+    |c[:bracket]              | Integer(USE_MARK)                |return
+    |default                  |                                  |>> :string
+  |state[:num_oct_space]
+    |if[space_term == 0]     | ->                               |>> :num_oct_block
+    |default                  | Integer(USE_MARK)                |return
+  |state[:num_oct_block]
+    |c[';']                | Integer(USE_MARK)                |return
+    |default                  |                                  |>> :string
+
+  ; === Numbers: binary (0b1010) ===
+  |state[:num_bin]
+    |eof                      | Integer(USE_MARK)                |return
+    |c[<0-1 '_'>]              | ->                               |>>
+    |c['\n']                  | Integer(USE_MARK)                |return
+    |c[' ']                   |                                  |>> :num_bin_space
+    |c[:bracket]              | Integer(USE_MARK)                |return
+    |default                  |                                  |>> :string
+  |state[:num_bin_space]
+    |if[space_term == 0]     | ->                               |>> :num_bin_block
+    |default                  | Integer(USE_MARK)                |return
+  |state[:num_bin_block]
+    |c[';']                | Integer(USE_MARK)                |return
+    |default                  |                                  |>> :string
+
+  ; === Numbers: float fractional part ===
+  |state[:num_float_frac]
+    |eof                      | Float(USE_MARK)                  |return
+    |c[<0-9 '_'>]             | ->                               |>>
+    |c['eE']                  | ->                               |>> :num_float_exp
+    |c['i']                   | -> | Complex(USE_MARK)           |return
+    |c['+-']                  | ->                               |>> :num_complex_sign
+    |c['\n']                  | Float(USE_MARK)                  |return
+    |c[' ']                   |                                  |>> :num_float_frac_space
+    |c[:bracket]              | Float(USE_MARK)                  |return
+    |default                  |                                  |>> :string
+  |state[:num_float_frac_space]
+    |if[space_term == 0]     | ->                               |>> :num_float_frac_block
+    |default                  | Float(USE_MARK)                  |return
+  |state[:num_float_frac_block]
+    |c[';']                | Float(USE_MARK)                  |return
+    |default                  |                                  |>> :string
+
+  ; === Numbers: float exponent ===
+  |state[:num_float_exp]
+    |eof                      | Float(USE_MARK)                  |return
+    |c['+-']                  | ->                               |>> :num_float_exp_digits
+    |c[<0-9>]                  |                                  |>> :num_float_exp_digits
+    |c['\n']                  | Float(USE_MARK)                  |return
+    |c[' ']                   |                                  |>> :num_float_exp_space
+    |c[:bracket]              | Float(USE_MARK)                  |return
+    |default                  |                                  |>> :string
+  |state[:num_float_exp_space]
+    |if[space_term == 0]     | ->                               |>> :num_float_exp_block
+    |default                  | Float(USE_MARK)                  |return
+  |state[:num_float_exp_block]
+    |c[';']                | Float(USE_MARK)                  |return
+    |default                  |                                  |>> :string
+
+  |state[:num_float_exp_digits]
+    |eof                      | Float(USE_MARK)                  |return
+    |c[<0-9 '_'>]             | ->                               |>>
+    |c['i']                   | -> | Complex(USE_MARK)           |return
+    |c['+-']                  | ->                               |>> :num_complex_sign
+    |c['\n']                  | Float(USE_MARK)                  |return
+    |c[' ']                   |                                  |>> :num_float_exp_d_space
+    |c[:bracket]              | Float(USE_MARK)                  |return
+    |default                  |                                  |>> :string
+  |state[:num_float_exp_d_space]
+    |if[space_term == 0]     | ->                               |>> :num_float_exp_d_block
+    |default                  | Float(USE_MARK)                  |return
+  |state[:num_float_exp_d_block]
+    |c[';']                | Float(USE_MARK)                  |return
+    |default                  |                                  |>> :string
+
+  ; === Rational: integer/integer + r (e.g., 1/3r, 22/7r) ===
+  ; After seeing '/' following an integer, accumulate denominator digits
+  ; MUST end with 'r' to be valid rational, otherwise falls back to string
+  |state[:num_rational_denom]
+    |eof                      | BareValue(USE_MARK)              |return  ; no 'r', not rational
+    |c[<0-9 '_'>]             | ->                               |>>
+    |c['r']                   | -> | Rational(USE_MARK)          |return
+    |c['\n']                  | BareValue(USE_MARK)              |return  ; no 'r', not rational
+    |c[' ']                   |                                  |>> :num_rational_space
+    |c[:bracket]              | BareValue(USE_MARK)              |return  ; no 'r', not rational
+    |default                  |                                  |>> :string
+  |state[:num_rational_space]
+    |if[space_term == 0]     | ->                               |>> :num_rational_block
+    |default                  | BareValue(USE_MARK)              |return
+  |state[:num_rational_block]
+    |c[';']                   | BareValue(USE_MARK)              |return
+    |default                  |                                  |>> :string
+
+  ; === Complex: number +/- number + i (e.g., 3+4i, 3.5-2i) ===
+  ; After seeing '+' or '-' following a number, accumulate imaginary part
+  ; MUST end with 'i' to be valid complex, otherwise falls back to string
+  |state[:num_complex_sign]
+    |c[<0-9>]                 |                                  |>> :num_complex_imag
+    |default                  |                                  |>> :string
+  |state[:num_complex_imag]
+    |eof                      | BareValue(USE_MARK)              |return  ; no 'i', not complex
+    |c[<0-9 '_'>]             | ->                               |>>
+    |c['.']                   | ->                               |>> :num_complex_imag_frac
+    |c['eE']                  | ->                               |>> :num_complex_imag_exp
+    |c['i']                   | -> | Complex(USE_MARK)           |return
+    |c['\n']                  | BareValue(USE_MARK)              |return  ; no 'i', not complex
+    |c[' ']                   |                                  |>> :num_complex_imag_space
+    |c[:bracket]              | BareValue(USE_MARK)              |return  ; no 'i', not complex
+    |default                  |                                  |>> :string
+  |state[:num_complex_imag_space]
+    |if[space_term == 0]     | ->                               |>> :num_complex_imag_block
+    |default                  | BareValue(USE_MARK)              |return
+  |state[:num_complex_imag_block]
+    |c[';']                   | BareValue(USE_MARK)              |return
+    |default                  |                                  |>> :string
+
+  ; === Complex imaginary part: fractional (3+4.5i) ===
+  |state[:num_complex_imag_frac]
+    |eof                      | BareValue(USE_MARK)              |return
+    |c[<0-9 '_'>]             | ->                               |>>
+    |c['eE']                  | ->                               |>> :num_complex_imag_exp
+    |c['i']                   | -> | Complex(USE_MARK)           |return
+    |c['\n']                  | BareValue(USE_MARK)              |return
+    |c[' ']                   |                                  |>> :num_complex_imag_frac_space
+    |c[:bracket]              | BareValue(USE_MARK)              |return
+    |default                  |                                  |>> :string
+  |state[:num_complex_imag_frac_space]
+    |if[space_term == 0]     | ->                               |>> :num_complex_imag_frac_block
+    |default                  | BareValue(USE_MARK)              |return
+  |state[:num_complex_imag_frac_block]
+    |c[';']                   | BareValue(USE_MARK)              |return
+    |default                  |                                  |>> :string
+
+  ; === Complex imaginary part: exponent (3+4e2i) ===
+  |state[:num_complex_imag_exp]
+    |eof                      | BareValue(USE_MARK)              |return
+    |c['+-']                  | ->                               |>> :num_complex_imag_exp_d
+    |c[<0-9>]                 |                                  |>> :num_complex_imag_exp_d
+    |c['\n']                  | BareValue(USE_MARK)              |return
+    |c[' ']                   |                                  |>> :num_complex_imag_exp_space
+    |c[:bracket]              | BareValue(USE_MARK)              |return
+    |default                  |                                  |>> :string
+  |state[:num_complex_imag_exp_space]
+    |if[space_term == 0]     | ->                               |>> :num_complex_imag_exp_block
+    |default                  | BareValue(USE_MARK)              |return
+  |state[:num_complex_imag_exp_block]
+    |c[';']                   | BareValue(USE_MARK)              |return
+    |default                  |                                  |>> :string
+  |state[:num_complex_imag_exp_d]
+    |eof                      | BareValue(USE_MARK)              |return
+    |c[<0-9 '_'>]             | ->                               |>>
+    |c['i']                   | -> | Complex(USE_MARK)           |return
+    |c['\n']                  | BareValue(USE_MARK)              |return
+    |c[' ']                   |                                  |>> :num_complex_imag_exp_d_space
+    |c[:bracket]              | BareValue(USE_MARK)              |return
+    |default                  |                                  |>> :string
+  |state[:num_complex_imag_exp_d_space]
+    |if[space_term == 0]     | ->                               |>> :num_complex_imag_exp_d_block
+    |default                  | BareValue(USE_MARK)              |return
+  |state[:num_complex_imag_exp_d_block]
+    |c[';']                   | BareValue(USE_MARK)              |return
+    |default                  |                                  |>> :string
+
+  ; === String fallback (anything not keyword/number) ===
+  |state[:string]
+    |eof                      | BareValue(USE_MARK)              |return
+    |c['\n']                  | BareValue(USE_MARK)              |return
+    |c[' ']                   |                                  |>> :string_space
+    |c[:bracket]              | BareValue(USE_MARK)              |return
+    |default                  | ->                               |>>
+  |state[:string_space]
+    |if[space_term == 0]     | ->                               |>> :string_block
+    |default                  | BareValue(USE_MARK)              |return
+  |state[:string_block]
+    |c[';']                | TERM(-1) | BareValue(USE_MARK)   |return
+    |default                  |                                  |>> :string

@@ -79,6 +79,7 @@ module {{ parser | pascalcase }}
       @mark_pos = 0
       @term_pos = nil   # nil = not set, Integer = explicit position
       @prepend_buf = +''
+      @term_prepend_len = 0  # prepend bytes consumed by the last term()
       @line = 1
       @column = 1
     end
@@ -108,10 +109,13 @@ module {{ parser | pascalcase }}
     def advance
       return if @pos >= @input.bytesize
 
-      if @input.getbyte(@pos) == 10  # newline
+      b = @input.getbyte(@pos)
+      if b == 10  # newline
         @line += 1
         @column = 1
-      else
+      elsif (b & 0xC0) != 0x80
+        # Columns count characters, not bytes: UTF-8 continuation bytes
+        # don't advance the column.
         @column += 1
       end
       @pos += 1
@@ -120,6 +124,7 @@ module {{ parser | pascalcase }}
     def mark
       @mark_pos = @pos
       @term_pos = nil
+      @term_prepend_len = 0
       # Note: @prepend_buf is NOT cleared - persists until term() consumes it
     end
 
@@ -150,6 +155,9 @@ module {{ parser | pascalcase }}
       term_end = @term_pos || @pos
       slice = @input[@mark_pos...term_end]
 
+      # Remember prepend size so span_from_mark can extend back over it
+      # (PREPEND restores just-consumed source bytes).
+      @term_prepend_len = @prepend_buf.bytesize
       if @prepend_buf.empty?
         slice
       else
@@ -165,7 +173,12 @@ module {{ parser | pascalcase }}
 
     def span_from_mark
       term_end = @term_pos || @pos
-      Span.new(@mark_pos, term_end)
+      # PREPEND restores source bytes consumed just before MARK; extend the
+      # span back over them so span length matches content length.
+      plen = @prepend_buf.empty? ? @term_prepend_len : @prepend_buf.bytesize
+      start = @mark_pos - plen
+      start = 0 if start.negative?
+      Span.new(start, term_end)
     end
 
 {% if uses_col %}
@@ -426,7 +439,8 @@ module {{ parser | pascalcase }}
         if b == 10
           @line += 1
           @column = 1
-        else
+        elsif (b & 0xC0) != 0x80
+          # Columns are char-based: skip UTF-8 continuation bytes.
           @column += 1
         end
       end

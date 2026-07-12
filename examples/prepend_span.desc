@@ -1,0 +1,33 @@
+; Regression test for PREPEND-aware spans.
+;
+; PREPEND restores source bytes that were consumed during lookahead (the
+; standard guard-char pattern: consume '@' to peek, discover the line is
+; plain text, restore the '@'). The emitted event's span must extend back
+; over the restored bytes so span length == content length.
+; (Found via udon prose: backtick/quote/pipe-initial lines had spans short
+; by the prepend length, corrupting span-based edits.)
+
+|parser prepend_span
+
+|type[Text] CONTENT
+
+|entry-point /document
+
+|function[document]
+  |state[:main]
+    |c['\n']    |.blank   | ->              |>>
+    |c['@']     |.at      | ->              |>> :after_at
+    |default    |.text    | /line(<>)       |>>
+
+  ; '@' was consumed to peek; not special after all — restore it.
+  |state[:after_at]
+    |default    |.restore | /line('@')      |>> :main
+
+; Manual-emit text line with optional restored prefix byte.
+|function[line]  :prepend
+  |state[:entry]
+    | MARK | PREPEND(:prepend)              |>> :main
+
+  |state[:main]
+    |c['\n']    |.eol     | TERM | Text(USE_MARK) | -> |return
+    |default    |.collect | ->              |>>

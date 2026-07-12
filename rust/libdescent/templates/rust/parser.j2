@@ -6,7 +6,7 @@
 //! Call stack = element stack. True recursion handles nesting naturally.
 
 use std::ops::Range;
-{% if keywords.size > 0 %}
+{% if keywords | length > 0 %}
 use phf::phf_map;
 {% endif %}
 
@@ -17,7 +17,7 @@ pub enum Event<'a> {
 {% if type.kind == "bracket" %}
     {{ type.name }}Start { span: Range<usize> },
     {{ type.name }}End { span: Range<usize> },
-{% elsif type.kind == "content" %}
+{% elif type.kind == "content" %}
     {{ type.name }} { content: std::borrow::Cow<'a, [u8]>, span: Range<usize> },
 {% endif %}
 {% endfor %}
@@ -36,7 +36,7 @@ impl<'a> Event<'a> {
             Event::{{ type.name }}End { span } => {
                 format!("{{ type.name }}End @ {}..{}", span.start, span.end)
             }
-{% elsif type.kind == "content" %}
+{% elif type.kind == "content" %}
             Event::{{ type.name }} { content, span } => {
                 let s = std::str::from_utf8(content.as_ref()).unwrap_or("<invalid utf8>");
                 format!("{{ type.name }} {:?} @ {}..{}", s, span.start, span.end)
@@ -50,13 +50,13 @@ impl<'a> Event<'a> {
     }
 }
 
-{% comment %} Generate phf keyword maps {% endcomment %}
+{# Generate phf keyword maps #}
 {% for kw in keywords %}
 /// Keyword lookup map for {{ kw.name }}.
 /// Generated from |keywords[{{ kw.name }}] - O(1) perfect hash lookup.
 static {{ kw.const_name }}: phf::Map<&'static [u8], u8> = phf_map! {
 {% for m in kw.mappings %}
-{% assign idx = forloop.index0 %}
+{% set idx = loop.index0 %}
     b"{{ m.keyword }}" => {{ idx }}u8,
 {% endfor %}
 };
@@ -67,27 +67,27 @@ static {{ kw.const_name }}: phf::Map<&'static [u8], u8> = phf_map! {
 pub enum ParseErrorCode {
     UnexpectedEof,
     UnexpectedChar,
-{% comment %} Deduplicate error codes by return_type - multiple functions may return the same type {% endcomment %}
-{% comment %} Use comma-delimited format with leading comma to avoid partial matches {% endcomment %}
-{% assign seen_error_codes = ",UnexpectedEof,UnexpectedChar," %}
+{# Deduplicate error codes by return_type - multiple functions may return the same type #}
+{# Use comma-delimited format with leading comma to avoid partial matches #}
+{% set ns = namespace(seen_error_codes=",UnexpectedEof,UnexpectedChar,") %}
 {% for func in functions %}
 {% if func.expects_char %}
-{% assign unclosed_code = "Unclosed" | append: func.return_type %}
-{% assign code_pattern = "," | append: unclosed_code | append: "," %}
-{% unless seen_error_codes contains code_pattern %}
+{% set unclosed_code = "Unclosed" ~ (func.return_type | dstr) %}
+{% set code_pattern = "," ~ unclosed_code ~ "," %}
+{% if code_pattern not in ns.seen_error_codes %}
     {{ unclosed_code }},
-{% assign seen_error_codes = seen_error_codes | append: unclosed_code | append: "," %}
-{% endunless %}
+{% set ns.seen_error_codes = ns.seen_error_codes ~ unclosed_code ~ "," %}
+{% endif %}
 {% endif %}
 {% endfor %}
-{% comment %} Custom error codes from /error(code) calls - skip if already generated {% endcomment %}
+{# Custom error codes from /error(code) calls - skip if already generated #}
 {% for code in custom_error_codes %}
-{% assign pascal_code = code | pascalcase %}
-{% assign code_pattern = "," | append: pascal_code | append: "," %}
-{% unless seen_error_codes contains code_pattern %}
+{% set pascal_code = code | pascalcase %}
+{% set code_pattern = "," ~ pascal_code ~ "," %}
+{% if code_pattern not in ns.seen_error_codes %}
     {{ pascal_code }},
-{% assign seen_error_codes = seen_error_codes | append: pascal_code | append: "," %}
-{% endunless %}
+{% set ns.seen_error_codes = ns.seen_error_codes ~ pascal_code ~ "," %}
+{% endif %}
 {% endfor %}
 }
 
@@ -131,7 +131,7 @@ impl<'a> Parser<'a> {
     where
         F: FnMut(Event<'a>),
     {
-        self.parse_{{ entry_point | remove: "/" }}(&mut on_event);
+        self.parse_{{ entry_point | replace("/", "") }}(&mut on_event);
     }
 
     // ========== Helpers ==========
@@ -537,7 +537,7 @@ impl<'a> Parser<'a> {
 {% endif %}
 {% endif %}
 
-{% comment %} Generate keyword lookup methods {% endcomment %}
+{# Generate keyword lookup methods #}
 {% for kw in keywords %}
     // ========== Keyword Lookup: {{ kw.name }} ==========
 
@@ -552,7 +552,7 @@ impl<'a> Parser<'a> {
             let span = self.span_from_mark();
             match id {
 {% for m in kw.mappings %}
-{% assign idx = forloop.index0 %}
+{% set idx = loop.index0 %}
                 {{ idx }} => on_event(Event::{{ m.event_type }} { content, span }),
 {% endfor %}
                 _ => unreachable!("keyword map contains only valid ids"),
@@ -569,8 +569,8 @@ impl<'a> Parser<'a> {
         F: FnMut(Event<'a>),
     {
         if !self.lookup_{{ kw.name }}(on_event) {
-{% if kw.fallback_func %}
-{% if kw.fallback_args %}
+{% if kw.fallback_func is ltruthy %}
+{% if kw.fallback_args is ltruthy %}
             self.parse_{{ kw.fallback_func }}({{ kw.fallback_args }}, on_event);
 {% else %}
             self.parse_{{ kw.fallback_func }}(on_event);
@@ -585,17 +585,12 @@ impl<'a> Parser<'a> {
     // ========== Generated Parse Functions ==========
 
 {% for func in functions %}
-    {% comment %} Determine return type info {% endcomment %}
-    {% assign return_type_info = nil %}
-    {% for t in types %}
-        {% if t.name == func.return_type %}
-            {% assign return_type_info = t %}
-        {% endif %}
-    {% endfor %}
+    {# Determine return type info #}
+    {% set return_type_info = types | selectattr("name", "eq", func.return_type) | list | first %}
 
-    /// Parse {{ func.name }}{% if func.return_type %} -> {{ func.return_type }}{% endif %}
-    {% if func.params.size > 0 %}
-    fn parse_{{ func.name }}<F>(&mut self, {% for param in func.params %}{{ param }}: {% if func.param_types[param] == "byte" %}u8{% elsif func.param_types[param] == "bytes" %}&'static [u8]{% else %}i32{% endif %}, {% endfor %}on_event: &mut F){% if return_type_info.kind == "internal" %} -> i32{% endif %}
+    /// Parse {{ func.name }}{% if func.return_type is ltruthy %} -> {{ func.return_type }}{% endif %}
+    {% if func.params | length > 0 %}
+    fn parse_{{ func.name }}<F>(&mut self, {% for param in func.params %}{{ param }}: {% if func.param_types[param] == "byte" %}u8{% elif func.param_types[param] == "bytes" %}&'static [u8]{% else %}i32{% endif %}, {% endfor %}on_event: &mut F){% if return_type_info.kind == "internal" %} -> i32{% endif %}
     {% else %}
     fn parse_{{ func.name }}<F>(&mut self, on_event: &mut F){% if return_type_info.kind == "internal" %} -> i32{% endif %}
     {% endif %}
@@ -604,104 +599,104 @@ impl<'a> Parser<'a> {
     {
         {% if trace %}eprintln!("TRACE: L{{ func.lineno }} ENTER {{ func.name }} | byte={} pos={}", Self::trace_byte(self.peek()), self.pos);{% endif %}
 
-        {% comment %} BRACKET types: emit Start on entry {% endcomment %}
+        {# BRACKET types: emit Start on entry #}
         {% if return_type_info.kind == "bracket" %}
         let start_span = self.span();
         on_event(Event::{{ func.return_type }}Start { span: start_span.clone() });
         {% endif %}
 
-        {% comment %} CONTENT types: MARK on entry {% endcomment %}
+        {# CONTENT types: MARK on entry #}
         {% if return_type_info.kind == "content" %}
         self.mark();
         {% endif %}
 
-        {% comment %} Local variables - use initial value from entry_actions if available {% endcomment %}
-        {% comment %} Only add 'mut' if the variable is reassigned in the function body {% endcomment %}
-        {% for local in func.locals %}
-        {% assign init_val = func.local_init_values[local[0]] | default: "0" %}
-        {% if func.mutable_locals contains local[0] %}let mut {{ local[0] }}: i32 = {{ init_val }};{% else %}let {{ local[0] }}: i32 = {{ init_val }};{% endif %}
+        {# Local variables - use initial value from entry_actions if available #}
+        {# Only add 'mut' if the variable is reassigned in the function body #}
+        {% for local in func.locals | items %}
+        {% set init_val = func.local_init_values[local[0]] | ldefault("0") %}
+        {% if local[0] in func.mutable_locals %}let mut {{ local[0] }}: i32 = {{ init_val }};{% else %}let {{ local[0] }}: i32 = {{ init_val }};{% endif %}
         {% endfor %}
 
-        {% comment %} Entry actions (variable initialization on function entry) {% endcomment %}
-        {% comment %} Skip MARK for CONTENT types since auto-MARK already handles it {% endcomment %}
+        {# Entry actions (variable initialization on function entry) #}
+        {# Skip MARK for CONTENT types since auto-MARK already handles it #}
         {% for cmd in func.entry_actions %}
-        {% unless cmd.type == "mark" and return_type_info.kind == "content" %}
-        {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info, states: func.states %}
-        {% endunless %}
+        {% if not (cmd.type == "mark" and return_type_info.kind == "content") %}
+        {{ render_command(cmd, func, return_type_info) }}
+        {% endif %}
         {% endfor %}
 
-        {% comment %} State machine {% endcomment %}
-        {% if func.states.size == 0 %}
-        {% comment %} No states - immediate return (stateless function) {% endcomment %}
+        {# State machine #}
+        {% if func.states | length == 0 %}
+        {# No states - immediate return (stateless function) #}
         {% if return_type_info.kind == "content" %}
         on_event(Event::{{ func.return_type }} { content: self.term(), span: self.span_from_mark() });
-        {% elsif return_type_info.kind == "bracket" %}
+        {% elif return_type_info.kind == "bracket" %}
         on_event(Event::{{ func.return_type }}End { span: self.span() });
-        {% elsif return_type_info.kind == "internal" %}
+        {% elif return_type_info.kind == "internal" %}
         return 0;
         {% endif %}
-        {% elsif func.states.size == 1 %}
-        {% comment %} Single state - no enum needed {% endcomment %}
-        {% assign state = func.states.first %}
+        {% elif func.states | length == 1 %}
+        {# Single state - no enum needed #}
+        {% set state = func.states[0] %}
         loop {
             {% if state.scannable %}
-            {% comment %} SCAN-first optimization {% endcomment %}
-            {% assign scan_count = state.scan_chars.size %}
+            {# SCAN-first optimization #}
+            {% set scan_count = state.scan_chars | length %}
             {% if scan_count == 1 %}
             match self.scan_to1({{ state.scan_chars[0] | escape_rust_char }}) {
-            {% elsif scan_count == 2 %}
+            {% elif scan_count == 2 %}
             match self.scan_to2({{ state.scan_chars[0] | escape_rust_char }}, {{ state.scan_chars[1] | escape_rust_char }}) {
-            {% elsif scan_count == 3 %}
+            {% elif scan_count == 3 %}
             match self.scan_to3({{ state.scan_chars[0] | escape_rust_char }}, {{ state.scan_chars[1] | escape_rust_char }}, {{ state.scan_chars[2] | escape_rust_char }}) {
-            {% elsif scan_count == 4 %}
+            {% elif scan_count == 4 %}
             match self.scan_to4({{ state.scan_chars[0] | escape_rust_char }}, {{ state.scan_chars[1] | escape_rust_char }}, {{ state.scan_chars[2] | escape_rust_char }}, {{ state.scan_chars[3] | escape_rust_char }}) {
-            {% elsif scan_count == 5 %}
+            {% elif scan_count == 5 %}
             match self.scan_to5({{ state.scan_chars[0] | escape_rust_char }}, {{ state.scan_chars[1] | escape_rust_char }}, {{ state.scan_chars[2] | escape_rust_char }}, {{ state.scan_chars[3] | escape_rust_char }}, {{ state.scan_chars[4] | escape_rust_char }}) {
-            {% elsif scan_count == 6 %}
+            {% elif scan_count == 6 %}
             match self.scan_to6({{ state.scan_chars[0] | escape_rust_char }}, {{ state.scan_chars[1] | escape_rust_char }}, {{ state.scan_chars[2] | escape_rust_char }}, {{ state.scan_chars[3] | escape_rust_char }}, {{ state.scan_chars[4] | escape_rust_char }}, {{ state.scan_chars[5] | escape_rust_char }}) {
             {% endif %}
                 {% for kase in state.cases %}
-                {% unless kase.is_default %}
+                {% if not kase.is_default %}
                 {% if kase.is_conditional %}
                 _ if {{ kase.condition | rust_expr }} => {
-                {% elsif kase.param_ref %}
-                {% comment %} Parameter reference: match against param value {% endcomment %}
+                {% elif kase.param_ref is ltruthy %}
+                {# Parameter reference: match against param value #}
                 Some(b) if b == {{ kase.param_ref }} => {
-                {% elsif kase.special_class and kase.chars.size > 0 %}
-                {% comment %} Combined: class + literal chars {% endcomment %}
+                {% elif kase.special_class is ltruthy and kase.chars | lsize > 0 %}
+                {# Combined: class + literal chars #}
                 Some(b) if Self::is_{{ kase.special_class }}(b){% for ch in kase.chars %} || b == {{ ch | escape_rust_char }}{% endfor %} => {
-                {% elsif kase.special_class %}
+                {% elif kase.special_class is ltruthy %}
                 Some(b) if Self::is_{{ kase.special_class }}(b) => {
-                {% elsif kase.chars.size == 1 %}
+                {% elif kase.chars | lsize == 1 %}
                 Some({{ kase.chars[0] | escape_rust_char }}) => {
-                {% elsif kase.chars.size > 1 %}
-                Some({% for ch in kase.chars %}{{ ch | escape_rust_char }}{% unless forloop.last %} | {% endunless %}{% endfor %}) => {
+                {% elif kase.chars | lsize > 1 %}
+                Some({% for ch in kase.chars %}{{ ch | escape_rust_char }}{% if not loop.last %} | {% endif %}{% endfor %}) => {
                 {% else %}
                 Some(_) => {
                 {% endif %}
-                    {% if trace %}eprintln!("TRACE: L{{ kase.lineno }} {{ func.name }}:{{ state.name }}{% if kase.substate %}.{{ kase.substate }}{% endif %} | byte={} term={} pos={}", Self::trace_byte(self.peek()), self.trace_content(), self.pos);{% endif %}
+                    {% if trace %}eprintln!("TRACE: L{{ kase.lineno }} {{ func.name }}:{{ state.name }}{% if kase.substate is ltruthy %}.{{ kase.substate }}{% endif %} | byte={} term={} pos={}", Self::trace_byte(self.peek()), self.trace_content(), self.pos);{% endif %}
                     {% for cmd in kase.commands %}
-                    {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info %}
+                    {{ render_command(cmd, func, return_type_info) }}
                     {% endfor %}
                 }
-                {% endunless %}
+                {% endif %}
                 {% endfor %}
                 {% if state.newline_injected %}
-                {% comment %} Injected newline: update line/col and continue scanning {% endcomment %}
+                {# Injected newline: update line/col and continue scanning #}
                 Some(b'\n') => {
                     self.advance();
                 }
                 {% endif %}
                 None => {
                     {% if trace %}eprintln!("TRACE: L{{ state.lineno }} {{ func.name }}:{{ state.name }} EOF | term={} pos={}", self.trace_content(), self.pos);{% endif %}
-                    {% comment %} EOF handling - check for explicit |eof handler first {% endcomment %}
-                    {% if state.eof_handler.size > 0 %}
+                    {# EOF handling - check for explicit |eof handler first #}
+                    {% if state.eof_handler | length > 0 %}
                     {% for cmd in state.eof_handler %}
-                    {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info %}
+                    {{ render_command(cmd, func, return_type_info) }}
                     {% endfor %}
-                    {% elsif func.eof_handler.size > 0 %}
+                    {% elif func.eof_handler | length > 0 %}
                     {% for cmd in func.eof_handler %}
-                    {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info %}
+                    {{ render_command(cmd, func, return_type_info) }}
                     {% endfor %}
                     {% else %}
                     {% if return_type_info.kind == "content" %}
@@ -709,7 +704,7 @@ impl<'a> Parser<'a> {
                     {% endif %}
                     {% if func.expects_char %}
                     on_event(Event::Error { code: ParseErrorCode::Unclosed{{ func.return_type }}, span: self.span() });
-                    {% elsif return_type_info.kind == "bracket" %}
+                    {% elif return_type_info.kind == "bracket" %}
                     on_event(Event::{{ func.return_type }}End { span: self.span() });
                     {% endif %}
                     {% if return_type_info.kind == "internal" %}return 0;{% else %}return;{% endif %}
@@ -718,141 +713,141 @@ impl<'a> Parser<'a> {
                 _ => unreachable!("scan_to only returns target chars"),
             }
             {% else %}
-            {% comment %} Non-scannable: check EOF first, then match {% endcomment %}
+            {# Non-scannable: check EOF first, then match #}
             if self.eof() {
                 {% if trace %}eprintln!("TRACE: L{{ state.lineno }} {{ func.name }}:{{ state.name }} EOF | term={} pos={}", self.trace_content(), self.pos);{% endif %}
-                {% if state.eof_handler.size > 0 %}
-                {% comment %} Fix #13: Explicit |eof handler - use its commands {% endcomment %}
+                {% if state.eof_handler | length > 0 %}
+                {# Fix #13: Explicit |eof handler - use its commands #}
                 {% for cmd in state.eof_handler %}
-                {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info %}
+                {{ render_command(cmd, func, return_type_info) }}
                 {% endfor %}
-                {% elsif func.eof_handler.size > 0 %}
-                {% comment %} Function-level |eof handler {% endcomment %}
+                {% elif func.eof_handler | length > 0 %}
+                {# Function-level |eof handler #}
                 {% for cmd in func.eof_handler %}
-                {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info %}
+                {{ render_command(cmd, func, return_type_info) }}
                 {% endfor %}
                 {% else %}
-                {% comment %} Default EOF behavior based on return type {% endcomment %}
+                {# Default EOF behavior based on return type #}
                 {% if return_type_info.kind == "content" %}
                 on_event(Event::{{ func.return_type }} { content: self.term(), span: self.span_from_mark() });
                 {% endif %}
                 {% if func.expects_char %}
                 on_event(Event::Error { code: ParseErrorCode::Unclosed{{ func.return_type }}, span: self.span() });
-                {% elsif return_type_info.kind == "bracket" %}
+                {% elif return_type_info.kind == "bracket" %}
                 on_event(Event::{{ func.return_type }}End { span: self.span() });
                 {% endif %}
                 {% if return_type_info.kind == "internal" %}return 0;{% else %}return;{% endif %}
                 {% endif %}
             }
-            {% comment %} Optimization: if only one case and it's default, skip the match {% endcomment %}
-            {% if state.cases.size == 1 and state.cases[0].is_default %}
-            {% assign kase = state.cases[0] %}
-                    {% if trace %}eprintln!("TRACE: L{{ kase.lineno }} {{ func.name }}:{{ state.name }}{% if kase.substate %}.{{ kase.substate }}{% endif %} | byte={} term={} pos={}", Self::trace_byte(self.peek()), self.trace_content(), self.pos);{% endif %}
+            {# Optimization: if only one case and it's default, skip the match #}
+            {% if state.cases | length == 1 and state.cases[0].is_default %}
+            {% set kase = state.cases[0] %}
+                    {% if trace %}eprintln!("TRACE: L{{ kase.lineno }} {{ func.name }}:{{ state.name }}{% if kase.substate is ltruthy %}.{{ kase.substate }}{% endif %} | byte={} term={} pos={}", Self::trace_byte(self.peek()), self.trace_content(), self.pos);{% endif %}
                     {% for cmd in kase.commands %}
-                    {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info %}
+                    {{ render_command(cmd, func, return_type_info) }}
                     {% endfor %}
             {% else %}
             match self.peek() {
                 {% for kase in state.cases %}
                 {% if kase.is_default %}
                 _ => {
-                {% elsif kase.is_conditional %}
+                {% elif kase.is_conditional %}
                 _ if {{ kase.condition | rust_expr }} => {
-                {% elsif kase.param_ref %}
+                {% elif kase.param_ref is ltruthy %}
                 Some(b) if b == {{ kase.param_ref }} => {
-                {% elsif kase.special_class and kase.chars.size > 0 %}
+                {% elif kase.special_class is ltruthy and kase.chars | lsize > 0 %}
                 Some(b) if Self::is_{{ kase.special_class }}(b){% for ch in kase.chars %} || b == {{ ch | escape_rust_char }}{% endfor %} => {
-                {% elsif kase.special_class %}
+                {% elif kase.special_class is ltruthy %}
                 Some(b) if Self::is_{{ kase.special_class }}(b) => {
-                {% elsif kase.chars.size == 1 %}
+                {% elif kase.chars | lsize == 1 %}
                 Some({{ kase.chars[0] | escape_rust_char }}) => {
-                {% elsif kase.chars.size > 1 %}
-                Some({% for ch in kase.chars %}{{ ch | escape_rust_char }}{% unless forloop.last %} | {% endunless %}{% endfor %}) => {
+                {% elif kase.chars | lsize > 1 %}
+                Some({% for ch in kase.chars %}{{ ch | escape_rust_char }}{% if not loop.last %} | {% endif %}{% endfor %}) => {
                 {% else %}
                 Some(_) => {
                 {% endif %}
-                    {% if trace %}eprintln!("TRACE: L{{ kase.lineno }} {{ func.name }}:{{ state.name }}{% if kase.substate %}.{{ kase.substate }}{% endif %} | byte={} term={} pos={}", Self::trace_byte(self.peek()), self.trace_content(), self.pos);{% endif %}
+                    {% if trace %}eprintln!("TRACE: L{{ kase.lineno }} {{ func.name }}:{{ state.name }}{% if kase.substate is ltruthy %}.{{ kase.substate }}{% endif %} | byte={} term={} pos={}", Self::trace_byte(self.peek()), self.trace_content(), self.pos);{% endif %}
                     {% for cmd in kase.commands %}
-                    {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info %}
+                    {{ render_command(cmd, func, return_type_info) }}
                     {% endfor %}
                 }
                 {% endfor %}
-                {% unless state.has_default %}
-                {% comment %} Add default arm if state has no explicit default case {% endcomment %}
+                {% if not state.has_default %}
+                {# Add default arm if state has no explicit default case #}
                 _ => {
                     {% if trace %}eprintln!("TRACE: {{ func.name }}:{{ state.name }} UNHANDLED | byte={} pos={}", Self::trace_byte(self.peek()), self.pos);{% endif %}
                     {% if return_type_info.kind == "internal" %}return 0;{% else %}return;{% endif %}
                 }
-                {% endunless %}
+                {% endif %}
             }
             {% endif %}
             {% endif %}
         }
         {% else %}
-        {% comment %} Multiple states - use enum {% endcomment %}
+        {# Multiple states - use enum #}
         #[derive(Clone, Copy)]
         enum State { {% for state in func.states %}{{ state.name | pascalcase }}, {% endfor %} }
-        let mut state = State::{{ func.states.first.name | pascalcase }};
+        let mut state = State::{{ func.states[0].name | pascalcase }};
 
         loop {
             match state {
             {% for state in func.states %}
                 State::{{ state.name | pascalcase }} => {
                     {% if state.scannable %}
-                    {% assign scan_count = state.scan_chars.size %}
+                    {% set scan_count = state.scan_chars | length %}
                     {% if scan_count == 1 %}
                     match self.scan_to1({{ state.scan_chars[0] | escape_rust_char }}) {
-                    {% elsif scan_count == 2 %}
+                    {% elif scan_count == 2 %}
                     match self.scan_to2({{ state.scan_chars[0] | escape_rust_char }}, {{ state.scan_chars[1] | escape_rust_char }}) {
-                    {% elsif scan_count == 3 %}
+                    {% elif scan_count == 3 %}
                     match self.scan_to3({{ state.scan_chars[0] | escape_rust_char }}, {{ state.scan_chars[1] | escape_rust_char }}, {{ state.scan_chars[2] | escape_rust_char }}) {
-                    {% elsif scan_count == 4 %}
+                    {% elif scan_count == 4 %}
                     match self.scan_to4({{ state.scan_chars[0] | escape_rust_char }}, {{ state.scan_chars[1] | escape_rust_char }}, {{ state.scan_chars[2] | escape_rust_char }}, {{ state.scan_chars[3] | escape_rust_char }}) {
-                    {% elsif scan_count == 5 %}
+                    {% elif scan_count == 5 %}
                     match self.scan_to5({{ state.scan_chars[0] | escape_rust_char }}, {{ state.scan_chars[1] | escape_rust_char }}, {{ state.scan_chars[2] | escape_rust_char }}, {{ state.scan_chars[3] | escape_rust_char }}, {{ state.scan_chars[4] | escape_rust_char }}) {
-                    {% elsif scan_count == 6 %}
+                    {% elif scan_count == 6 %}
                     match self.scan_to6({{ state.scan_chars[0] | escape_rust_char }}, {{ state.scan_chars[1] | escape_rust_char }}, {{ state.scan_chars[2] | escape_rust_char }}, {{ state.scan_chars[3] | escape_rust_char }}, {{ state.scan_chars[4] | escape_rust_char }}, {{ state.scan_chars[5] | escape_rust_char }}) {
                     {% endif %}
                         {% for kase in state.cases %}
-                        {% unless kase.is_default %}
+                        {% if not kase.is_default %}
                         {% if kase.is_conditional %}
                         _ if {{ kase.condition | rust_expr }} => {
-                        {% elsif kase.param_ref %}
+                        {% elif kase.param_ref is ltruthy %}
                         Some(b) if b == {{ kase.param_ref }} => {
-                        {% elsif kase.special_class and kase.chars.size > 0 %}
+                        {% elif kase.special_class is ltruthy and kase.chars | lsize > 0 %}
                         Some(b) if Self::is_{{ kase.special_class }}(b){% for ch in kase.chars %} || b == {{ ch | escape_rust_char }}{% endfor %} => {
-                        {% elsif kase.special_class %}
+                        {% elif kase.special_class is ltruthy %}
                         Some(b) if Self::is_{{ kase.special_class }}(b) => {
-                        {% elsif kase.chars.size == 1 %}
+                        {% elif kase.chars | lsize == 1 %}
                         Some({{ kase.chars[0] | escape_rust_char }}) => {
-                        {% elsif kase.chars.size > 1 %}
-                        Some({% for ch in kase.chars %}{{ ch | escape_rust_char }}{% unless forloop.last %} | {% endunless %}{% endfor %}) => {
+                        {% elif kase.chars | lsize > 1 %}
+                        Some({% for ch in kase.chars %}{{ ch | escape_rust_char }}{% if not loop.last %} | {% endif %}{% endfor %}) => {
                         {% else %}
                         Some(_) => {
                         {% endif %}
-                            {% if trace %}eprintln!("TRACE: L{{ kase.lineno }} {{ func.name }}:{{ state.name }}{% if kase.substate %}.{{ kase.substate }}{% endif %} | byte={} term={} pos={}", Self::trace_byte(self.peek()), self.trace_content(), self.pos);{% endif %}
+                            {% if trace %}eprintln!("TRACE: L{{ kase.lineno }} {{ func.name }}:{{ state.name }}{% if kase.substate is ltruthy %}.{{ kase.substate }}{% endif %} | byte={} term={} pos={}", Self::trace_byte(self.peek()), self.trace_content(), self.pos);{% endif %}
                             {% for cmd in kase.commands %}
-                            {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info, states: func.states %}
+                            {{ render_command(cmd, func, return_type_info) }}
                             {% endfor %}
                         }
-                        {% endunless %}
+                        {% endif %}
                         {% endfor %}
                         {% if state.newline_injected %}
-                        {% comment %} Injected newline: update line/col and continue scanning {% endcomment %}
+                        {# Injected newline: update line/col and continue scanning #}
                         Some(b'\n') => {
                             self.advance();
                         }
                         {% endif %}
                         None => {
                             {% if trace %}eprintln!("TRACE: L{{ state.lineno }} {{ func.name }}:{{ state.name }} EOF | term={} pos={}", self.trace_content(), self.pos);{% endif %}
-                            {% comment %} EOF handling - check for explicit |eof handler first {% endcomment %}
-                            {% if state.eof_handler.size > 0 %}
+                            {# EOF handling - check for explicit |eof handler first #}
+                            {% if state.eof_handler | length > 0 %}
                             {% for cmd in state.eof_handler %}
-                            {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info, states: func.states %}
+                            {{ render_command(cmd, func, return_type_info) }}
                             {% endfor %}
-                            {% elsif func.eof_handler.size > 0 %}
+                            {% elif func.eof_handler | length > 0 %}
                             {% for cmd in func.eof_handler %}
-                            {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info, states: func.states %}
+                            {{ render_command(cmd, func, return_type_info) }}
                             {% endfor %}
                             {% else %}
                             {% if return_type_info.kind == "content" %}
@@ -860,7 +855,7 @@ impl<'a> Parser<'a> {
                             {% endif %}
                             {% if func.expects_char %}
                             on_event(Event::Error { code: ParseErrorCode::Unclosed{{ func.return_type }}, span: self.span() });
-                            {% elsif return_type_info.kind == "bracket" %}
+                            {% elif return_type_info.kind == "bracket" %}
                             on_event(Event::{{ func.return_type }}End { span: self.span() });
                             {% endif %}
                             {% if return_type_info.kind == "internal" %}return 0;{% else %}return;{% endif %}
@@ -870,23 +865,23 @@ impl<'a> Parser<'a> {
                     }
                     {% else %}
                     {% if state.is_unconditional %}
-                    {% comment %} Unconditional state: execute commands immediately without byte match {% endcomment %}
-                    {% assign kase = state.cases.first %}
-                    {% if trace %}eprintln!("TRACE: L{{ kase.lineno }} {{ func.name }}:{{ state.name }}{% if kase.substate %}.{{ kase.substate }}{% endif %} UNCONDITIONAL | term={} pos={}", self.trace_content(), self.pos);{% endif %}
+                    {# Unconditional state: execute commands immediately without byte match #}
+                    {% set kase = state.cases[0] %}
+                    {% if trace %}eprintln!("TRACE: L{{ kase.lineno }} {{ func.name }}:{{ state.name }}{% if kase.substate is ltruthy %}.{{ kase.substate }}{% endif %} UNCONDITIONAL | term={} pos={}", self.trace_content(), self.pos);{% endif %}
                     {% for cmd in kase.commands %}
-                    {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info, states: func.states %}
+                    {{ render_command(cmd, func, return_type_info) }}
                     {% endfor %}
                     {% else %}
-                    {% comment %} Non-scannable: check EOF first {% endcomment %}
+                    {# Non-scannable: check EOF first #}
                     if self.eof() {
                         {% if trace %}eprintln!("TRACE: L{{ state.lineno }} {{ func.name }}:{{ state.name }} EOF | term={} pos={}", self.trace_content(), self.pos);{% endif %}
-                        {% if state.eof_handler.size > 0 %}
+                        {% if state.eof_handler | length > 0 %}
                         {% for cmd in state.eof_handler %}
-                        {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info, states: func.states %}
+                        {{ render_command(cmd, func, return_type_info) }}
                         {% endfor %}
-                        {% elsif func.eof_handler.size > 0 %}
+                        {% elif func.eof_handler | length > 0 %}
                         {% for cmd in func.eof_handler %}
-                        {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info, states: func.states %}
+                        {{ render_command(cmd, func, return_type_info) }}
                         {% endfor %}
                         {% else %}
                         {% if return_type_info.kind == "content" %}
@@ -894,52 +889,52 @@ impl<'a> Parser<'a> {
                         {% endif %}
                         {% if func.expects_char %}
                         on_event(Event::Error { code: ParseErrorCode::Unclosed{{ func.return_type }}, span: self.span() });
-                        {% elsif return_type_info.kind == "bracket" %}
+                        {% elif return_type_info.kind == "bracket" %}
                         on_event(Event::{{ func.return_type }}End { span: self.span() });
                         {% endif %}
                         {% if return_type_info.kind == "internal" %}return 0;{% else %}return;{% endif %}
                         {% endif %}
                     }
-                    {% comment %} Optimization: if only one case and it's default, skip the match {% endcomment %}
-                    {% if state.cases.size == 1 and state.cases[0].is_default %}
-                    {% assign kase = state.cases[0] %}
-                            {% if trace %}eprintln!("TRACE: L{{ kase.lineno }} {{ func.name }}:{{ state.name }}{% if kase.substate %}.{{ kase.substate }}{% endif %} | byte={} term={} pos={}", Self::trace_byte(self.peek()), self.trace_content(), self.pos);{% endif %}
+                    {# Optimization: if only one case and it's default, skip the match #}
+                    {% if state.cases | length == 1 and state.cases[0].is_default %}
+                    {% set kase = state.cases[0] %}
+                            {% if trace %}eprintln!("TRACE: L{{ kase.lineno }} {{ func.name }}:{{ state.name }}{% if kase.substate is ltruthy %}.{{ kase.substate }}{% endif %} | byte={} term={} pos={}", Self::trace_byte(self.peek()), self.trace_content(), self.pos);{% endif %}
                             {% for cmd in kase.commands %}
-                            {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info, states: func.states %}
+                            {{ render_command(cmd, func, return_type_info) }}
                             {% endfor %}
                     {% else %}
                     match self.peek() {
                         {% for kase in state.cases %}
                         {% if kase.is_default %}
                         _ => {
-                        {% elsif kase.is_conditional %}
+                        {% elif kase.is_conditional %}
                         _ if {{ kase.condition | rust_expr }} => {
-                        {% elsif kase.param_ref %}
+                        {% elif kase.param_ref is ltruthy %}
                         Some(b) if b == {{ kase.param_ref }} => {
-                        {% elsif kase.special_class and kase.chars.size > 0 %}
+                        {% elif kase.special_class is ltruthy and kase.chars | lsize > 0 %}
                         Some(b) if Self::is_{{ kase.special_class }}(b){% for ch in kase.chars %} || b == {{ ch | escape_rust_char }}{% endfor %} => {
-                        {% elsif kase.special_class %}
+                        {% elif kase.special_class is ltruthy %}
                         Some(b) if Self::is_{{ kase.special_class }}(b) => {
-                        {% elsif kase.chars.size == 1 %}
+                        {% elif kase.chars | lsize == 1 %}
                         Some({{ kase.chars[0] | escape_rust_char }}) => {
-                        {% elsif kase.chars.size > 1 %}
-                        Some({% for ch in kase.chars %}{{ ch | escape_rust_char }}{% unless forloop.last %} | {% endunless %}{% endfor %}) => {
+                        {% elif kase.chars | lsize > 1 %}
+                        Some({% for ch in kase.chars %}{{ ch | escape_rust_char }}{% if not loop.last %} | {% endif %}{% endfor %}) => {
                         {% else %}
                         Some(_) => {
                         {% endif %}
-                            {% if trace %}eprintln!("TRACE: L{{ kase.lineno }} {{ func.name }}:{{ state.name }}{% if kase.substate %}.{{ kase.substate }}{% endif %} | byte={} term={} pos={}", Self::trace_byte(self.peek()), self.trace_content(), self.pos);{% endif %}
+                            {% if trace %}eprintln!("TRACE: L{{ kase.lineno }} {{ func.name }}:{{ state.name }}{% if kase.substate is ltruthy %}.{{ kase.substate }}{% endif %} | byte={} term={} pos={}", Self::trace_byte(self.peek()), self.trace_content(), self.pos);{% endif %}
                             {% for cmd in kase.commands %}
-                            {% include 'command' cmd: cmd, func: func, return_type_info: return_type_info, states: func.states %}
+                            {{ render_command(cmd, func, return_type_info) }}
                             {% endfor %}
                         }
                         {% endfor %}
-                        {% unless state.has_default %}
-                        {% comment %} Add default arm if state has no explicit default case {% endcomment %}
+                        {% if not state.has_default %}
+                        {# Add default arm if state has no explicit default case #}
                         _ => {
                             {% if trace %}eprintln!("TRACE: {{ func.name }}:{{ state.name }} UNHANDLED | byte={} pos={}", Self::trace_byte(self.peek()), self.pos);{% endif %}
                             {% if return_type_info.kind == "internal" %}return 0;{% else %}return;{% endif %}
                         }
-                        {% endunless %}
+                        {% endif %}
                     }
                     {% endif %}
                     {% endif %}
@@ -950,8 +945,8 @@ impl<'a> Parser<'a> {
         }
         {% endif %}
 
-        {% comment %} Note: Unreachable code below - returns happen in command handling {% endcomment %}
-        {% comment %} This is intentional - the loop above handles all exits {% endcomment %}
+        {# Note: Unreachable code below - returns happen in command handling #}
+        {# This is intentional - the loop above handles all exits #}
     }
 
 {% endfor %}
@@ -978,7 +973,7 @@ pub enum StreamEvent {
 {% if type.kind == "bracket" %}
     {{ type.name }}Start { span: Range<usize> },
     {{ type.name }}End { span: Range<usize> },
-{% elsif type.kind == "content" %}
+{% elif type.kind == "content" %}
     {{ type.name }} { content: Vec<u8>, span: Range<usize> },
 {% endif %}
 {% endfor %}
@@ -997,7 +992,7 @@ impl StreamEvent {
             Event::{{ type.name }}End { span } => {
                 StreamEvent::{{ type.name }}End { span: (span.start + offset)..(span.end + offset) }
             }
-{% elsif type.kind == "content" %}
+{% elif type.kind == "content" %}
             Event::{{ type.name }} { content, span } => {
                 StreamEvent::{{ type.name }} {
                     content: content.into_owned(),

@@ -1,0 +1,27 @@
+; Line-based parser - emits Text event for each line
+;
+; Demonstrates:
+; - Multiple CONTENT function calls per document
+; - SCAN optimization (auto-inferred from self-looping default)
+; - Return without explicit EOF handling
+
+|parser lines
+
+|type[Text] CONTENT
+
+|entry-point /document
+
+|function[document]
+  |state[:main]
+    |c['\n']      |.blank      | ->             |>>
+    |default    |.start      | /line          |>>
+
+; line returns Text (CONTENT), so:
+; - MARK at entry (auto)
+; - emit(Text) on return (auto)
+; - EOF: emit and return (auto)
+; - SCAN inferred from self-looping default with \n case
+|function[line:Text]
+  |state[:main]
+    |c['\n']      |.eol        | ->  |return
+    |default    |.collect    | ->  |>>
