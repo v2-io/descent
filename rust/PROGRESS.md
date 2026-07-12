@@ -1,4 +1,4 @@
-# libdescent — Rust rewrite of descent — session trail
+# descent-core — Rust rewrite of descent — session trail
 
 Assume 100% context turnover between sessions. This file is the state, the
 decisions, and the next step. Session 1: 2026-07-07. Sessions 2-4:
@@ -7,7 +7,7 @@ decisions, and the next step. Session 1: 2026-07-07. Sessions 2-4:
 ## Session-4 headline
 
 **Templates done, acceptance trio green, self-hosting fixed point closed.**
-minijinja templates (`rust/libdescent/templates/rust/{parser,_command}.j2`,
+minijinja templates (`rust/descent-core/templates/rust/{parser,_command}.j2`,
 translated from the Liquid pair) + `emit::rust::engine` (filter ports,
 Liquid-parity semantics, 4-regex post-process) + `descent-rs generate FILE
 [--trace] [--oracle]` + `rust/tools/diff_generate.sh`: **20/20
@@ -16,10 +16,10 @@ output divergence was needed; identity achieved exactly. **Acceptance:**
 (1) descent-rs regenerates udon's committed parser.rs **byte-identically**
 from `core/generator/udon.desc+values.desc`; (2) udon suite green (83
 tests, `cd ~/src/udon/core && cargo test --workspace`); (3) **self-hosting
-fixed point holds**: reader promoted from spike to `libdescent::reader`
+fixed point holds**: reader promoted from spike to `descent-core::reader`
 (default front-end; oracle lexer behind `Frontend::OracleLexer` /
 `--oracle`), and stage-0 (Ruby-generated vendored parser.rs) == stage-1
-(libdescent generating through stage-0) == stage-2 (after
+(descent-core generating through stage-0) == stage-2 (after
 rebuild-with-stage-1), plain and trace — Ruby has exited the toolchain.
 
 Mid-session base reconciliation (coordinator directive): merged descent
@@ -97,12 +97,12 @@ mid-session amendments from Joseph/coordinator, all now in force:
 files natively.** Verified empirically (probes below). Therefore:
 
 ```
-libdescent --compiles udon.desc--> parser.rs --becomes--> udon-core
+descent-core --compiles udon.desc--> parser.rs --becomes--> udon-core
      ^                                                       |
-     └────────── parses .desc as libdescent's front-end ─────┘
+     └────────── parses .desc as descent-core's front-end ─────┘
 ```
 
-The self-hosting fixed point closes at ecosystem level: libdescent links
+The self-hosting fixed point closes at ecosystem level: descent-core links
 udon-core as its front-end and regenerates udon-core's parser.rs; a
 regenerate→rebuild→regenerate cycle must be stable. Stage-0 already exists
 (the Ruby-generated parser.rs in ~/src/udon/core/udon-core/src/parser.rs),
@@ -121,7 +121,7 @@ Probe evidence (run via `cargo run --example stdin_parse` in ~/src/udon/core):
   `| ->` (pipe+space) becomes *text*. Reader must normalize both to parts.
 
 **Front-end plan**: a thin reader consumes udon-core events/tree → descent
-`Token`s (the existing seam in `libdescent/src/lexer.rs`): element names,
+`Token`s (the existing seam in `descent-core/src/lexer.rs`): element names,
 bracket-ids, comments, nesting from UDON structure; `rest` strings taken as
 **raw span slices** (never UDON-value-interpreted — that's where descent
 micro-syntax diverges); sameline tails re-split with the quote-aware
@@ -132,15 +132,15 @@ production path.
 ## State of the code (what exists, what's verified)
 
 Branch `rust-rewrite` in ~/src/descent. Workspace at `rust/`
-(members: libdescent, descent-cli, spikes/udon-reader, vendor/udon-core).
+(members: descent-core, descent-cli, spikes/udon-reader, vendor/udon-core).
 
-- `rust/libdescent/src/lexer.rs` — **done, corpus-verified** (20/20 vs Ruby):
+- `rust/descent-core/src/lexer.rs` — **done, corpus-verified** (20/20 vs Ruby):
   faithful port of lexer.rb's three scanning layers. Role: differential
   oracle + the `Token` seam. `split_on_pipes`, `parse_part`,
   `extract_bracketed_id` are `pub` (reader seams).
-- `rust/libdescent/src/ast.rs`, `parser.rs` — **done, corpus-verified**
+- `rust/descent-core/src/ast.rs`, `parser.rs` — **done, corpus-verified**
   (AST JSON identical to Ruby on all 10 grammars).
-- `rust/libdescent/src/dump.rs` — canonical JSON for tokens/AST; MUST stay in
+- `rust/descent-core/src/dump.rs` — canonical JSON for tokens/AST; MUST stay in
   lockstep with `rust/tools/dump_tokens.rb` / `dump_ast.rb` (Ruby side).
 - `rust/descent-cli` — `descent-rs tokens|ast FILE` dump subcommands.
 - `rust/tools/diff_frontend.sh` — Rust-vs-Ruby differential (needs jq).
@@ -155,10 +155,10 @@ Branch `rust-rewrite` in ~/src/descent. Workspace at `rust/`
 - `rust/spikes/normalizations/` — oracle-blessed grammar normalization
   evidence + NOTES.md (placeholder cells #0, quote-aliases #7, comment-rule
   audit #2; `comment_audit` probe binary lives in spikes/udon-reader).
-- `rust/libdescent/src/charclass.rs` — **done, corpus-verified**:
+- `rust/descent-core/src/charclass.rs` — **done, corpus-verified**:
   CharacterClass port MINUS the Rust-literal renderers (those live in
   emit::rust::literals — the January-flaw fix).
-- `rust/libdescent/src/ir.rs`, `ir_builder.rs` — **done, corpus-verified**
+- `rust/descent-core/src/ir.rs`, `ir_builder.rs` — **done, corpus-verified**
   (via context differential): target-neutral IR. Deliberate divergences
   from Ruby, context-JSON-neutral by construction:
   (a) `transform_call_args_by_type` NOT run in the builder (moved to emit);
@@ -166,21 +166,21 @@ Branch `rust-rewrite` in ~/src/descent. Workspace at `rust/`
   emit::rust re-escapes. Command args are the Ruby args-hash as a JSON
   object with raw DSL values; conditional clauses hoisted into a typed
   `clauses` field, re-nested at serialization.
-- `rust/libdescent/src/emit/rust/` — **context builder done,
+- `rust/descent-core/src/emit/rust/` — **context builder done,
   corpus-verified** (`build_context` + call-arg transform + literals.rs).
   Reproduces Ruby quirks on purpose: states-only call-arg transform
   (function-level eof handlers + entry actions keep RAW args), helper-usage
   COL/PREV blind spot, mini init-value transpiler, pre-escaped prepend
   values. `descent-rs context FILE [trace]` dumps it; Ruby side is
   `rust/tools/dump_context.rb` (Generator#build_context via #send).
-- `rust/libdescent/templates/rust/{parser,_command}.j2` +
+- `rust/descent-core/templates/rust/{parser,_command}.j2` +
   `src/emit/rust/engine.rs` — **done, byte-identical 20/20** (plain+trace):
   minijinja env (Chainable undefined, keep_trailing_newline, nil→""
   formatter), filter ports (rust_expr/pascalcase/escape_rust_char +
   ltruthy/ldefault/lsize/dstr Liquid-parity helpers), `render_command()`
   global fn in place of `{% include 'command' %}` (recursion + the 20-space
   indent quirk preserved), post_process = the 4 regexes + driver collapse.
-- `rust/libdescent/src/reader.rs` — **promoted production front-end**
+- `rust/descent-core/src/reader.rs` — **promoted production front-end**
   (moved from spikes/udon-reader, which keeps a re-export shim + probes).
   `Frontend::{UdonCore (default), OracleLexer}` on
   tokenize/parse_with/build_ir_with; CLI `--oracle` selects the lexer
@@ -384,7 +384,7 @@ umbrella CI drift gate is satisfied by construction under this rule).
 
 ### Stage-0 policy (RATIFIED, coordinator 2026-07-11)
 
-**Vendor the stage-0 parser.rs snapshot** in libdescent with source SHA +
+**Vendor the stage-0 parser.rs snapshot** in descent-core with source SHA +
 generation provenance recorded (rustc-style); descent must build standalone
 (it's an independent repo — a path dep on ~/src/udon breaks every clone but
 this machine). A path-dep on ~/src/udon/core/udon-core may exist only as

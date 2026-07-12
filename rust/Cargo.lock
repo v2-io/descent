@@ -15,8 +15,18 @@ dependencies = [
 name = "descent-cli"
 version = "0.1.0"
 dependencies = [
- "libdescent",
+ "descent-core",
  "serde_json",
+]
+
+[[package]]
+name = "descent-core"
+version = "0.1.0"
+dependencies = [
+ "minijinja",
+ "regex",
+ "serde_json",
+ "udon-core",
 ]
 
 [[package]]
@@ -46,16 +56,6 @@ name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
-
-[[package]]
-name = "libdescent"
-version = "0.1.0"
-dependencies = [
- "minijinja",
- "regex",
- "serde_json",
- "udon-core",
-]
 
 [[package]]
 name = "memchr"
@@ -257,7 +257,7 @@ dependencies = [
 name = "udon-reader"
 version = "0.1.0"
 dependencies = [
- "libdescent",
+ "descent-core",
  "serde_json",
  "udon-core",
 ]

@@ -20,7 +20,7 @@ fn main() -> ExitCode {
             for w in &warnings {
                 eprintln!("WARN {w}");
             }
-            let json = libdescent::dump::tokens_to_json(&tokens);
+            let json = descent_core::dump::tokens_to_json(&tokens);
             println!("{}", serde_json::to_string_pretty(&json).unwrap());
             ExitCode::SUCCESS
         }

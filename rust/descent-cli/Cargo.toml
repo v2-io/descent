@@ -10,5 +10,5 @@ name = "descent-rs"
 path = "src/main.rs"
 
 [dependencies]
-libdescent = { path = "../libdescent" }
+descent-core = { path = "../descent-core" }
 serde_json.workspace = true

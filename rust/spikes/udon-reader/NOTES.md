@@ -6,7 +6,7 @@ AST-identity (the parser is a deterministic function of tokens). The
 udon-core-as-front-end construction is validated at the token layer.
 
 Architecture that got there: reconstruct descent *parts* from udon events,
-feed them through the shared `libdescent::lexer::parse_part` (layer 3), so
+feed them through the shared `descent-core::lexer::parse_part` (layer 3), so
 the reader replaces only layers 1-2. Three bridges were required; each maps
 to a proposals-ledger item and is classified per the table-scan criterion
 (~/src/udon/notes/desc-design-principles.md).

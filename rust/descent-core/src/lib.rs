@@ -1,4 +1,4 @@
-//! libdescent — Rust rewrite of the descent parser generator.
+//! descent_core — Rust rewrite of the descent parser generator.
 //!
 //! Pipeline (mirrors Ruby descent, see rust/PROGRESS.md):
 //!   lexer (Tokens) -> parser (AST) -> ir_builder (target-neutral IR)

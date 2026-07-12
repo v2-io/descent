@@ -7,7 +7,7 @@
 //!
 //! Strategy (PROGRESS.md "Front-end plan"): reconstruct descent *parts* (the
 //! strings Ruby's pipe-splitter produces) from UDON events, then feed each
-//! part through `libdescent::lexer::parse_part` — the shared layer-3
+//! part through `descent_core::lexer::parse_part` — the shared layer-3
 //! decomposition — so all tag-casing/id/rest quirks live in one place. The
 //! reader replaces only layers 1-2 (comment strip + pipe split).
 //!
@@ -372,7 +372,7 @@ impl<'a> Reader<'a> {
 }
 
 /// Quote/bracket-aware pipe split returning `(piece, byte_offset,
-/// terminated_prev)` — same state rules as `libdescent::lexer::split_on_pipes`
+/// terminated_prev)` — same state rules as `descent_core::lexer::split_on_pipes`
 /// (sticky single-level bracket, both quote kinds, escape-aware), plus
 /// offsets. `terminated_prev` is true for every piece after a pipe, INCLUDING
 /// an empty piece 0 when the text begins with a pipe.

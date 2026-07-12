@@ -1,5 +1,5 @@
 # SPIKE: udon-core events -> descent Tokens (the production front-end
-# candidate). Differential-tested against libdescent::lexer (the oracle) by
+# candidate). Differential-tested against descent-core::lexer (the oracle) by
 # rust/tools/diff_reader.sh; mismatch findings live in NOTES.md here.
 [package]
 name = "udon-reader"
@@ -9,6 +9,6 @@ license.workspace = true
 publish = false
 
 [dependencies]
-libdescent = { path = "../../libdescent" }
+descent-core = { path = "../../descent-core" }
 udon-core = { path = "../../vendor/udon-core" }
 serde_json.workspace = true

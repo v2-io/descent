@@ -5,7 +5,7 @@
 //! hand-ported lexer (the differential oracle — used by diff_reader.sh as
 //! the reference side).
 
-use libdescent::Frontend;
+use descent_core::Frontend;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
@@ -45,15 +45,15 @@ fn generate(path: &str, trace: bool, frontend: Frontend) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let ir = match libdescent::build_ir_with(&content, path, frontend) {
+    let ir = match descent_core::build_ir_with(&content, path, frontend) {
         Ok(ir) => ir,
         Err(e) => {
             eprintln!("{e}");
             return ExitCode::FAILURE;
         }
     };
-    let opts = libdescent::emit::rust::Options { trace, ..Default::default() };
-    match libdescent::emit::rust::generate(&ir, &opts) {
+    let opts = descent_core::emit::rust::Options { trace, ..Default::default() };
+    match descent_core::emit::rust::generate(&ir, &opts) {
         Ok(code) => {
             print!("{code}");
             ExitCode::SUCCESS
@@ -75,15 +75,15 @@ fn dump_context(path: &str, trace: bool, frontend: Frontend) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let ir = match libdescent::build_ir_with(&content, path, frontend) {
+    let ir = match descent_core::build_ir_with(&content, path, frontend) {
         Ok(ir) => ir,
         Err(e) => {
             eprintln!("{e}");
             return ExitCode::FAILURE;
         }
     };
-    let opts = libdescent::emit::rust::Options { trace, ..Default::default() };
-    let ctx = libdescent::emit::rust::build_context(&ir, &opts);
+    let opts = descent_core::emit::rust::Options { trace, ..Default::default() };
+    let ctx = descent_core::emit::rust::build_context(&ir, &opts);
     println!("{}", serde_json::to_string_pretty(&ctx).unwrap());
     ExitCode::SUCCESS
 }
@@ -96,7 +96,7 @@ fn dump(path: &str, ast: bool, frontend: Frontend) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let tokens = match libdescent::tokenize(&content, path, frontend) {
+    let tokens = match descent_core::tokenize(&content, path, frontend) {
         Ok(t) => t,
         Err(e) => {
             eprintln!("LexerError: {e}");
@@ -104,15 +104,15 @@ fn dump(path: &str, ast: bool, frontend: Frontend) -> ExitCode {
         }
     };
     let value = if ast {
-        match libdescent::Parser::new(tokens).parse() {
-            Ok(m) => libdescent::dump::machine_to_json(&m),
+        match descent_core::Parser::new(tokens).parse() {
+            Ok(m) => descent_core::dump::machine_to_json(&m),
             Err(e) => {
                 eprintln!("ParseError: {e}");
                 return ExitCode::FAILURE;
             }
         }
     } else {
-        libdescent::dump::tokens_to_json(&tokens)
+        descent_core::dump::tokens_to_json(&tokens)
     };
     println!("{}", serde_json::to_string_pretty(&value).unwrap());
     ExitCode::SUCCESS

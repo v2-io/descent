@@ -2,7 +2,7 @@
 //! Liquid-parity filters (port of Ruby's `LiquidFilters` in
 //! lib/descent/generator.rb), and the post-process regex chain.
 //!
-//! The templates live at `rust/libdescent/templates/rust/{parser,_command}.j2`
+//! The templates live at `rust/descent_core/templates/rust/{parser,_command}.j2`
 //! (translations of Ruby descent's parser.liquid / _command.liquid) and are
 //! embedded with `include_str!` so descent-rs is standalone.
 //!
