@@ -5,3 +5,4 @@
 //! stays DSL-level (see ir.rs module docs and rust/PROGRESS.md).
 
 pub mod rust;
+pub mod rust_pushdown;

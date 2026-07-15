@@ -24,11 +24,17 @@ fn main() -> ExitCode {
         }
         (Some("generate"), Some(path)) => {
             let trace = args.iter().skip(3).any(|s| s == "--trace" || s == "true");
+            if let Some(bi) = args.iter().position(|s| s == "--backend") {
+                if args.get(bi + 1).map(|s| s.as_str()) == Some("pushdown") {
+                    return generate_pushdown(path, &args, frontend);
+                }
+            }
             generate(path, trace, frontend)
         }
         _ => {
             eprintln!("usage: descent-rs <tokens|ast|context> <file.desc> [trace] [--oracle]");
             eprintln!("       descent-rs generate <file.desc> [--trace] [--oracle]");
+            eprintln!("       descent-rs generate <file.desc> --backend pushdown [--event-path <rust::path>]");
             ExitCode::from(2)
         }
     }
@@ -63,6 +69,32 @@ fn generate(path: &str, trace: bool, frontend: Frontend) -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// Generate the pushdown (explicit-stack, resumable) parser to stdout.
+fn generate_pushdown(path: &str, args: &[String], frontend: Frontend) -> ExitCode {
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("{path}: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let ir = match descent_core::build_ir_with(&content, path, frontend) {
+        Ok(ir) => ir,
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let mut opts = descent_core::emit::rust_pushdown::PdOptions::default();
+    if let Some(pi) = args.iter().position(|s| s == "--event-path") {
+        if let Some(p) = args.get(pi + 1) {
+            opts.event_path = p.clone();
+        }
+    }
+    print!("{}", descent_core::emit::rust_pushdown::generate(&ir, &opts));
+    ExitCode::SUCCESS
 }
 
 /// Dump the Rust-emitter template context (differential vs
