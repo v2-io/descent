@@ -138,8 +138,13 @@
                     on_event(Event::{{ cmd.args.type }} { content: self.term(), span: self.span_from_mark() });
 
 {% when "inline_emit_literal" %}
-{% comment %} Inline emit with literal: TypeName(literal) - strip $ sigil if present {% endcomment %}
-{% assign literal = cmd.args.literal | remove_first: '$' %}
+{% comment %} Inline emit with literal: TypeName(literal). Payload emits VERBATIM (no consumer-sigil opinions); quoted literals are unquoted first. {% endcomment %}
+{% assign first_char = cmd.args.literal | slice: 0, 1 %}
+{% if first_char == "'" %}
+{% assign literal = cmd.args.literal | remove: "'" %}
+{% else %}
+{% assign literal = cmd.args.literal %}
+{% endif %}
                     on_event(Event::{{ cmd.args.type }} { content: std::borrow::Cow::Borrowed(b"{{ literal }}"), span: self.span() });
 
 {% when "error" %}

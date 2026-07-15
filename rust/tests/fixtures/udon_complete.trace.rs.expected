@@ -1001,7 +1001,7 @@ impl<'a> Parser<'a> {
                         }
                         _ => {
                             eprintln!("TRACE: L163 parse_element_identity:bracket | byte={} term={} pos={}", Self::trace_byte(self.peek()), self.trace_content(), self.pos);
-                    on_event(Event::Attr { content: std::borrow::Cow::Borrowed(b"id"), span: self.span() });
+                    on_event(Event::Attr { content: std::borrow::Cow::Borrowed(b"$id"), span: self.span() });
                     self.parse_value_bracket(on_event);
                     state = State::BracketClose;
                     continue;
@@ -1066,14 +1066,14 @@ impl<'a> Parser<'a> {
                         }
                         Some(b) if Self::is_xlbl_start(b) => {
                             eprintln!("TRACE: L177 parse_element_identity:class | byte={} term={} pos={}", Self::trace_byte(self.peek()), self.trace_content(), self.pos);
-                    on_event(Event::Attr { content: std::borrow::Cow::Borrowed(b"class"), span: self.span() });
+                    on_event(Event::Attr { content: std::borrow::Cow::Borrowed(b"$class"), span: self.span() });
                     self.parse_class_name(on_event);
                     state = State::PostClass;
                     continue;
                         }
                         Some(b'\'') => {
                             eprintln!("TRACE: L178 parse_element_identity:class | byte={} term={} pos={}", Self::trace_byte(self.peek()), self.trace_content(), self.pos);
-                    on_event(Event::Attr { content: std::borrow::Cow::Borrowed(b"class"), span: self.span() });
+                    on_event(Event::Attr { content: std::borrow::Cow::Borrowed(b"$class"), span: self.span() });
                     self.advance();
                     self.parse_quoted_class(on_event);
                     state = State::PostClass;

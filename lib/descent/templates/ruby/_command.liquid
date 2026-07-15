@@ -108,7 +108,13 @@
 {{ ind }}yield Event::{{ cmd.args.type }}.new(term, span_from_mark)
 
 {% when "inline_emit_literal" %}
-{% assign literal = cmd.args.literal | remove_first: '$' %}
+{% comment %} Payload emits VERBATIM (no consumer-sigil opinions); quoted literals are unquoted first. {% endcomment %}
+{% assign first_char = cmd.args.literal | slice: 0, 1 %}
+{% if first_char == "'" %}
+{% assign literal = cmd.args.literal | remove: "'" %}
+{% else %}
+{% assign literal = cmd.args.literal %}
+{% endif %}
 {{ ind }}yield Event::{{ cmd.args.type }}.new("{{ literal | escape_ruby_string }}", span)
 
 {% when "error" %}

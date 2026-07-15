@@ -948,7 +948,7 @@ impl<'a> Parser<'a> {
                     continue;
                         }
                         _ => {
-                    on_event(Event::Attr { content: std::borrow::Cow::Borrowed(b"id"), span: self.span() });
+                    on_event(Event::Attr { content: std::borrow::Cow::Borrowed(b"$id"), span: self.span() });
                     self.parse_value_bracket(on_event);
                     state = State::BracketClose;
                     continue;
@@ -1002,13 +1002,13 @@ impl<'a> Parser<'a> {
                     continue;
                         }
                         Some(b) if Self::is_xlbl_start(b) => {
-                    on_event(Event::Attr { content: std::borrow::Cow::Borrowed(b"class"), span: self.span() });
+                    on_event(Event::Attr { content: std::borrow::Cow::Borrowed(b"$class"), span: self.span() });
                     self.parse_class_name(on_event);
                     state = State::PostClass;
                     continue;
                         }
                         Some(b'\'') => {
-                    on_event(Event::Attr { content: std::borrow::Cow::Borrowed(b"class"), span: self.span() });
+                    on_event(Event::Attr { content: std::borrow::Cow::Borrowed(b"$class"), span: self.span() });
                     self.advance();
                     self.parse_quoted_class(on_event);
                     state = State::PostClass;

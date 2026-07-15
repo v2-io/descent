@@ -138,8 +138,15 @@
                     on_event(Event::{{ cmd.args.type }} { content: self.term(), span: self.span_from_mark() });
 
 {% elif cmd.type == "inline_emit_literal" %}
-{# Inline emit with literal: TypeName(literal) - strip $ sigil if present #}
-{% set literal = cmd.args.literal | remove_first("$") %}
+{# Inline emit with literal: TypeName(literal). The payload is emitted
+   VERBATIM — descent has no opinion about consumer sigils. A quoted
+   literal is unquoted first (quotes exist for chars the DSL can't carry
+   bare); a bare literal is used as written. #}
+{% if cmd.args.literal is startingwith("'") %}
+{% set literal = cmd.args.literal | trim("'") %}
+{% else %}
+{% set literal = cmd.args.literal %}
+{% endif %}
                     on_event(Event::{{ cmd.args.type }} { content: std::borrow::Cow::Borrowed(b"{{ literal }}"), span: self.span() });
 
 {% elif cmd.type == "error" %}
