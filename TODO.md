@@ -2,6 +2,22 @@
 
 ## Priority Queue
 
+### 0. Open requests (from UDON grammar work, 2026-07-15)
+
+- **Parameterized inline-emit payloads** — `TypeName(:param)` as an inline
+  event emit, symmetric with `PREPEND(:param)`. The UDON grammar duplicates
+  whole state ladders only because the emitted literal differs by one byte
+  (three `check_bs_{pipe,bang,semi}` ladders in four text functions; three
+  `spaced_suffix_{q,s,p}` states emitting `Attr('$?')`/`$*`/`$+`). With
+  payload params each collapses to one parameterized state.
+- **Ruby test suite fails to load under Ruby 4.0** (`rake test` dies in
+  `generator_test.rb` require, at pre-2026-07-15 HEAD too — environment
+  breakage, not a regression). Decide whether the Ruby side keeps a running
+  suite at all now that the Rust workspace is the toolchain.
+- *(done 2026-07-15)* Inline-event literals emit verbatim; quoted form
+  (`Attr('$key')`) unquotes; the `$`-sigil strip (a UDON-specific concern)
+  is removed from all targets.
+
 ### 1. Multi-Chunk Streaming - **IMPLEMENTED** (0.4.0)
 
 Line-oriented streaming with `StreamingParser` wrapper:
