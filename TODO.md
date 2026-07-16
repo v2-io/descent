@@ -853,3 +853,29 @@ These optimizations may apply to descent-generated parsers:
 - **MaybeUninit ring slots**: This optimization is for ring-buffer architectures.
   The callback-based approach eliminates ring buffers entirely, so this doesn't apply.
   (Callback approach is already 2-7x faster than ring-buffer alternatives.)
+
+## Sunset the Ruby plumbing — descent as a full Rust crate (Joseph, 2026-07-16)
+
+descent-rs is the live implementation; the Ruby gem is legacy lineage. Move
+to a proper standalone Rust crate and retire the Ruby workflow:
+
+- [ ] Restructure so `rust/` becomes the repo root shape (or the crate is
+      published from it): `descent-core` (lib) + `descent-cli` (bin).
+- [ ] crates.io naming: `descent` is squatted by an unrelated 2021 crate
+      (verified 2026-07-09) — pick and reserve a name (`descent-rs`?
+      `descent-parser`?) early.
+- [ ] Retire the Ruby-parity instrumentation deliberately: the byte-identity
+      differential (`descent-rs context` vs `rust/tools/dump_context.rb`)
+      and the faithfully-reproduced Ruby quirks (see emit/rust/mod.rs docs)
+      served the migration; once Ruby is sunset they are dead weight and the
+      quirks can be cleaned up as *improvements* (byte-identical output is
+      never a goal — the consumer's fixture gates + benchmarks are the
+      criteria).
+- [ ] Archive `lib/`, `exe/`, the gemspec, and the `dx` Ruby workflow;
+      migrate anything still referenced (characters.md etc. are shared docs
+      and stay).
+- [ ] CI + publish pipeline for the crate; consumers (udon's
+      regenerate-parser) already build from source via the submodule and
+      keep working throughout.
+- [ ] Validator: reject grammar locals that collide with generated frame
+      field names (`st` is reserved by the pushdown backend today).
