@@ -68,7 +68,7 @@ classes, metrics, and classifications). Stage-0 vendored per policy
 oracle-verified (empty placeholder cells — byte-identical output; evidence
 in `rust/spikes/normalizations/`, umbrella-side landing flagged, not done).
 New evaluative criterion from Joseph recorded at
-`~/src/udon/notes/desc-design-principles.md` (**read it**): .desc reads like
+`~/src/udon/design/desc-design-principles.md` (**read it**): .desc reads like
 a bit lookup table; every proposal is judged on cursor-advance/table-scan
 legibility, and every quirk classified *principled* vs *lexer artifact*.
 
@@ -276,7 +276,7 @@ suite, the real acceptance).
 
 Joseph confirmed the frame: bridge-friction points are exactly where .desc
 syntax conformed to what was easy for the Ruby lexer. **Evaluative criterion
-(2026-07-11, `~/src/udon/notes/desc-design-principles.md`):** .desc began as
+(2026-07-11, `~/src/udon/design/desc-design-principles.md`):** .desc began as
 a literal bit-lookup table (RTMP parser, still running at Twitch); the
 load-bearing property is table-scan/cursor-advance legibility. Classify every
 quirk *principled* (serves the table — keep, spec it) vs *lexer artifact*
