@@ -16,13 +16,24 @@ pub fn tokens_to_json(tokens: &[Token]) -> Value {
 }
 
 pub fn machine_to_json(m: &Machine) -> Value {
-    json!({
+    let mut obj = json!({
         "name": m.name,
         "entry_point": m.entry_point,
         "types": m.types.iter().map(type_to_json).collect::<Vec<_>>(),
         "functions": m.functions.iter().map(function_to_json).collect::<Vec<_>>(),
         "keywords": m.keywords.iter().map(keywords_to_json).collect::<Vec<_>>(),
-    })
+    });
+    // Only present when declared — keeps the Ruby-differential JSON shape
+    // intact for const-free grammars (consts are an rs-only feature).
+    if !m.consts.is_empty() {
+        obj["consts"] = Value::Array(
+            m.consts
+                .iter()
+                .map(|c| json!({ "name": c.name, "value": c.value, "lineno": c.lineno }))
+                .collect(),
+        );
+    }
+    obj
 }
 
 fn type_to_json(t: &TypeDecl) -> Value {

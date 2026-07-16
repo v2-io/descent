@@ -13,7 +13,7 @@ impl std::fmt::Display for ParseError {
 }
 impl std::error::Error for ParseError {}
 
-const STRUCTURAL: &[&str] = &["function", "type", "state", "keywords"];
+const STRUCTURAL: &[&str] = &["function", "type", "const", "state", "keywords"];
 const CASE_KEYWORDS: &[&str] = &["c", "default", "eof", "if"];
 const CHAR_CLASSES: &[&str] = &[
     "letter", "label_cont", "digit", "hex_digit", "ws", "nl", "xid_start", "xid_cont",
@@ -70,6 +70,7 @@ impl Parser {
         let mut name = None;
         let mut entry_point = None;
         let mut types = Vec::new();
+        let mut consts = Vec::new();
         let mut functions = Vec::new();
         let mut keywords = Vec::new();
 
@@ -84,6 +85,7 @@ impl Parser {
                     self.advance();
                 }
                 "type" => types.push(self.parse_type()),
+                "const" => consts.push(self.parse_const()?),
                 "function" => functions.push(self.parse_function()?),
                 "keywords" => keywords.push(self.parse_keywords()?),
                 _ => {
@@ -95,7 +97,7 @@ impl Parser {
             }
         }
 
-        Ok(Machine { name, entry_point, types, functions, keywords })
+        Ok(Machine { name, entry_point, types, consts, functions, keywords })
     }
 
     fn parse_type(&mut self) -> TypeDecl {
@@ -108,6 +110,35 @@ impl Parser {
             .unwrap_or_else(|| "UNKNOWN".to_string());
         self.advance();
         TypeDecl { name: token.id, kind, lineno: token.lineno }
+    }
+
+    /// `|const[NAME] <int>` — named integer constant (mirrors `|type`'s
+    /// id-in-brackets, value-in-rest shape). NAME must be SCREAMING_CASE
+    /// and not shadow a builtin (COL/LINE/PREV).
+    fn parse_const(&mut self) -> Result<ConstDecl, ParseError> {
+        let token = self.current().unwrap().clone();
+        self.advance();
+        let name = token.id.trim().to_string();
+        if !re(r"^[A-Z][A-Z0-9_]*$").is_match(&name) {
+            return Err(ParseError(format!(
+                "Line {}: const name '{}' must be SCREAMING_CASE (e.g. |const[OPEN] 1)",
+                token.lineno, name
+            )));
+        }
+        if ["COL", "LINE", "PREV"].contains(&name.as_str()) {
+            return Err(ParseError(format!(
+                "Line {}: const name '{}' shadows a builtin variable",
+                token.lineno, name
+            )));
+        }
+        let value_word = token.rest.split_whitespace().next().unwrap_or("");
+        let value: i64 = value_word.parse().map_err(|_| {
+            ParseError(format!(
+                "Line {}: const '{}' needs an integer value, got '{}'",
+                token.lineno, name, token.rest.trim()
+            ))
+        })?;
+        Ok(ConstDecl { name, value, lineno: token.lineno })
     }
 
     fn parse_keywords(&mut self) -> Result<Keywords, ParseError> {
@@ -174,7 +205,7 @@ impl Parser {
         let mut entry_actions = Vec::new();
 
         while let Some(t) = self.current() {
-            if ["function", "type", "keywords"].contains(&t.tag.as_str()) {
+            if ["function", "type", "const", "keywords"].contains(&t.tag.as_str()) {
                 break;
             }
             match t.tag.as_str() {

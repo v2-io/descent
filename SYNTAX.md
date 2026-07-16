@@ -15,6 +15,8 @@ For character literal syntax, see [characters.md](characters.md).
 
 |entry-point /<function>          ; Required: where parsing begins
 
+|const[<NAME>] <int>              ; Named integer constants (zero or more)
+
 |keywords[<name>] ...             ; Keyword blocks (zero or more)
 
 |function[<name>] ...             ; Function definitions (one or more)
@@ -41,6 +43,37 @@ Types determine what events are emitted for functions returning that type.
 |type[Element]   BRACKET    ; ElementStart on entry, ElementEnd on return
 |type[Text]      CONTENT    ; MARK on entry, emit Text with span on return
 |type[Counter]   INTERNAL   ; No emit - for internal values only
+```
+
+---
+
+## Named Constants
+
+```
+|const[<NAME>] <int>
+```
+
+Declares a named integer constant (descent-rs only). `NAME` must be
+SCREAMING_CASE and must not shadow `COL`/`LINE`/`PREV`. Constants are
+substituted before IR building in every **expression** position:
+
+- assignments: `result = OPEN`, `mode += STEP`
+- conditions: `|if[mode == OPEN]`
+- call arguments: `/attr_deferred_body(col, pcol, MODE_OPEN)`
+- return values: `|return FIN`
+
+Emit positions are untouched: a bare uppercase word in action position
+(`| BoolTrue`) is still an inline event emit, never a constant. Constants
+let return-code protocols read symbolically:
+
+```
+|const[FIN]  0
+|const[OPEN] 1
+
+|function[attr:INT] | result = FIN
+  |state[:route]
+    |if[vstate == OPEN]  | result = OPEN  |return result
+    |default             |                |return FIN
 ```
 
 ---

@@ -42,14 +42,26 @@ impl<'a> IRBuilder<'a> {
     }
 
     pub fn build(&self) -> Result<ParserIR> {
-        let types = build_types(&self.ast.types);
-        let mut functions = self
-            .ast
+        // |const substitution pre-pass: replace declared SCREAMING_CASE
+        // names with their integer values in every expression position
+        // (assignments, conditions, call args, return values) so all
+        // downstream analysis — both backends, param typing, scan/expects
+        // inference — just sees numbers.
+        let substituted;
+        let ast: &ast::Machine = if self.ast.consts.is_empty() {
+            self.ast
+        } else {
+            substituted = substitute_consts(self.ast)?;
+            &substituted
+        };
+
+        let types = build_types(&ast.types);
+        let mut functions = ast
             .functions
             .iter()
             .map(|f| build_function(f, &types))
             .collect::<Result<Vec<_>>>()?;
-        let keywords = self.ast.keywords.iter().map(build_keywords).collect();
+        let keywords = ast.keywords.iter().map(build_keywords).collect();
 
         // Collect custom error codes from /error(code) calls
         let custom_error_codes = collect_custom_error_codes(&functions);
@@ -69,6 +81,109 @@ impl<'a> IRBuilder<'a> {
             keywords,
             custom_error_codes,
         })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// |const substitution (pre-pass over the AST)
+// ---------------------------------------------------------------------------
+
+/// Clone the machine with every declared const name replaced by its integer
+/// value in expression positions: assignment exprs, `|if[...]` conditions
+/// (case- and clause-level), call args, and return values. Emit positions
+/// (event type names) are deliberately untouched.
+fn substitute_consts(m: &ast::Machine) -> Result<ast::Machine> {
+    let mut seen = std::collections::HashSet::new();
+    for c in &m.consts {
+        if !seen.insert(c.name.as_str()) {
+            return Err(ValidationError(format!(
+                "L{}: duplicate const '{}'",
+                c.lineno, c.name
+            )));
+        }
+    }
+    let consts: Vec<(regex::Regex, String)> = m
+        .consts
+        .iter()
+        .map(|c| {
+            (
+                re(&format!(r"\b{}\b", regex::escape(&c.name))),
+                c.value.to_string(),
+            )
+        })
+        .collect();
+
+    let sub = |s: &str| -> String {
+        let mut out = s.to_string();
+        for (rx, val) in &consts {
+            out = rx.replace_all(&out, val.as_str()).into_owned();
+        }
+        out
+    };
+
+    let mut out = m.clone();
+    for func in &mut out.functions {
+        for cmd in &mut func.entry_actions {
+            substitute_consts_in_command(cmd, &sub, &m.consts);
+        }
+        if let Some(h) = &mut func.eof_handler {
+            for cmd in &mut h.commands {
+                substitute_consts_in_command(cmd, &sub, &m.consts);
+            }
+        }
+        for state in &mut func.states {
+            for kase in &mut state.cases {
+                if let Some(cond) = &kase.condition {
+                    kase.condition = Some(sub(cond));
+                }
+                for cmd in &mut kase.commands {
+                    substitute_consts_in_command(cmd, &sub, &m.consts);
+                }
+            }
+            if let Some(h) = &mut state.eof_handler {
+                for cmd in &mut h.commands {
+                    substitute_consts_in_command(cmd, &sub, &m.consts);
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
+fn substitute_consts_in_command(
+    cmd: &mut ast::Command,
+    sub: &dyn Fn(&str) -> String,
+    consts: &[ast::ConstDecl],
+) {
+    match cmd {
+        ast::Command::Conditional { clauses, .. } => {
+            for clause in clauses {
+                if let Some(cond) = &clause.condition {
+                    clause.condition = Some(sub(cond));
+                }
+                for c in &mut clause.commands {
+                    substitute_consts_in_command(c, sub, consts);
+                }
+            }
+        }
+        ast::Command::Cmd { kind, .. } => {
+            use ast::CmdKind::*;
+            match kind {
+                Assign { expr, .. } | AddAssign { expr, .. } | SubAssign { expr, .. } => {
+                    *expr = sub(expr);
+                }
+                Call(value) => *value = sub(value),
+                Return(value) => {
+                    // Whole-token only: `|return OPEN` -> `|return 1`.
+                    // (A bare uppercase word in return position is otherwise
+                    // an event-type emit — consts win when declared.)
+                    if let Some(c) = consts.iter().find(|c| c.name == value.trim()) {
+                        *value = c.value.to_string();
+                    }
+                }
+                _ => {}
+            }
+        }
     }
 }
 
@@ -658,6 +773,10 @@ fn parse_return_value(value: &str) -> Value {
         // Variable name - for INTERNAL types returning a computed value
         return json!({ "return_value": value });
     }
+    if re(r"^-?\d+$").is_match(value) {
+        // Integer literal (typically a substituted |const name)
+        return json!({ "return_value": value });
+    }
 
     json!({}) // Unknown format, use default
 }
@@ -1189,5 +1308,59 @@ fn parse_byte_literal(arg: Option<&str>) -> Option<String> {
             }
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn const_substitution_reaches_all_expression_positions() {
+        let desc = r#"
+|parser const_test
+|type[Text] CONTENT
+|type[INT]  INTERNAL
+|const[FIN] 0
+|const[OPEN] 1
+|entry-point /document
+
+|function[document] | m = OPEN
+  |state[:main]
+    |c['\n']    | ->                    |>>
+    |default    | st = /line(OPEN)      |>> :route
+  |state[:route]
+    |if[st == FIN]  | m = FIN           |>> :main
+    |default        |                   |>> :main
+
+|function[line:INT] :mode
+  |state[:main]
+    |c['\n']    | -> | Text(USE_MARK)   |return FIN
+    |default    | MARK | ->             |>>
+"#;
+        let ir = crate::build_ir_with(desc, "test.desc", crate::Frontend::OracleLexer).unwrap();
+        let doc = &ir.functions[0];
+        // entry action / initializer
+        assert_eq!(doc.entry_actions[0].arg_str("expr"), Some("1"));
+        // call arg
+        let call = &doc.states[0].cases[1].commands[0];
+        assert_eq!(call.ctype, "assign");
+        assert_eq!(call.arg_str("expr"), Some("/line(1)"));
+        // condition
+        assert_eq!(doc.states[1].cases[0].condition.as_deref(), Some("st == 0"));
+        // assignment inside the guarded case
+        assert_eq!(doc.states[1].cases[0].commands[0].arg_str("expr"), Some("0"));
+        // |return CONST -> numeric return_value
+        let line = &ir.functions[1];
+        let ret = line.states[0].cases[0]
+            .commands
+            .iter()
+            .find(|c| c.ctype == "return")
+            .unwrap();
+        assert_eq!(ret.arg_str("return_value"), Some("0"));
+    }
+
+    #[test]
+    fn duplicate_const_rejected() {
+        let desc = "|parser p\n|const[X] 1\n|const[X] 2\n|entry-point /f\n|function[f]\n  |state[:m]\n    |default | -> |>>\n";
+        assert!(crate::build_ir_with(desc, "t.desc", crate::Frontend::OracleLexer).is_err());
     }
 }

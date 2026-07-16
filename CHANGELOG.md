@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Named INT constants — `|const[NAME] <int>`** (2026-07-16, descent-rs,
+  both backends): SCREAMING_CASE names substituted in every expression
+  position (assignments, `|if[...]` conditions, call args, `|return NAME`)
+  before IR building, so downstream analysis just sees numbers. Emit
+  positions are never substituted. Motivating consumer: UDON's attr/value
+  return-code vocabulary (0/1/2/3/4/5/6/11/12/13) now reads
+  FIN/OPEN/NODE/BLOB/NEXT_KEY/REOWNED/RAW/CHILD/DIRECTIVE/REF — the
+  regenerated parsers are byte-identical.
 - **Saved captures — `SAVE(slot)` + `TypeName(USE_SAVED(slot))`** (2026-07-16,
   descent-rs, both backends): snapshot the current MARK..TERM capture into a
   named parser-global slot and re-emit it later, any number of times, from

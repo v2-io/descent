@@ -6,8 +6,20 @@ pub struct Machine {
     pub name: Option<String>,
     pub entry_point: Option<String>,
     pub types: Vec<TypeDecl>,
+    pub consts: Vec<ConstDecl>,
     pub functions: Vec<Function>,
     pub keywords: Vec<Keywords>,
+}
+
+/// Named integer constant: `|const[NAME] <int>`. NAME is SCREAMING_CASE and
+/// usable wherever an integer expression is (assignments, conditions, call
+/// args, `|return NAME`); substituted textually before IR building so every
+/// downstream analysis just sees the number.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConstDecl {
+    pub name: String,
+    pub value: i64,
+    pub lineno: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]

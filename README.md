@@ -74,6 +74,19 @@ uses pipe-delimited declarations.
     ...
 ```
 
+### Named Constants
+
+```
+|const[FIN]  0                      ; SCREAMING_CASE name, integer value
+|const[OPEN] 1
+```
+
+Usable in every expression position — assignments (`result = OPEN`),
+conditions (`|if[mode == OPEN]`), call args, and `|return FIN` — so
+INT return-code protocols read symbolically. Substituted to their values
+before IR building; emit positions (`| BoolTrue`) are never substituted.
+(descent-rs only.)
+
 ### Type System
 
 Types declare what happens when a function returns:
