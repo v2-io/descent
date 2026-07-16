@@ -27,6 +27,38 @@
   them without losing per-base digit validation. Merging digit classes is
   NOT an alternative (it changes behavior: `0o9` must fall through to
   BareValue).
+
+  **Design options (2026-07-16 pass — none forced; needs a design call):**
+  The states differ in TWO dimensions: the digit/continue rows AND the
+  emitted event type (`Integer`/`Float`/`Rational`/`Complex`/`BareValue`),
+  so any template needs an event-type slot, not just shared rows.
+
+  1. *Row-splice templates with typed args.* A top-level block
+     `|template[val_end] :T` holding case rows
+     (`|eof | T(USE_MARK) |return` / `|c['\n']` / `|c[' ']` /
+     `|c[:bracket]` …), spliced into a state at the position of a
+     `|use[val_end(Integer)]` row. AST-level expansion (after parse,
+     before IR) with `T` substituted as an event-type token — keeps ".desc
+     is valid UDON" (no lexer macros), preserves row ordering control
+     (splice point sits above the state's own `|default`), and adds no
+     runtime semantics. Most general; ~1 new AST node + an expansion pass.
+     Leading candidate.
+  2. *State property.* `|state[:num_hex] SELF_TERM(Integer)` — the
+     generator injects the standard terminator rows. Tersest, but the
+     terminator SET (`\n`/space/`:bracket`) would be hardwired into
+     descent, which is UDON policy, not generator mechanics — wrong layer
+     unless combined with a declarable set (option 3).
+  3. *Named terminator sets.* `|terminators[val_end] eof '\n' ' ' :bracket`
+     + per-state `|ends[val_end -> Integer]`. Cleanly splits the WHAT
+     (set, declared once) from the HOW (emit+return, generator-known).
+     Middle ground; two new declarations.
+  4. *Grammar-side helper function.* Rejected: the terminator rows must
+     return from `typed_value` with the byte unconsumed AND emit a
+     per-state type; a callee can do the emit but the caller still needs
+     per-state routing on the report — no net savings.
+
+  Whichever lands, the |const substitution pass and TypeName(:param) mean
+  templates only need event-type + byte args, not general expressions.
 - **Named INT constants for return-code protocols** (nice-to-have,
   2026-07-16) — grammars that thread INT codes between functions (UDON's
   attr/value boundary codes) must use bare numbers; `|const[OPEN 1]`-style
