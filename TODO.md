@@ -10,6 +10,26 @@
   (three `check_bs_{pipe,bang,semi}` ladders in four text functions; three
   `spaced_suffix_{q,s,p}` states emitting `Attr('$?')`/`$*`/`$+`). With
   payload params each collapses to one parameterized state.
+- **Runtime-byte SCAN targets** (from UDON grammar refactor, 2026-07-16) —
+  SCAN inference currently requires literal case bytes, so a state matching
+  `|c[:param]` loses the memchr fast path. memchr itself takes a runtime
+  needle, so a param byte could join the scan set at zero cost. This is the
+  only reason UDON's `double_quoted`/`single_quoted` are two functions
+  instead of one `quoted(:q)` (noted in the grammar as "scan optimization
+  issues with :quote").
+- **State templates / a "self-terminating value" state property** (from
+  UDON grammar refactor, 2026-07-16) — UDON's `typed_value` has ~15 number
+  states that each repeat the same four terminator rows
+  (`eof`/`'\n'`/`' '`/`:bracket` → emit + return). A declarable per-state
+  terminator template (or a lightweight state-macro facility) would DRY
+  them without losing per-base digit validation. Merging digit classes is
+  NOT an alternative (it changes behavior: `0o9` must fall through to
+  BareValue).
+- **Named INT constants for return-code protocols** (nice-to-have,
+  2026-07-16) — grammars that thread INT codes between functions (UDON's
+  attr/value boundary codes) must use bare numbers; `|const[OPEN 1]`-style
+  named values would let the .desc read like a grammar instead of a
+  protocol table.
 - **Ruby test suite fails to load under Ruby 4.0** (`rake test` dies in
   `generator_test.rb` require, at pre-2026-07-15 HEAD too — environment
   breakage, not a regression). Decide whether the Ruby side keeps a running
