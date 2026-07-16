@@ -1329,6 +1329,7 @@ impl PushdownParser {
         bytes.iter().filter(|&&b| b & 0xC0 != 0x80).count() as u32
     }
 
+    #[inline(always)]
     fn scan_advance(&mut self, offset: Option<usize>) -> Option<u8> {
         match offset {
             Some(off) => {
@@ -1344,18 +1345,22 @@ impl PushdownParser {
         }
     }
 
+    #[inline(always)]
     fn scan_to1(&mut self, b1: u8) -> Option<u8> {
         let r = memchr::memchr(b1, &self.buf[self.pos..]);
         self.scan_advance(r)
     }
+    #[inline(always)]
     fn scan_to2(&mut self, b1: u8, b2: u8) -> Option<u8> {
         let r = memchr::memchr2(b1, b2, &self.buf[self.pos..]);
         self.scan_advance(r)
     }
+    #[inline(always)]
     fn scan_to3(&mut self, b1: u8, b2: u8, b3: u8) -> Option<u8> {
         let r = memchr::memchr3(b1, b2, b3, &self.buf[self.pos..]);
         self.scan_advance(r)
     }
+    #[inline(always)]
     fn scan_to4(&mut self, b1: u8, b2: u8, b3: u8, b4: u8) -> Option<u8> {
         let h = &self.buf[self.pos..];
         let p1 = memchr::memchr3(b1, b2, b3, h);
@@ -1370,6 +1375,7 @@ impl PushdownParser {
         };
         self.scan_advance(r)
     }
+    #[inline(always)]
     fn scan_to5(&mut self, b1: u8, b2: u8, b3: u8, b4: u8, b5: u8) -> Option<u8> {
         let h = &self.buf[self.pos..];
         let p1 = memchr::memchr3(b1, b2, b3, h);
@@ -1384,6 +1390,7 @@ impl PushdownParser {
         };
         self.scan_advance(r)
     }
+    #[inline(always)]
     fn scan_to6(&mut self, b1: u8, b2: u8, b3: u8, b4: u8, b5: u8, b6: u8) -> Option<u8> {
         let h = &self.buf[self.pos..];
         let p1 = memchr::memchr3(b1, b2, b3, h);
