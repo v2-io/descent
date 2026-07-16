@@ -111,6 +111,10 @@ pub struct State {
     pub eof_handler: Option<Vec<Command>>,
     /// Chars (each one character) for SIMD memchr scan, or None.
     pub scan_chars: Option<Vec<String>>,
+    /// Byte-parameter names that join the scan set at runtime (memchr takes
+    /// runtime needles for free) — from `|c[:param]` cases in a scannable
+    /// state.
+    pub scan_params: Vec<String>,
     pub is_self_looping: bool,
     pub has_default: bool,
     pub is_unconditional: bool,
@@ -121,7 +125,12 @@ pub struct State {
 
 impl State {
     pub fn scannable(&self) -> bool {
-        self.scan_chars.as_ref().is_some_and(|c| !c.is_empty())
+        self.scan_chars.as_ref().is_some_and(|c| !c.is_empty()) || !self.scan_params.is_empty()
+    }
+
+    /// Total scan arity: static chars + runtime byte params.
+    pub fn scan_arity(&self) -> usize {
+        self.scan_chars.as_ref().map_or(0, |c| c.len()) + self.scan_params.len()
     }
 }
 

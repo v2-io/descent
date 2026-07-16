@@ -381,15 +381,17 @@ impl<'i> Gen<'i> {
         }
 
         if state.scannable() {
-            let chars: Vec<String> = state
+            let mut args_v: Vec<String> = state
                 .scan_chars
                 .clone()
                 .unwrap_or_default()
                 .iter()
                 .map(|c| esc_char(c))
                 .collect();
-            let n = chars.len();
-            let _ = writeln!(b, "{:IND$}match self.scan_to{n}({args}) {{", "", args = chars.join(", "));
+            // Runtime byte params join the scan set as frame-addressed needles.
+            args_v.extend(state.scan_params.iter().map(|p| format!("f.{p}")));
+            let n = args_v.len();
+            let _ = writeln!(b, "{:IND$}match self.scan_to{n}({args}) {{", "", args = args_v.join(", "));
             for case in &state.cases {
                 if case.is_default() {
                     continue;

@@ -190,6 +190,15 @@ Actions are pipe-separated and execute left-to-right:
 | `<Type>(USE_MARK)`   | Emit event with accumulated content      |
 | `<Type>(:param)`     | Emit event with bytes-parameter payload  |
 
+### SCAN and Runtime Bytes
+
+If a state has a simple self-looping default case, its explicit cases become
+SIMD memchr scan targets. Byte parameters (`c[:param]`) participate as
+**runtime needles** (descent-rs): `|c[:q] | TERM | -> |return` inside a
+scannable state generates `scan_to3(b'\n', b'\\', q)`. Character-class
+cases (`LETTER`, ...) still disable scanning for the state. Static chars +
+params together are limited to 6 targets.
+
 ### Advance-To Constraints
 
 `->[<chars>]` uses SIMD memchr and supports:

@@ -647,21 +647,9 @@ impl<'a> Parser<'a> {
         {% set state = func.states[0] %}
         loop {
             {% if state.scannable %}
-            {# SCAN-first optimization #}
-            {% set scan_count = state.scan_chars | length %}
-            {% if scan_count == 1 %}
-            match self.scan_to1({{ state.scan_chars[0] | escape_rust_char }}) {
-            {% elif scan_count == 2 %}
-            match self.scan_to2({{ state.scan_chars[0] | escape_rust_char }}, {{ state.scan_chars[1] | escape_rust_char }}) {
-            {% elif scan_count == 3 %}
-            match self.scan_to3({{ state.scan_chars[0] | escape_rust_char }}, {{ state.scan_chars[1] | escape_rust_char }}, {{ state.scan_chars[2] | escape_rust_char }}) {
-            {% elif scan_count == 4 %}
-            match self.scan_to4({{ state.scan_chars[0] | escape_rust_char }}, {{ state.scan_chars[1] | escape_rust_char }}, {{ state.scan_chars[2] | escape_rust_char }}, {{ state.scan_chars[3] | escape_rust_char }}) {
-            {% elif scan_count == 5 %}
-            match self.scan_to5({{ state.scan_chars[0] | escape_rust_char }}, {{ state.scan_chars[1] | escape_rust_char }}, {{ state.scan_chars[2] | escape_rust_char }}, {{ state.scan_chars[3] | escape_rust_char }}, {{ state.scan_chars[4] | escape_rust_char }}) {
-            {% elif scan_count == 6 %}
-            match self.scan_to6({{ state.scan_chars[0] | escape_rust_char }}, {{ state.scan_chars[1] | escape_rust_char }}, {{ state.scan_chars[2] | escape_rust_char }}, {{ state.scan_chars[3] | escape_rust_char }}, {{ state.scan_chars[4] | escape_rust_char }}, {{ state.scan_chars[5] | escape_rust_char }}) {
-            {% endif %}
+            {# SCAN-first optimization: pre-rendered args (static byte
+               literals + runtime byte params) from the context #}
+            match self.scan_to{{ state.scan_arity }}({{ state.scan_args | join(", ") }}) {
                 {% for kase in state.cases %}
                 {% if not kase.is_default %}
                 {% if kase.is_conditional %}
@@ -805,20 +793,7 @@ impl<'a> Parser<'a> {
             {% for state in func.states %}
                 State::{{ state.name | pascalcase }} => {
                     {% if state.scannable %}
-                    {% set scan_count = state.scan_chars | length %}
-                    {% if scan_count == 1 %}
-                    match self.scan_to1({{ state.scan_chars[0] | escape_rust_char }}) {
-                    {% elif scan_count == 2 %}
-                    match self.scan_to2({{ state.scan_chars[0] | escape_rust_char }}, {{ state.scan_chars[1] | escape_rust_char }}) {
-                    {% elif scan_count == 3 %}
-                    match self.scan_to3({{ state.scan_chars[0] | escape_rust_char }}, {{ state.scan_chars[1] | escape_rust_char }}, {{ state.scan_chars[2] | escape_rust_char }}) {
-                    {% elif scan_count == 4 %}
-                    match self.scan_to4({{ state.scan_chars[0] | escape_rust_char }}, {{ state.scan_chars[1] | escape_rust_char }}, {{ state.scan_chars[2] | escape_rust_char }}, {{ state.scan_chars[3] | escape_rust_char }}) {
-                    {% elif scan_count == 5 %}
-                    match self.scan_to5({{ state.scan_chars[0] | escape_rust_char }}, {{ state.scan_chars[1] | escape_rust_char }}, {{ state.scan_chars[2] | escape_rust_char }}, {{ state.scan_chars[3] | escape_rust_char }}, {{ state.scan_chars[4] | escape_rust_char }}) {
-                    {% elif scan_count == 6 %}
-                    match self.scan_to6({{ state.scan_chars[0] | escape_rust_char }}, {{ state.scan_chars[1] | escape_rust_char }}, {{ state.scan_chars[2] | escape_rust_char }}, {{ state.scan_chars[3] | escape_rust_char }}, {{ state.scan_chars[4] | escape_rust_char }}, {{ state.scan_chars[5] | escape_rust_char }}) {
-                    {% endif %}
+                    match self.scan_to{{ state.scan_arity }}({{ state.scan_args | join(", ") }}) {
                         {% for kase in state.cases %}
                         {% if not kase.is_default %}
                         {% if kase.is_conditional %}

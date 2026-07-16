@@ -236,9 +236,26 @@ fn state_to_value(state: &State, ir: &ParserIR) -> Value {
         && state.cases.iter().all(|c| {
             c.chars.is_none() && c.special_class.is_none() && c.param_ref.is_none()
         });
+    // Pre-rendered scan_toN argument list: static chars as Rust byte
+    // literals, then runtime byte params by name (in scope in the function).
+    let mut scan_args: Vec<String> = state
+        .scan_chars
+        .iter()
+        .flatten()
+        .map(|c| {
+            c.chars()
+                .next()
+                .map(literals::escape_rust_byte)
+                .unwrap_or_else(|| "0u8".to_string())
+        })
+        .collect();
+    scan_args.extend(state.scan_params.iter().cloned());
+
     json!({
         "name": state.name,
         "byte_independent": byte_independent,
+        "scan_args": scan_args,
+        "scan_arity": state.scan_arity(),
         "cases": state.cases.iter().map(|c| case_to_value(c, ir)).collect::<Vec<_>>(),
         "eof_handler": state.eof_handler.as_ref().map(|cmds| {
             cmds.iter().map(|c| command_to_value(c, Some(ir))).collect::<Vec<_>>()
@@ -388,10 +405,10 @@ fn analyze_helper_usage(functions_data: &[Value]) -> Usage {
         check_expressions_in_function(func, &mut usage);
 
         for state in arr(func.get("states")) {
-            // Track max scan arity
+            // Track max scan arity (static chars + runtime byte params)
             if state.get("scannable").and_then(|v| v.as_bool()) == Some(true) {
-                if let Some(chars) = state.get("scan_chars").and_then(|v| v.as_array()) {
-                    usage.max_scan_arity = usage.max_scan_arity.max(chars.len());
+                if let Some(args) = state.get("scan_args").and_then(|v| v.as_array()) {
+                    usage.max_scan_arity = usage.max_scan_arity.max(args.len());
                 }
             }
 

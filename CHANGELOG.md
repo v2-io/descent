@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Runtime-byte SCAN targets** (2026-07-16, descent-rs, both backends):
+  `|c[:param]` cases now join a scannable state's memchr needle set at
+  runtime instead of disabling SCAN. UDON's `double_quoted`/`single_quoted`
+  collapse to one `quoted(:q)` with the fast path intact
+  (`scan_to3(b'\n', b'\\', q)`); many other param-terminated states
+  (`typed_value`, `flag_value`, ...) newly gain the SCAN fast path.
+  Character-class cases still disable scanning.
 - **Parameterized inline-emit payloads — `TypeName(:param)`** (2026-07-16,
   descent-rs, both backends): emit an event whose payload is a bytes
   parameter, symmetric with `PREPEND(:param)`; the param is inferred

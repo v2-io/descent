@@ -11,13 +11,14 @@
   (three `check_bs_{pipe,bang,semi}` ladders in four text functions; three
   `spaced_suffix_{q,s,p}` states emitting `Attr('$?')`/`$*`/`$+`). With
   payload params each collapses to one parameterized state.
-- **Runtime-byte SCAN targets** (from UDON grammar refactor, 2026-07-16) —
+- *(done 2026-07-16)* **Runtime-byte SCAN targets** — `|c[:param]` cases now join the memchr needle set (both backends); UDON's quoted functions merged into `quoted(:q)`.
+- ~~**Runtime-byte SCAN targets** (from UDON grammar refactor, 2026-07-16) —
   SCAN inference currently requires literal case bytes, so a state matching
   `|c[:param]` loses the memchr fast path. memchr itself takes a runtime
   needle, so a param byte could join the scan set at zero cost. This is the
   only reason UDON's `double_quoted`/`single_quoted` are two functions
   instead of one `quoted(:q)` (noted in the grammar as "scan optimization
-  issues with :quote").
+  issues with :quote").~~
 - **State templates / a "self-terminating value" state property** (from
   UDON grammar refactor, 2026-07-16) — UDON's `typed_value` has ~15 number
   states that each repeat the same four terminator rows

@@ -366,6 +366,12 @@ character cases become SCAN targets for SIMD-accelerated bulk scanning.
 
 The generator detects this and uses `memchr` to scan for `\n` and `|` in bulk.
 
+Byte parameters join the scan set as **runtime needles** (descent-rs): a
+`|c[:param]` case in a scannable state scans with the param's value —
+memchr takes runtime bytes for free — so a single `quoted(:q)` keeps the
+fast path for both quote kinds. Character-class cases still disable
+scanning for the state.
+
 ### EOF Handling
 
 By default, the generator infers EOF behavior based on return type:

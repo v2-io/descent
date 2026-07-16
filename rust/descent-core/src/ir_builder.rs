@@ -285,7 +285,7 @@ fn build_state(state: &ast::State, params: &[String]) -> Result<State> {
         .iter()
         .map(|c| build_case(c, params))
         .collect::<Result<Vec<_>>>()?;
-    let mut scan_chars = infer_scan_chars(&cases);
+    let (mut scan_chars, scan_params) = infer_scan_targets(&cases);
     let is_self_looping = cases
         .iter()
         .any(|c| c.is_default() && has_self_transition(c));
@@ -313,10 +313,12 @@ fn build_state(state: &ast::State, params: &[String]) -> Result<State> {
         None => None,
     };
 
-    // Inject '\n' into scan_chars if not already a user target (and room).
+    // Inject '\n' into scan_chars if not already a user target (and room —
+    // runtime params count against the 6-needle limit).
     let mut newline_injected = false;
-    if let Some(chars) = &mut scan_chars {
-        if !chars.iter().any(|c| c == "\n") && chars.len() < 6 {
+    if scan_chars.is_some() || !scan_params.is_empty() {
+        let chars = scan_chars.get_or_insert_with(Vec::new);
+        if !chars.iter().any(|c| c == "\n") && chars.len() + scan_params.len() < 6 {
             chars.insert(0, "\n".to_string());
             newline_injected = true;
         }
@@ -327,6 +329,7 @@ fn build_state(state: &ast::State, params: &[String]) -> Result<State> {
         cases,
         eof_handler,
         scan_chars,
+        scan_params,
         is_self_looping,
         has_default,
         is_unconditional,
@@ -807,11 +810,17 @@ fn parse_call_value(value: &str) -> Value {
     Value::Object(obj)
 }
 
-/// Infer SCAN optimization chars from a simple self-looping default case.
-fn infer_scan_chars(cases: &[Case]) -> Option<Vec<String>> {
-    let default_case = cases.iter().find(|c| c.is_default())?;
+/// Infer SCAN optimization targets from a simple self-looping default case.
+/// Returns (static chars, runtime byte params). Character classes (LETTER,
+/// XLBL_CONT, ...) still disable scanning entirely — a memchr scan would
+/// skip positions those cases must inspect. Byte params (|c[:param]|) join
+/// the scan set as runtime needles (memchr takes them for free).
+fn infer_scan_targets(cases: &[Case]) -> (Option<Vec<String>>, Vec<String>) {
+    let Some(default_case) = cases.iter().find(|c| c.is_default()) else {
+        return (None, vec![]);
+    };
     if !simple_self_loop(default_case) {
-        return None;
+        return (None, vec![]);
     }
 
     let non_default: Vec<&Case> = cases
@@ -819,21 +828,21 @@ fn infer_scan_chars(cases: &[Case]) -> Option<Vec<String>> {
         .filter(|c| !c.is_default() && !c.is_conditional())
         .collect();
 
-    // SCAN can only target statically-known bytes. If any case matches a
-    // parameter (|c[:param]|) or a character class (LETTER, XLBL_CONT, ...),
-    // a memchr scan for the static chars would skip right past positions
-    // those cases must inspect — the state is not scannable at all.
-    // (Found via udon typed_value:string, where the `c[:bracket]` case was
-    // silently skipped and `[a.md]` swallowed the closing `]`.)
-    if non_default
-        .iter()
-        .any(|c| c.param_ref.is_some() || c.special_class.is_some())
-    {
-        return None;
+    // (Class-case history: found via udon typed_value:string, where the
+    // `c[:bracket]` case was silently skipped and `[a.md]` swallowed the
+    // closing `]` — back when params also disabled scanning.)
+    if non_default.iter().any(|c| c.special_class.is_some()) {
+        return (None, vec![]);
     }
 
     let mut explicit_chars: Vec<String> = vec![];
-    for kase in non_default {
+    let mut params: Vec<String> = vec![];
+    for kase in &non_default {
+        if let Some(p) = &kase.param_ref {
+            if !params.contains(p) {
+                params.push(p.clone());
+            }
+        }
         if let Some(chars) = &kase.chars {
             for c in chars {
                 if !explicit_chars.contains(c) {
@@ -843,11 +852,14 @@ fn infer_scan_chars(cases: &[Case]) -> Option<Vec<String>> {
         }
     }
 
-    if explicit_chars.is_empty() || explicit_chars.len() > 6 {
-        return None;
+    if (explicit_chars.is_empty() && params.is_empty())
+        || explicit_chars.len() + params.len() > 6
+    {
+        return (None, vec![]);
     }
 
-    Some(explicit_chars)
+    let chars = if explicit_chars.is_empty() { None } else { Some(explicit_chars) };
+    (chars, params)
 }
 
 /// A simple self-loop has only advance and/or (empty-target) transition commands,
@@ -1393,6 +1405,36 @@ mod tests {
         assert!(rec.contains("std::borrow::Cow::Borrowed(tag)"), "recursive emit param payload");
         let pd = crate::emit::rust_pushdown::generate(&ir, &Default::default());
         assert!(pd.contains("f.tag.to_vec()"), "pushdown emit param payload");
+    }
+
+    #[test]
+    fn runtime_byte_params_join_the_scan_set() {
+        let desc = r#"
+|parser p
+|type[StringValue] CONTENT
+|entry-point /doc
+|function[doc]
+  |state[:m]
+    |c['"'] | -> | /quoted('"') |>>
+    |default | ->               |>>
+|function[quoted:StringValue] :q
+  |state[:m]
+    |c[:q]   | TERM | -> |return
+    |c[<BS>] | -> | ->   |>>
+    |default | ->        |>>
+"#;
+        let ir = crate::build_ir_with(desc, "t.desc", crate::Frontend::OracleLexer).unwrap();
+        let quoted = ir.functions.iter().find(|f| f.name == "quoted").unwrap();
+        let st = &quoted.states[0];
+        assert!(st.scannable());
+        assert_eq!(st.scan_params, vec!["q".to_string()]);
+        // injected newline + backslash + runtime q = arity 3
+        assert_eq!(st.scan_arity(), 3);
+        assert!(st.newline_injected);
+        let rec = crate::emit::rust::generate(&ir, &Default::default()).unwrap();
+        assert!(rec.contains(r"self.scan_to3(b'\n', b'\\', q)"), "recursive scan args");
+        let pd = crate::emit::rust_pushdown::generate(&ir, &Default::default());
+        assert!(pd.contains(r"self.scan_to3(b'\n', b'\\', f.q)"), "pushdown scan args");
     }
 
     #[test]
