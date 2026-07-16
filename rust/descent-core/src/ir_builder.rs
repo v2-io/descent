@@ -1404,7 +1404,7 @@ mod tests {
         assert!(rec.contains("self.parse_sfx(b\"$?\", b\"?\", on_event)"), "recursive assign-call args");
         assert!(rec.contains("std::borrow::Cow::Borrowed(tag)"), "recursive emit param payload");
         let pd = crate::emit::rust_pushdown::generate(&ir, &Default::default());
-        assert!(pd.contains("f.tag.to_vec()"), "pushdown emit param payload");
+        assert!(pd.contains("std::borrow::Cow::Borrowed(f.tag)"), "pushdown emit param payload");
     }
 
     #[test]

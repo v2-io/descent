@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Borrow-from-buffer streaming emission** (2026-07-16, descent-rs, both
+  backends): `StreamEvent` gains a lifetime — content is now
+  `Cow<'a, [u8]>` instead of `Vec<u8>`. The pushdown backend emits
+  `Cow::Borrowed` slices of its accumulation buffer wherever a drain
+  cannot invalidate them (the common case — zero-copy per event); only
+  PREPEND-combined content is owned, and SAVE-slot storage stays owned
+  with re-emission borrowing the slot. Callback bounds are now HRTB
+  (`for<'e> FnMut(StreamEvent<'e>)`), which enforces the delivery
+  contract in the type system: a borrowed event is valid only during the
+  callback that receives it — `into_owned()` anything that must survive
+  past the callback or the next `push_chunk`. The recursive template's
+  `StreamEvent::from_event` passes content through instead of copying.
+  Consumers that stored `StreamEvent` values must add `<'_>`/`into_owned`.
+  Measured on UDON (1 MiB mixed doc, M-series): pushdown 321 → 396 MiB/s
+  (+23%; 369 at 256 B chunks), recursive unchanged — so per-event
+  allocation was a real but NOT dominant cost; the remaining ~2.6x gap to
+  the recursive backend lives in the trampoline/frame machinery (see the
+  UDON repo's TODO-CORE-PARSING for the measured pair).
+
 ### Added
 - **Runtime-byte SCAN targets** (2026-07-16, descent-rs, both backends):
   `|c[:param]` cases now join a scannable state's memchr needle set at

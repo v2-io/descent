@@ -955,23 +955,28 @@ pub enum ParseResult {
     NeedMoreData,
 }
 
-/// Event with owned content for streaming across chunk boundaries.
+/// Event for streaming parsers. Content is `Cow`: borrowed from the
+/// parser's buffer where safe (zero-copy), owned where a buffer drain
+/// would invalidate it. Delivery contract: a borrowed event is valid only
+/// during the callback that receives it — copy (`into_owned`) anything
+/// that must outlive the call.
 #[derive(Debug, Clone, PartialEq)]
-pub enum StreamEvent {
+pub enum StreamEvent<'a> {
 {% for type in types %}
 {% if type.kind == "bracket" %}
     {{ type.name }}Start { span: Range<usize> },
     {{ type.name }}End { span: Range<usize> },
 {% elif type.kind == "content" %}
-    {{ type.name }} { content: Vec<u8>, span: Range<usize> },
+    {{ type.name }} { content: std::borrow::Cow<'a, [u8]>, span: Range<usize> },
 {% endif %}
 {% endfor %}
     Error { code: ParseErrorCode, span: Range<usize> },
 }
 
-impl StreamEvent {
-    /// Convert from borrowed Event to owned StreamEvent.
-    fn from_event(event: Event<'_>, offset: usize) -> Self {
+impl<'a> StreamEvent<'a> {
+    /// Convert a borrowed Event, re-basing spans to global offsets.
+    /// Content passes through as-is (still borrowed where it was).
+    fn from_event(event: Event<'a>, offset: usize) -> Self {
         match event {
 {% for type in types %}
 {% if type.kind == "bracket" %}
@@ -984,7 +989,7 @@ impl StreamEvent {
 {% elif type.kind == "content" %}
             Event::{{ type.name }} { content, span } => {
                 StreamEvent::{{ type.name }} {
-                    content: content.into_owned(),
+                    content,
                     span: (span.start + offset)..(span.end + offset),
                 }
             }
@@ -1064,7 +1069,7 @@ impl StreamingParser {
     /// Call `finish()` after the last chunk to handle any remaining content.
     pub fn parse<F>(&mut self, chunk: &[u8], mut on_event: F) -> ParseResult
     where
-        F: FnMut(StreamEvent),
+        F: for<'e> FnMut(StreamEvent<'e>),
     {
         // Append new chunk to buffer
         self.buffer.extend_from_slice(chunk);
@@ -1124,7 +1129,7 @@ impl StreamingParser {
     /// This triggers EOF handling for any incomplete constructs.
     pub fn finish<F>(mut self, mut on_event: F)
     where
-        F: FnMut(StreamEvent),
+        F: for<'e> FnMut(StreamEvent<'e>),
     {
         if self.buffer.is_empty() {
             return;

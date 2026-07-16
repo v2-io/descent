@@ -495,6 +495,17 @@ impl<'a> Parser<'a> {
 }
 ```
 
+### Streaming emission contract (pushdown backend)
+
+The pushdown backend (`--backend pushdown`) emits `StreamEvent<'e>` whose
+content is `Cow<'e, [u8]>` — borrowed from the parser's accumulation buffer
+wherever a buffer drain cannot invalidate it (zero-copy in the common case),
+owned only for PREPEND-combined content and SAVE-slot re-emission. The
+callback bound is `for<'e> FnMut(StreamEvent<'e>)`, so the delivery contract
+is enforced by the type system: **a borrowed event is valid only during the
+callback that receives it** — call `into_owned()` on anything that must
+survive past the callback or the next `push_chunk`.
+
 ### Debug Tracing
 
 Generate parsers with `--trace` to output detailed execution traces to stderr:
