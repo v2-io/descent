@@ -149,6 +149,11 @@
 {# TypeName(USE_SAVED(slot)): emit the saved capture (content + span) #}
                     on_event(Event::{{ cmd.args.type }} { content: std::borrow::Cow::Borrowed(&self.input[self.saved_{{ cmd.args.slot }}.clone()]), span: self.saved_{{ cmd.args.slot }}.clone() });
 
+{% elif cmd.type == "inline_emit_param" %}
+{# Inline emit with a bytes-parameter payload: TypeName(:param) — symmetric
+   with PREPEND(:param). The param is &'static [u8]. #}
+                    on_event(Event::{{ cmd.args.type }} { content: std::borrow::Cow::Borrowed({{ cmd.args.param_ref }}), span: self.span() });
+
 {% elif cmd.type == "inline_emit_literal" %}
 {# Inline emit with literal: TypeName(literal). The payload is emitted
    VERBATIM — descent has no opinion about consumer sigils. A quoted

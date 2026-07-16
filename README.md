@@ -291,6 +291,7 @@ For emitting events directly with literal or accumulated content:
 | TypeName              ; Emit event with no payload (BoolTrue, Nil)
 | TypeName('value')     ; Emit with literal value (e.g., Attr('$id'), Attr('?'))
 | TypeName(USE_MARK)    ; Emit using current MARK/TERM content
+| TypeName(:param)      ; Emit with a bytes-param payload (like PREPEND(:param))
 ```
 
 Examples:

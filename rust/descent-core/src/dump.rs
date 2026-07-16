@@ -123,6 +123,9 @@ fn kind_to_json(kind: &CmdKind) -> (&'static str, Value) {
         CmdKind::Save(s) => ("save", json!(s)),
         CmdKind::KeywordsTry { var, name } => ("keywords_try", json!({ "var": var, "name": name })),
         CmdKind::InlineEmitSaved { ty, slot } => ("inline_emit_saved", json!({ "type": ty, "slot": slot })),
+        CmdKind::InlineEmitParam { ty, param } => {
+            ("inline_emit_param", json!({ "type": ty, "param_ref": param }))
+        }
         CmdKind::InlineEmitLiteral { ty, literal } => {
             ("inline_emit_literal", json!({ "type": ty, "literal": literal }))
         }

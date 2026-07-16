@@ -689,7 +689,8 @@ impl<'i> Gen<'i> {
                     let _ = writeln!(b, "{:ind$}continue 'run;", "");
                     return;
                 }
-                "emit" | "inline_emit_bare" | "inline_emit_mark" | "inline_emit_literal" | "inline_emit_saved" => {
+                "emit" | "inline_emit_bare" | "inline_emit_mark" | "inline_emit_literal" | "inline_emit_saved"
+                | "inline_emit_param" => {
                     self.render_emit(b, cmd, ind);
                 }
                 "error" => {
@@ -829,6 +830,15 @@ impl<'i> Gen<'i> {
                 let _ = writeln!(
                     b,
                     "{:ind$}if let Some((c, sp)) = self.saved.get(\"{slot}\") {{ on_event(StreamEvent::{t} {{ content: c.clone(), span: sp.clone() }}); }}",
+                    ""
+                );
+            }
+            "inline_emit_param" => {
+                let t = cmd.arg_str("type").unwrap_or("");
+                let p = cmd.arg_str("param_ref").unwrap_or("");
+                let _ = writeln!(
+                    b,
+                    "{:ind$}on_event(StreamEvent::{t} {{ content: f.{p}.to_vec(), span: self.gspan() }});",
                     ""
                 );
             }

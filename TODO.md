@@ -4,7 +4,8 @@
 
 ### 0. Open requests (from UDON grammar work, 2026-07-15)
 
-- **Parameterized inline-emit payloads** — `TypeName(:param)` as an inline
+- *(done 2026-07-16)* **Parameterized inline-emit payloads** — `TypeName(:param)` landed (both backends); UDON’s spaced_suffix trio collapsed. The check_bs ladders still duplicate per-opener states, but their collapse is a grammar-side helper (PREPEND(:param) suffices) with an EOF-edge behavior question — tracked in udon core/TODO-CORE-PARSING.md.
+- ~~**Parameterized inline-emit payloads** — `TypeName(:param)` as an inline
   event emit, symmetric with `PREPEND(:param)`. The UDON grammar duplicates
   whole state ladders only because the emitted literal differs by one byte
   (three `check_bs_{pipe,bang,semi}` ladders in four text functions; three

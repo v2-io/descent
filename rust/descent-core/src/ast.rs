@@ -114,6 +114,10 @@ pub enum CmdKind {
     /// capture — content and span both come from the slot.
     InlineEmitSaved { ty: String, slot: String },
     InlineEmitLiteral { ty: String, literal: String },
+    /// TypeName(:param): emit an event whose payload is a bytes parameter —
+    /// symmetric with PREPEND(:param). Collapses states that differ only in
+    /// an emitted literal.
+    InlineEmitParam { ty: String, param: String },
     InlineEmitBare(String),
     Noop,
 }

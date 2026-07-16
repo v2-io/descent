@@ -188,6 +188,7 @@ Actions are pipe-separated and execute left-to-right:
 | `<Type>`             | Emit event with no payload               |
 | `<Type>('<lit>')`    | Emit event with literal value            |
 | `<Type>(USE_MARK)`   | Emit event with accumulated content      |
+| `<Type>(:param)`     | Emit event with bytes-parameter payload  |
 
 ### Advance-To Constraints
 

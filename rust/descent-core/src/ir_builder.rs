@@ -370,7 +370,8 @@ fn mark_returns_after_inline_emits(commands: Vec<Command>) -> Vec<Command> {
         .into_iter()
         .map(|cmd| {
             match cmd.ctype.as_str() {
-                "inline_emit_bare" | "inline_emit_mark" | "inline_emit_literal" | "inline_emit_saved" => {
+                "inline_emit_bare" | "inline_emit_mark" | "inline_emit_literal" | "inline_emit_saved"
+                | "inline_emit_param" => {
                     has_inline_emit = true;
                     cmd
                 }
@@ -433,6 +434,9 @@ fn build_command(cmd: &ast::Command) -> Result<Command> {
         }
         InlineEmitLiteral { ty, literal } => {
             ("inline_emit_literal", json!({ "type": ty, "literal": literal }))
+        }
+        InlineEmitParam { ty, param } => {
+            ("inline_emit_param", json!({ "type": ty, "param_ref": param }))
         }
         Term(v) => ("term", json!({ "offset": v.unwrap_or(0) })),
         Prepend(v) => ("prepend", json!({ "literal": process_escapes(v) })),
@@ -1052,9 +1056,9 @@ fn infer_param_types(params: &[String], states: &[State]) -> Vec<(String, ParamT
                 }
             }
 
-            // PREPEND(:param) - needs bytes slice
+            // PREPEND(:param) / TypeName(:param) - needs bytes slice
             for cmd in &kase.commands {
-                if cmd.ctype == "prepend_param" {
+                if cmd.ctype == "prepend_param" || cmd.ctype == "inline_emit_param" {
                     if let Some(p) = cmd.arg_str("param_ref") {
                         set(&mut types, p, ParamType::Bytes);
                     }
@@ -1356,6 +1360,39 @@ mod tests {
             .find(|c| c.ctype == "return")
             .unwrap();
         assert_eq!(ret.arg_str("return_value"), Some("0"));
+    }
+
+    #[test]
+    fn inline_emit_param_infers_bytes_and_suppresses_auto_emit() {
+        let desc = r#"
+|parser p
+|type[Attr] CONTENT
+|type[INT]  INTERNAL
+|entry-point /doc
+|function[doc]
+  |state[:m]
+    |c['?'] | -> | s = /sfx('$?', '?') |>>
+    |default | ->                      |>>
+|function[sfx:INT] :tag :ch
+  |state[:m]
+    |c[' ']  | Attr(:tag) | ->         |return
+    |default | PREPEND(:ch)            |return
+"#;
+        let ir = crate::build_ir_with(desc, "t.desc", crate::Frontend::OracleLexer).unwrap();
+        let sfx = ir.functions.iter().find(|f| f.name == "sfx").unwrap();
+        assert_eq!(sfx.param_type("tag"), Some(crate::ir::ParamType::Bytes));
+        assert_eq!(sfx.param_type("ch"), Some(crate::ir::ParamType::Bytes));
+        let emit = &sfx.states[0].cases[0].commands[0];
+        assert_eq!(emit.ctype, "inline_emit_param");
+        assert_eq!(emit.arg_str("type"), Some("Attr"));
+        assert_eq!(emit.arg_str("param_ref"), Some("tag"));
+        // Both backends must render the assignment-call's args by target
+        // type (b"$?", not the invalid char literal '$?').
+        let rec = crate::emit::rust::generate(&ir, &Default::default()).unwrap();
+        assert!(rec.contains("self.parse_sfx(b\"$?\", b\"?\", on_event)"), "recursive assign-call args");
+        assert!(rec.contains("std::borrow::Cow::Borrowed(tag)"), "recursive emit param payload");
+        let pd = crate::emit::rust_pushdown::generate(&ir, &Default::default());
+        assert!(pd.contains("f.tag.to_vec()"), "pushdown emit param payload");
     }
 
     #[test]

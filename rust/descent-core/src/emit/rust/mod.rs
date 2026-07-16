@@ -286,6 +286,26 @@ fn command_to_value(cmd: &Command, transform: Option<&ParserIR>) -> Value {
         }
     }
 
+    if cmd.ctype == "assign" {
+        // `x = /fn(args)` — assignment-calls need the same by-target-type
+        // arg rendering as plain calls (byte/bytes params take Rust
+        // literals); without this a quoted multi-byte arg like '$?' reaches
+        // rust_expr as an invalid char literal.
+        if let Some(ir) = transform {
+            if let Some(expr) = args.get("expr").and_then(|v| v.as_str()) {
+                if let Some(caps) = re(r"^/(\w+)\((.*)\)\s*$").captures(expr.trim()) {
+                    if let Some(target) = ir.functions.iter().find(|f| f.name == caps[1]) {
+                        let transformed = transform_args_for_target(&caps[2], target);
+                        args.insert(
+                            "expr".to_string(),
+                            json!(format!("/{}({})", &caps[1], transformed)),
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     if cmd.ctype == "conditional" {
         let clauses: Vec<Value> = cmd
             .clauses
