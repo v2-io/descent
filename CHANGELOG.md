@@ -22,13 +22,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (UDON's three `spaced_suffix_*` states are now one parameterized
   function).
 
-### Fixed
-- **Assignment-calls get by-target-type arg rendering** (descent-rs,
-  recursive backend): `x = /fn('$?', ...)` now renders its args by the
-  callee's param types like plain `/fn(...)` calls do — previously a
-  quoted multi-byte arg reached the expression pipeline as an invalid Rust
-  char literal. (The pushdown backend already handled this via
-  `split_call`.)
 - **Named INT constants — `|const[NAME] <int>`** (2026-07-16, descent-rs,
   both backends): SCREAMING_CASE names substituted in every expression
   position (assignments, `|if[...]` conditions, call args, `|return NAME`)
@@ -47,6 +40,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   text blobs).
 
 ### Fixed
+- **Assignment-calls get by-target-type arg rendering** (descent-rs,
+  recursive backend): `x = /fn('$?', ...)` now renders its args by the
+  callee's param types like plain `/fn(...)` calls do — previously a
+  quoted multi-byte arg reached the expression pipeline as an invalid Rust
+  char literal. (The pushdown backend already handled this via
+  `split_call`.)
 - **Param-type propagation through assignment-calls** (descent-rs): `x =
   /fn(args)` call sites now participate in byte/bytes param-type inference —
   previously only plain `/fn(args)` commands did, so capturing an INT-returning
