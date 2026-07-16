@@ -190,6 +190,33 @@ impl<'i> Gen<'i> {
         }
         let _ = writeln!(self.out, "}}\n");
 
+        // SAVE(slot) storage: one named field per slot (reusable Vec — no
+        // HashMap, no hashing, no steady-state allocation). Owned so a
+        // drain or chunk seam can never invalidate it.
+        let mut slots: BTreeSet<String> = BTreeSet::new();
+        for func in &self.ir.functions {
+            collect_saved_slots(&func.entry_actions, &mut slots);
+            if let Some(h) = &func.eof_handler {
+                collect_saved_slots(h, &mut slots);
+            }
+            for st in &func.states {
+                if let Some(h) = &st.eof_handler {
+                    collect_saved_slots(h, &mut slots);
+                }
+                for case in &st.cases {
+                    collect_saved_slots(&case.commands, &mut slots);
+                }
+            }
+        }
+        let _ = writeln!(
+            self.out,
+            "/// SAVE(slot) captures — owned (content, global span) so a drain or\n/// chunk seam can never invalidate them. Re-emitted (borrowed) by\n/// TypeName(USE_SAVED(slot)); an unsaved slot is empty content @ 0..0.\n#[derive(Debug, Default)]\nstruct SavedSlots {{"
+        );
+        for s in &slots {
+            let _ = writeln!(self.out, "    {s}: (Vec<u8>, std::ops::Range<usize>),");
+        }
+        let _ = writeln!(self.out, "}}\n");
+
         let _ = write!(self.out, "{}", RUNTIME.replace("__ENTRY__", &ep));
 
         let mut arms = String::new();
@@ -628,10 +655,14 @@ impl<'i> Gen<'i> {
                     );
                 }
                 "save" => {
+                    // Copy into the slot's reusable buffer: no HashMap, no
+                    // per-save allocation once the buffer has grown. Direct
+                    // field access lets the borrow checker split
+                    // `saved.{slot}` from `buf`.
                     let slot = cmd.arg_str("slot").unwrap_or("");
                     let _ = writeln!(
                         b,
-                        "{:ind$}{{ let cap = self.save_capture(); self.saved.insert(\"{slot}\", cap); }}",
+                        "{:ind$}{{ let end = if self.term_pos != usize::MAX {{ self.term_pos }} else {{ self.pos }}; let start = self.mark_pos.min(end); self.saved.{slot}.0.clear(); self.saved.{slot}.0.extend_from_slice(&self.buf[start..end]); self.saved.{slot}.1 = (self.base + self.mark_pos)..(self.base + end.max(self.mark_pos)); }}",
                         ""
                     );
                 }
@@ -843,11 +874,13 @@ impl<'i> Gen<'i> {
                 );
             }
             "inline_emit_saved" => {
+                // Unconditional like the recursive backend's saved_{slot}
+                // range (an unsaved slot is empty content @ 0..0).
                 let t = cmd.arg_str("type").unwrap_or("");
                 let slot = cmd.arg_str("slot").unwrap_or("");
                 let _ = writeln!(
                     b,
-                    "{:ind$}if let Some((c, sp)) = self.saved.get(\"{slot}\") {{ on_event(StreamEvent::{t} {{ content: std::borrow::Cow::Borrowed(&c[..]), span: sp.clone() }}); }}",
+                    "{:ind$}on_event(StreamEvent::{t} {{ content: std::borrow::Cow::Borrowed(&self.saved.{slot}.0), span: self.saved.{slot}.1.clone() }});",
                     ""
                 );
             }
@@ -940,6 +973,21 @@ impl<'i> Gen<'i> {
 }
 
 // ---- small helpers ---------------------------------------------------------
+
+/// Collect SAVE / USE_SAVED slot names (recursing into conditional clauses)
+/// so the generated `SavedSlots` struct has a field per slot.
+fn collect_saved_slots(cmds: &[Command], slots: &mut BTreeSet<String>) {
+    for cmd in cmds {
+        if cmd.ctype == "save" || cmd.ctype == "inline_emit_saved" {
+            if let Some(slot) = cmd.arg_str("slot") {
+                slots.insert(slot.to_string());
+            }
+        }
+        for clause in cmd.clauses.iter().flatten() {
+            collect_saved_slots(&clause.commands, slots);
+        }
+    }
+}
 
 fn init_expr(dsl: &str, func: &Function) -> String {
     // Initializers run inside `enter_<fn>` where params are in scope by
@@ -1096,10 +1144,8 @@ pub struct PushdownParser {
     column: u32,
     finished: bool,
     started: bool,
-    /// SAVE(slot) captures — owned (content, global span) so a drain or
-    /// chunk seam can never invalidate them. Re-emitted by
-    /// TypeName(USE_SAVED(slot)).
-    saved: std::collections::HashMap<&'static str, (Vec<u8>, std::ops::Range<usize>)>,
+    /// SAVE(slot) captures — see [`SavedSlots`].
+    saved: SavedSlots,
 }
 
 impl Default for PushdownParser {
@@ -1121,7 +1167,7 @@ impl PushdownParser {
             term_pos: usize::MAX,
             prepend_buf: Vec::new(),
             term_prepend_len: 0,
-            saved: std::collections::HashMap::new(),
+            saved: SavedSlots::default(),
             pending_skip: 0,
             ret: 0,
             line: 1,
@@ -1254,15 +1300,6 @@ impl PushdownParser {
             combined.extend_from_slice(&self.buf[start..end]);
             (std::borrow::Cow::Owned(combined), span)
         }
-    }
-
-    /// Snapshot the current MARK..TERM capture for SAVE(slot) — owned copy,
-    /// non-destructive (prepend buffer untouched).
-    fn save_capture(&self) -> (Vec<u8>, std::ops::Range<usize>) {
-        let end = if self.term_pos != usize::MAX { self.term_pos } else { self.pos };
-        let content = self.buf[self.mark_pos.min(end)..end].to_vec();
-        let span = (self.base + self.mark_pos)..(self.base + end.max(self.mark_pos));
-        (content, span)
     }
 
     #[inline(always)]

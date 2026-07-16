@@ -36,6 +36,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   emission): pushdown 396 → 650 MiB/s at whole/64k/4k chunks (+64%),
   369 → 582 at 256 B; recursive control unchanged (+0.2%).
 
+- **Pushdown SAVE slots are struct fields** (2026-07-16, descent-rs): the
+  generator emits a `SavedSlots` struct with one named `(Vec<u8>, Range)`
+  field per slot instead of a `HashMap<&str, _>` — no SipHash per
+  save/emit, and the slot's Vec is reused (clear+extend) so steady-state
+  saves allocate nothing. USE_SAVED emits unconditionally like the
+  recursive backend (unsaved slot = empty content @ 0..0). Measured on
+  UDON (same pair discipline): pushdown 650 → 712 MiB/s (+9%), 582 → 632
+  at 256 B; recursive control unchanged.
+
 ### Added
 - **Runtime-byte SCAN targets** (2026-07-16, descent-rs, both backends):
   `|c[:param]` cases now join a scannable state's memchr needle set at
