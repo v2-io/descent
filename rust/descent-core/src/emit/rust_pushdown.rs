@@ -1285,6 +1285,7 @@ impl PushdownParser {
     /// stays active for drain purposes until the next `mark()` — keyword
     /// fallback re-terms the same region, and a suspension between the two
     /// must not drain it.
+    #[inline(always)]
     fn take_capture(&mut self) -> (std::borrow::Cow<'_, [u8]>, std::ops::Range<usize>) {
         let end = if self.term_pos != usize::MAX { self.term_pos } else { self.pos };
         let start = self.mark_pos.min(end);
