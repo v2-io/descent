@@ -27,6 +27,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the recursive backend lives in the trampoline/frame machinery (see the
   UDON repo's TODO-CORE-PARSING for the measured pair).
 
+- **Pushdown in-arm state loop** (2026-07-16, descent-rs): state hops now
+  loop inside the frame's trampoline arm (`continue 'st`) instead of
+  pushing the frame back and re-dispatching through the stack — only
+  calls, returns, and suspensions touch the trampoline. A `pending_skip`
+  guard at the loop head preserves the exact drain-or-suspend semantics.
+  Measured on UDON (same 1 MiB doc, immediate pair after borrowed
+  emission): pushdown 396 → 650 MiB/s at whole/64k/4k chunks (+64%),
+  369 → 582 at 256 B; recursive control unchanged (+0.2%).
+
 ### Added
 - **Runtime-byte SCAN targets** (2026-07-16, descent-rs, both backends):
   `|c[:param]` cases now join a scannable state's memchr needle set at

@@ -369,14 +369,21 @@ impl<'i> Gen<'i> {
             1,
         );
 
-        let mut arm = format!("                Frame::{p}(mut f) => {{\n                    match f.st {{\n");
+        // In-arm state loop: state hops (`continue 'st`) stay inside this
+        // frame's arm — no stack pop/push, no Frame-variant re-match. Only
+        // calls, returns, and suspensions go back through the trampoline.
+        // The pending_skip guard bails to the trampoline top (which owns
+        // the drain-or-suspend decision) exactly as the pre-loop code did.
+        let mut arm = format!(
+            "                Frame::{p}(mut f) => {{\n                    'st: loop {{\n                    if self.pending_skip > 0 {{ self.stack.push(Frame::{p}(f)); continue 'run; }}\n                    match f.st {{\n"
+        );
         for (name, body) in &bodies {
             let _ = write!(
                 arm,
                 "                        {p}St::{name} => {{\n{body}                        }}\n"
             );
         }
-        arm.push_str("                    }\n                }\n");
+        arm.push_str("                    }\n                    }\n                }\n");
         arm
     }
 
@@ -412,7 +419,7 @@ impl<'i> Gen<'i> {
             if state.newline_injected {
                 let _ = writeln!(
                     b,
-                    "{:i$}Some(b'\\n') => {{ self.advance(); self.stack.push(Frame::{p}(f)); continue 'run; }}",
+                    "{:i$}Some(b'\\n') => {{ self.advance(); continue 'st; }}",
                     "",
                     i = IND + 4
                 );
@@ -557,13 +564,11 @@ impl<'i> Gen<'i> {
     fn apply_end(&self, b: &mut String, end: &SeqEnd, p: &str, ind: usize) {
         match end {
             SeqEnd::Redispatch => {
-                let _ = writeln!(b, "{:ind$}self.stack.push(Frame::{p}(f));", "");
-                let _ = writeln!(b, "{:ind$}continue 'run;", "");
+                let _ = writeln!(b, "{:ind$}continue 'st;", "");
             }
             SeqEnd::Goto(st) => {
                 let _ = writeln!(b, "{:ind$}f.st = {p}St::{st};", "");
-                let _ = writeln!(b, "{:ind$}self.stack.push(Frame::{p}(f));", "");
-                let _ = writeln!(b, "{:ind$}continue 'run;", "");
+                let _ = writeln!(b, "{:ind$}continue 'st;", "");
             }
         }
     }
