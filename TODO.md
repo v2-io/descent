@@ -879,3 +879,28 @@ to a proper standalone Rust crate and retire the Ruby workflow:
       keep working throughout.
 - [ ] Validator: reject grammar locals that collide with generated frame
       field names (`st` is reserved by the pushdown backend today).
+
+## Pin the UDON version descent reads (Joseph, 2026-07-16)
+
+`.desc` files are (nominally) UDON documents — now named `*.descent.udon` in
+the consumer — but descent currently reads them with a bespoke
+pipe-delimited lexer, not a conformant UDON parser. Track the contract
+carefully, in both eras:
+
+- [ ] **Now (bespoke lexer):** declare, in one operable place (a
+      `DESC-UDON-VERSION` file or a constant surfaced by `descent-rs
+      --version`), which UDON core version the `.desc` dialect is *written
+      against* — i.e. the version whose syntax the lexer's subset is meant
+      to be a subset of. Consumers' grammar files should stay valid UDON at
+      that pinned version (a CI check parsing them with the pinned
+      `udon-core` — the vendored copy at `rust/vendor/udon-core` is the
+      seed — would catch drift long before bootstrapping).
+- [ ] **Bootstrapping era:** when descent starts parsing its input via
+      `udon-core` proper, the dependency must be a *stable, tagged*
+      compliance version (`core-vX.Y.Z`), declared the same way UDON's
+      consumers declare `core ^X.Y` — never a floating spec. Circularity
+      note: the udon-core that parses the grammar and the udon-core the
+      grammar generates must be allowed to differ by exactly one
+      stable-version step, or a broken grammar could regenerate the parser
+      that misreads the grammar (same bootstrap trap as udon-in-udon
+      fixtures — see the umbrella's TODO-META).
