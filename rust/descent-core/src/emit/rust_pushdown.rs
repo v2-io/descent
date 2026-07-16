@@ -589,6 +589,14 @@ impl<'i> Gen<'i> {
                 "mark" => {
                     let _ = writeln!(b, "{:ind$}self.mark();", "");
                 }
+                "save" => {
+                    let slot = cmd.arg_str("slot").unwrap_or("");
+                    let _ = writeln!(
+                        b,
+                        "{:ind$}{{ let cap = self.save_capture(); self.saved.insert(\"{slot}\", cap); }}",
+                        ""
+                    );
+                }
                 "term" => {
                     let off = cmd.args.get("offset").and_then(|v| v.as_i64()).unwrap_or(0);
                     let _ = writeln!(b, "{:ind$}self.set_term({off});", "");
@@ -661,7 +669,7 @@ impl<'i> Gen<'i> {
                     let _ = writeln!(b, "{:ind$}continue 'run;", "");
                     return;
                 }
-                "emit" | "inline_emit_bare" | "inline_emit_mark" | "inline_emit_literal" => {
+                "emit" | "inline_emit_bare" | "inline_emit_mark" | "inline_emit_literal" | "inline_emit_saved" => {
                     self.render_emit(b, cmd, ind);
                 }
                 "error" => {
@@ -792,6 +800,15 @@ impl<'i> Gen<'i> {
                 let _ = writeln!(
                     b,
                     "{:ind$}{{ let c = self.term_owned(); on_event(StreamEvent::{t} {{ content: c, span: self.gspan_from_mark() }}); }}",
+                    ""
+                );
+            }
+            "inline_emit_saved" => {
+                let t = cmd.arg_str("type").unwrap_or("");
+                let slot = cmd.arg_str("slot").unwrap_or("");
+                let _ = writeln!(
+                    b,
+                    "{:ind$}if let Some((c, sp)) = self.saved.get(\"{slot}\") {{ on_event(StreamEvent::{t} {{ content: c.clone(), span: sp.clone() }}); }}",
                     ""
                 );
             }
@@ -1031,6 +1048,10 @@ pub struct PushdownParser {
     column: u32,
     finished: bool,
     started: bool,
+    /// SAVE(slot) captures — owned (content, global span) so a drain or
+    /// chunk seam can never invalidate them. Re-emitted by
+    /// TypeName(USE_SAVED(slot)).
+    saved: std::collections::HashMap<&'static str, (Vec<u8>, std::ops::Range<usize>)>,
 }
 
 impl Default for PushdownParser {
@@ -1052,6 +1073,7 @@ impl PushdownParser {
             term_pos: usize::MAX,
             prepend_buf: Vec::new(),
             term_prepend_len: 0,
+            saved: std::collections::HashMap::new(),
             pending_skip: 0,
             ret: 0,
             line: 1,
@@ -1175,6 +1197,15 @@ impl PushdownParser {
             combined.extend_from_slice(slice);
             combined
         }
+    }
+
+    /// Snapshot the current MARK..TERM capture for SAVE(slot) — owned copy,
+    /// non-destructive (prepend buffer untouched).
+    fn save_capture(&self) -> (Vec<u8>, std::ops::Range<usize>) {
+        let end = if self.term_pos != usize::MAX { self.term_pos } else { self.pos };
+        let content = self.buf[self.mark_pos.min(end)..end].to_vec();
+        let span = (self.base + self.mark_pos)..(self.base + end.max(self.mark_pos));
+        (content, span)
     }
 
     #[inline(always)]

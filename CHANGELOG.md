@@ -5,6 +5,24 @@ All notable changes to descent will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Saved captures — `SAVE(slot)` + `TypeName(USE_SAVED(slot))`** (2026-07-16,
+  descent-rs, both backends): snapshot the current MARK..TERM capture into a
+  named parser-global slot and re-emit it later, any number of times, from
+  any function. Recursive backend stores a zero-copy range; pushdown stores
+  an owned copy so drains/chunk seams can never invalidate it. Motivating
+  use: UDON's flat attribute wire re-emits the attribute key for every value
+  segment (multi-line text values, warn+stack ingestion, inline forms inside
+  text blobs).
+
+### Fixed
+- **Param-type propagation through assignment-calls** (descent-rs): `x =
+  /fn(args)` call sites now participate in byte/bytes param-type inference —
+  previously only plain `/fn(args)` commands did, so capturing an INT-returning
+  function's result silently degraded its byte-typed params to i32.
+
 ## [0.7.1] - 2026-01-09
 
 ### Fixed

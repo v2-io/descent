@@ -90,6 +90,14 @@ pub enum CmdKind {
     AddAssign { var: String, expr: String },
     SubAssign { var: String, expr: String },
     InlineEmitMark(String),
+    /// SAVE(slot): snapshot the current MARK..TERM capture into a named
+    /// parser-global slot, re-emittable later via TypeName(USE_SAVED(slot)).
+    /// Motivating use: UDON's flat attribute wire re-emits the attribute
+    /// key for every value segment (multi-line text, warn+stack ingestion).
+    Save(String),
+    /// TypeName(USE_SAVED(slot)): emit an event whose payload is the saved
+    /// capture — content and span both come from the slot.
+    InlineEmitSaved { ty: String, slot: String },
     InlineEmitLiteral { ty: String, literal: String },
     InlineEmitBare(String),
     Noop,

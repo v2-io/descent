@@ -436,6 +436,10 @@ fn classify_command(token: &Token) -> Result<(CmdKind, usize), ParseError> {
         CmdKind::KeywordsLookup(c[1].to_string())
     } else if let Some(c) = re(r"(?i)^PREPEND\(([^)]*)\)$").captures(tag) {
         prepend_kind(&c[1])
+    } else if let Some(c) = re(r"(?i)^SAVE\((\w+)\)$").captures(tag) {
+        CmdKind::Save(c[1].to_string())
+    } else if let Some(c) = re(r"^([A-Z]\w*)\(USE_SAVED\((\w+)\)\)$").captures(tag) {
+        CmdKind::InlineEmitSaved { ty: c[1].to_string(), slot: c[2].to_string() }
     } else if let Some(c) = re(r"^([A-Z]\w*)\(USE_MARK\)$").captures(tag) {
         CmdKind::InlineEmitMark(c[1].to_string())
     } else if let Some(c) = re(r"^([A-Z]\w*)\(([^)]+)\)$").captures(tag) {
@@ -500,6 +504,10 @@ fn parse_inline_command(cmd: &str) -> Result<CmdKind, ParseError> {
         CmdKind::SubAssign { var: c[1].to_string(), expr: c[2].to_string() }
     } else if let Some(c) = re(r"(?s)^(\w+)\s*=\s*(.+)$").captures(cmd) {
         CmdKind::Assign { var: c[1].to_string(), expr: c[2].to_string() }
+    } else if let Some(c) = re(r"(?i)^SAVE\((\w+)\)$").captures(cmd) {
+        CmdKind::Save(c[1].to_string())
+    } else if let Some(c) = re(r"^([A-Z]\w*)\(USE_SAVED\((\w+)\)\)$").captures(cmd) {
+        CmdKind::InlineEmitSaved { ty: c[1].to_string(), slot: c[2].to_string() }
     } else if let Some(c) = re(r"^([A-Z]\w*)\(USE_MARK\)$").captures(cmd) {
         CmdKind::InlineEmitMark(c[1].to_string())
     } else if let Some(c) = re(r"^([A-Z]\w*)\(([^)]+)\)$").captures(cmd) {

@@ -98,6 +98,10 @@ pub struct Parser<'a> {
     input: &'a [u8],
     pos: usize,
     mark_pos: usize,
+{% for slot in saved_slots %}
+    /// SAVE({{ slot }}) capture — re-emittable via TypeName(USE_SAVED({{ slot }}))
+    saved_{{ slot }}: std::ops::Range<usize>,
+{% endfor %}
     term_pos: usize,
     prepend_buf: Vec<u8>,
     /// Prepend bytes consumed by the most recent term() — spans extend back
@@ -115,6 +119,9 @@ impl<'a> Parser<'a> {
             input,
             pos: 0,
             mark_pos: 0,
+{% for slot in saved_slots %}
+            saved_{{ slot }}: 0..0,
+{% endfor %}
             term_pos: 0,
             prepend_buf: Vec::new(),
             term_prepend_len: 0,

@@ -250,7 +250,7 @@ fn mark_returns_after_inline_emits(commands: Vec<Command>) -> Vec<Command> {
         .into_iter()
         .map(|cmd| {
             match cmd.ctype.as_str() {
-                "inline_emit_bare" | "inline_emit_mark" | "inline_emit_literal" => {
+                "inline_emit_bare" | "inline_emit_mark" | "inline_emit_literal" | "inline_emit_saved" => {
                     has_inline_emit = true;
                     cmd
                 }
@@ -306,6 +306,10 @@ fn build_command(cmd: &ast::Command) -> Result<Command> {
         Call(v) => ("call", parse_call_value(v)),
         InlineEmitBare(v) => ("inline_emit_bare", json!({ "type": v })),
         InlineEmitMark(v) => ("inline_emit_mark", json!({ "type": v })),
+        Save(v) => ("save", json!({ "slot": v })),
+        InlineEmitSaved { ty, slot } => {
+            ("inline_emit_saved", json!({ "type": ty, "slot": slot }))
+        }
         InlineEmitLiteral { ty, literal } => {
             ("inline_emit_literal", json!({ "type": ty, "literal": literal }))
         }
@@ -946,20 +950,33 @@ fn plain_call_sites(functions: &[Function]) -> Vec<CallSite> {
         for state in &func.states {
             for kase in &state.cases {
                 for cmd in &kase.commands {
-                    if cmd.ctype != "call" {
-                        continue;
+                    if cmd.ctype == "call" {
+                        let Some(call_args) = cmd.arg_str("call_args") else {
+                            continue;
+                        };
+                        let Some(name) = cmd.arg_str("name") else {
+                            continue;
+                        };
+                        sites.push(CallSite {
+                            caller: fi,
+                            callee: name.to_string(),
+                            args: call_args.split(',').map(|a| a.trim().to_string()).collect(),
+                        });
+                    } else if cmd.ctype == "assign" {
+                        // `x = /fn(args)` — an assignment-from-call is a call
+                        // site too; without this, param types (byte/bytes)
+                        // fail to propagate through captured calls.
+                        let Some(expr) = cmd.arg_str("expr") else {
+                            continue;
+                        };
+                        if let Some(c) = re(r"^/(\w+)\((.*)\)\s*$").captures(expr.trim()) {
+                            sites.push(CallSite {
+                                caller: fi,
+                                callee: c[1].to_string(),
+                                args: c[2].split(',').map(|a| a.trim().to_string()).collect(),
+                            });
+                        }
                     }
-                    let Some(call_args) = cmd.arg_str("call_args") else {
-                        continue;
-                    };
-                    let Some(name) = cmd.arg_str("name") else {
-                        continue;
-                    };
-                    sites.push(CallSite {
-                        caller: fi,
-                        callee: name.to_string(),
-                        args: call_args.split(',').map(|a| a.trim().to_string()).collect(),
-                    });
                 }
             }
         }

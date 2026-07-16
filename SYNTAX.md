@@ -332,3 +332,15 @@ See [characters.md](characters.md) for complete specification.
     |LETTER     | ->                  |>>
     |default    | TERM | KEYWORDS(kw) |return
 ```
+
+### Saved captures (SAVE / USE_SAVED)
+
+```
+| SAVE(slot)                 ; snapshot current MARK..TERM into named slot
+| TypeName(USE_SAVED(slot))  ; emit with the saved content + span
+```
+
+Slots are parser-global (usable across functions) and re-emittable any
+number of times. `SAVE` is non-destructive: the live MARK/TERM/prepend
+state is untouched. In the pushdown backend the slot owns a copy of the
+bytes, so buffer drains and chunk seams cannot invalidate it.

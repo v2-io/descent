@@ -137,6 +137,14 @@
 {# Inline emit using accumulated content: TypeName(USE_MARK) #}
                     on_event(Event::{{ cmd.args.type }} { content: self.term(), span: self.span_from_mark() });
 
+{% elif cmd.type == "save" %}
+{# SAVE(slot): snapshot the current MARK..TERM capture (zero-copy range) #}
+                    self.saved_{{ cmd.args.slot }} = { let end = if self.term_pos != usize::MAX { self.term_pos } else { self.pos }; self.mark_pos..end };
+
+{% elif cmd.type == "inline_emit_saved" %}
+{# TypeName(USE_SAVED(slot)): emit the saved capture (content + span) #}
+                    on_event(Event::{{ cmd.args.type }} { content: std::borrow::Cow::Borrowed(&self.input[self.saved_{{ cmd.args.slot }}.clone()]), span: self.saved_{{ cmd.args.slot }}.clone() });
+
 {% elif cmd.type == "inline_emit_literal" %}
 {# Inline emit with literal: TypeName(literal). The payload is emitted
    VERBATIM — descent has no opinion about consumer sigils. A quoted

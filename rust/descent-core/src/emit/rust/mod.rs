@@ -53,9 +53,12 @@ pub fn build_context(ir: &ParserIR, opts: &Options) -> Value {
     let functions_data: Vec<Value> = ir.functions.iter().map(|f| function_to_value(f, ir)).collect();
     let usage = analyze_helper_usage(&functions_data);
 
+    let saved_slots = collect_saved_slots(&functions_data);
+
     json!({
         "parser": ir.name,
         "entry_point": ir.entry_point,
+        "saved_slots": saved_slots,
         "types": ir.types.iter().map(type_to_value).collect::<Vec<_>>(),
         "functions": functions_data,
         "keywords": ir.keywords.iter().map(keywords_to_value).collect::<Vec<_>>(),
@@ -370,6 +373,34 @@ fn analyze_helper_usage(functions_data: &[Value]) -> Usage {
     usage.span = true;
 
     usage
+}
+
+/// Collect every SAVE(slot) / USE_SAVED(slot) name so the template can
+/// declare one parser field per slot (sorted, deduped).
+fn collect_saved_slots(functions_data: &[Value]) -> Vec<String> {
+    let mut slots = std::collections::BTreeSet::new();
+    fn walk(v: &Value, slots: &mut std::collections::BTreeSet<String>) {
+        match v {
+            Value::Object(map) => {
+                if let (Some(t), Some(args)) = (map.get("type").and_then(|t| t.as_str()), map.get("args")) {
+                    if t == "save" || t == "inline_emit_saved" {
+                        if let Some(slot) = args.get("slot").and_then(|s| s.as_str()) {
+                            slots.insert(slot.to_string());
+                        }
+                    }
+                }
+                for val in map.values() {
+                    walk(val, slots);
+                }
+            }
+            Value::Array(a) => a.iter().for_each(|val| walk(val, slots)),
+            _ => {}
+        }
+    }
+    for f in functions_data {
+        walk(f, &mut slots);
+    }
+    slots.into_iter().collect()
 }
 
 fn arr(v: Option<&Value>) -> &[Value] {
