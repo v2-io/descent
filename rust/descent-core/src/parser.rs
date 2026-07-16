@@ -498,6 +498,8 @@ fn parse_inline_command(cmd: &str) -> Result<CmdKind, ParseError> {
         // NOTE (quirk, mirrored from Ruby): inline /call captures the name
         // only — any arguments are silently dropped.
         CmdKind::Call(c[1].to_string())
+    } else if let Some(c) = re(r"^(\w+)\s*=\s*KEYWORDS\((\w+)\)$").captures(cmd) {
+        CmdKind::KeywordsTry { var: c[1].to_string(), name: c[2].to_string() }
     } else if let Some(c) = re(r"(?s)^(\w+)\s*\+=\s*(.+)$").captures(cmd) {
         CmdKind::AddAssign { var: c[1].to_string(), expr: c[2].to_string() }
     } else if let Some(c) = re(r"(?s)^(\w+)\s*-=\s*(.+)$").captures(cmd) {

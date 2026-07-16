@@ -95,6 +95,9 @@ pub enum CmdKind {
     /// Motivating use: UDON's flat attribute wire re-emits the attribute
     /// key for every value segment (multi-line text, warn+stack ingestion).
     Save(String),
+    /// `var = KEYWORDS(map)`: try the keyword lookup (emit on match), store
+    /// 1/0 in var, never call a fallback — lets the grammar branch itself.
+    KeywordsTry { var: String, name: String },
     /// TypeName(USE_SAVED(slot)): emit an event whose payload is the saved
     /// capture — content and span both come from the slot.
     InlineEmitSaved { ty: String, slot: String },

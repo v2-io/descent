@@ -177,9 +177,14 @@ fn build_state(state: &ast::State, params: &[String]) -> Result<State> {
 
     let has_default = cases.iter().any(|c| c.is_default());
 
-    let is_unconditional = cases.first().is_some_and(|c| {
-        c.chars.is_none() && c.special_class.is_none() && c.param_ref.is_none() && c.condition.is_none()
-    });
+    // A state with an explicit |eof handler is never "unconditional": the
+    // unconditional rendering executes its single case without consulting
+    // EOF, which would silently drop the |eof commands (e.g. Unclosed*
+    // errors emitted at end-of-input).
+    let is_unconditional = state.eof_handler.is_none()
+        && cases.first().is_some_and(|c| {
+            c.chars.is_none() && c.special_class.is_none() && c.param_ref.is_none() && c.condition.is_none()
+        });
 
     let eof_handler = match &state.eof_handler {
         Some(h) => {
@@ -307,6 +312,7 @@ fn build_command(cmd: &ast::Command) -> Result<Command> {
         InlineEmitBare(v) => ("inline_emit_bare", json!({ "type": v })),
         InlineEmitMark(v) => ("inline_emit_mark", json!({ "type": v })),
         Save(v) => ("save", json!({ "slot": v })),
+        KeywordsTry { var, name } => ("keywords_try", json!({ "var": var, "name": name })),
         InlineEmitSaved { ty, slot } => {
             ("inline_emit_saved", json!({ "type": ty, "slot": slot }))
         }
@@ -804,7 +810,14 @@ fn collect_custom_error_codes(functions: &[Function]) -> Vec<String> {
     let mut codes: BTreeSet<String> = BTreeSet::new();
 
     for func in functions {
+        if let Some(cmds) = &func.eof_handler {
+            collect_error_codes_from_commands(cmds, &mut codes);
+        }
         for state in &func.states {
+            // |eof handlers can carry /error(code) too (e.g. Unclosed*)
+            if let Some(cmds) = &state.eof_handler {
+                collect_error_codes_from_commands(cmds, &mut codes);
+            }
             for kase in &state.cases {
                 collect_error_codes_from_commands(&kase.commands, &mut codes);
             }

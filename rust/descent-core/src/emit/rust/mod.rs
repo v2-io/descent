@@ -205,7 +205,7 @@ fn find_mutable_locals(func: &Function) -> Vec<String> {
 fn collect_mutable_vars(commands: &[Command], mutable: &mut Vec<String>) {
     for cmd in commands {
         match cmd.ctype.as_str() {
-            "assign" | "add_assign" | "sub_assign" => {
+            "assign" | "add_assign" | "sub_assign" | "keywords_try" => {
                 if let Some(var) = cmd.arg_str("var") {
                     if !mutable.iter().any(|m| m == var) {
                         mutable.push(var.to_string());
@@ -225,8 +225,20 @@ fn collect_mutable_vars(commands: &[Command], mutable: &mut Vec<String>) {
 }
 
 fn state_to_value(state: &State, ir: &ParserIR) -> Value {
+    // A state whose cases are all byte-independent (conditionals / bare
+    // default — no character or class matches, no explicit |eof) cannot
+    // consume input, so its logic must also run at EOF: the inferred-EOF
+    // preamble is suppressed for it (the `_ if cond` / `_` match arms are
+    // total over peek() == None). Without this, dispatch states like
+    // `|if[PREV == '?'] ... |default ...` silently early-return at EOF.
+    let byte_independent = !state.cases.is_empty()
+        && state.eof_handler.is_none()
+        && state.cases.iter().all(|c| {
+            c.chars.is_none() && c.special_class.is_none() && c.param_ref.is_none()
+        });
     json!({
         "name": state.name,
+        "byte_independent": byte_independent,
         "cases": state.cases.iter().map(|c| case_to_value(c, ir)).collect::<Vec<_>>(),
         "eof_handler": state.eof_handler.as_ref().map(|cmds| {
             cmds.iter().map(|c| command_to_value(c, Some(ir))).collect::<Vec<_>>()

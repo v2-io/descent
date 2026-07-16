@@ -720,7 +720,10 @@ impl<'a> Parser<'a> {
                 _ => unreachable!("scan_to only returns target chars"),
             }
             {% else %}
-            {# Non-scannable: check EOF first, then match #}
+            {# Non-scannable: check EOF first, then match — skipped for
+               byte-independent states (pure conditionals/default): their
+               `_ if` / `_` arms are total and must run at EOF too #}
+            {% if not state.byte_independent %}
             if self.eof() {
                 {% if trace %}eprintln!("TRACE: L{{ state.lineno }} {{ func.name }}:{{ state.name }} EOF | term={} pos={}", self.trace_content(), self.pos);{% endif %}
                 {% if state.eof_handler | length > 0 %}
@@ -746,6 +749,7 @@ impl<'a> Parser<'a> {
                 {% if return_type_info.kind == "internal" %}return 0;{% else %}return;{% endif %}
                 {% endif %}
             }
+            {% endif %}
             {# Optimization: if only one case and it's default, skip the match #}
             {% if state.cases | length == 1 and state.cases[0].is_default %}
             {% set kase = state.cases[0] %}
@@ -879,7 +883,9 @@ impl<'a> Parser<'a> {
                     {{ render_command(cmd, func, return_type_info) }}
                     {% endfor %}
                     {% else %}
-                    {# Non-scannable: check EOF first #}
+                    {# Non-scannable: check EOF first (skipped for
+                       byte-independent states — see above) #}
+                    {% if not state.byte_independent %}
                     if self.eof() {
                         {% if trace %}eprintln!("TRACE: L{{ state.lineno }} {{ func.name }}:{{ state.name }} EOF | term={} pos={}", self.trace_content(), self.pos);{% endif %}
                         {% if state.eof_handler | length > 0 %}
@@ -902,6 +908,7 @@ impl<'a> Parser<'a> {
                         {% if return_type_info.kind == "internal" %}return 0;{% else %}return;{% endif %}
                         {% endif %}
                     }
+                    {% endif %}
                     {# Optimization: if only one case and it's default, skip the match #}
                     {% if state.cases | length == 1 and state.cases[0].is_default %}
                     {% set kase = state.cases[0] %}

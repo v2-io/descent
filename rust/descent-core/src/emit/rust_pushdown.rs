@@ -418,16 +418,27 @@ impl<'i> Gen<'i> {
             return b;
         }
 
+        // Byte-independent state (pure conditionals/default — no character
+        // or class cases, no explicit |eof): it cannot consume input, so its
+        // guard chain must also run at EOF — skip the exhausted/EOF preamble
+        // entirely (mirrors the recursive backend's byte_independent flag).
+        let byte_independent = state.eof_handler.is_none()
+            && state.cases.iter().all(|c| {
+                c.chars.is_none() && c.special_class.is_none() && c.param_ref.is_none()
+            });
+
         // Non-scannable: exhausted check, then dispatch.
-        let _ = writeln!(b, "{:IND$}if self.pos >= self.buf.len() {{", "");
-        let _ = writeln!(
-            b,
-            "{:i$}if !self.finished {{ self.stack.push(Frame::{p}(f)); return ParseResult::NeedMoreData; }}",
-            "",
-            i = IND + 4
-        );
-        self.render_eof(&mut b, state, info, p, IND + 4, &home);
-        let _ = writeln!(b, "{:IND$}}}", "");
+        if !byte_independent {
+            let _ = writeln!(b, "{:IND$}if self.pos >= self.buf.len() {{", "");
+            let _ = writeln!(
+                b,
+                "{:i$}if !self.finished {{ self.stack.push(Frame::{p}(f)); return ParseResult::NeedMoreData; }}",
+                "",
+                i = IND + 4
+            );
+            self.render_eof(&mut b, state, info, p, IND + 4, &home);
+            let _ = writeln!(b, "{:IND$}}}", "");
+        }
 
         if state.cases.len() == 1 && state.cases[0].is_default() {
             let cmds = state.cases[0].commands.clone();
@@ -588,6 +599,15 @@ impl<'i> Gen<'i> {
                 }
                 "mark" => {
                     let _ = writeln!(b, "{:ind$}self.mark();", "");
+                }
+                "keywords_try" => {
+                    let var = cmd.arg_str("var").unwrap_or("");
+                    let kw = cmd.arg_str("name").unwrap_or("");
+                    let _ = writeln!(
+                        b,
+                        "{:ind$}f.{var} = if self.lookup_{kw}(on_event) {{ 1 }} else {{ 0 }};",
+                        ""
+                    );
                 }
                 "save" => {
                     let slot = cmd.arg_str("slot").unwrap_or("");
