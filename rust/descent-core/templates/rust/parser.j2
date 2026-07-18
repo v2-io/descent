@@ -697,7 +697,12 @@ impl<'a> Parser<'a> {
                     {% if return_type_info.kind == "content" %}
                     on_event(Event::{{ func.return_type }} { content: self.term(), span: self.span_from_mark() });
                     {% endif %}
-                    {% if func.expects_char %}
+                    {% if func.delimited_code %}
+                    on_event(Event::Warning { content: std::borrow::Cow::Borrowed(b"{{ func.delimited_code }}"), span: self.span() });
+                    {% if return_type_info.kind == "bracket" %}
+                    on_event(Event::{{ func.return_type }}End { span: self.span() });
+                    {% endif %}
+                    {% elif func.expects_char %}
                     on_event(Event::Error { code: ParseErrorCode::Unclosed{{ func.return_type }}, span: self.span() });
                     {% elif return_type_info.kind == "bracket" %}
                     on_event(Event::{{ func.return_type }}End { span: self.span() });
@@ -729,7 +734,12 @@ impl<'a> Parser<'a> {
                 {% if return_type_info.kind == "content" %}
                 on_event(Event::{{ func.return_type }} { content: self.term(), span: self.span_from_mark() });
                 {% endif %}
-                {% if func.expects_char %}
+                {% if func.delimited_code %}
+                on_event(Event::Warning { content: std::borrow::Cow::Borrowed(b"{{ func.delimited_code }}"), span: self.span() });
+                {% if return_type_info.kind == "bracket" %}
+                on_event(Event::{{ func.return_type }}End { span: self.span() });
+                {% endif %}
+                {% elif func.expects_char %}
                 on_event(Event::Error { code: ParseErrorCode::Unclosed{{ func.return_type }}, span: self.span() });
                 {% elif return_type_info.kind == "bracket" %}
                 on_event(Event::{{ func.return_type }}End { span: self.span() });
@@ -839,7 +849,12 @@ impl<'a> Parser<'a> {
                             {% if return_type_info.kind == "content" %}
                             on_event(Event::{{ func.return_type }} { content: self.term(), span: self.span_from_mark() });
                             {% endif %}
-                            {% if func.expects_char %}
+                            {% if func.delimited_code %}
+                            on_event(Event::Warning { content: std::borrow::Cow::Borrowed(b"{{ func.delimited_code }}"), span: self.span() });
+                            {% if return_type_info.kind == "bracket" %}
+                            on_event(Event::{{ func.return_type }}End { span: self.span() });
+                            {% endif %}
+                            {% elif func.expects_char %}
                             on_event(Event::Error { code: ParseErrorCode::Unclosed{{ func.return_type }}, span: self.span() });
                             {% elif return_type_info.kind == "bracket" %}
                             on_event(Event::{{ func.return_type }}End { span: self.span() });
@@ -875,7 +890,12 @@ impl<'a> Parser<'a> {
                         {% if return_type_info.kind == "content" %}
                         on_event(Event::{{ func.return_type }} { content: self.term(), span: self.span_from_mark() });
                         {% endif %}
-                        {% if func.expects_char %}
+                        {% if func.delimited_code %}
+                        on_event(Event::Warning { content: std::borrow::Cow::Borrowed(b"{{ func.delimited_code }}"), span: self.span() });
+                        {% if return_type_info.kind == "bracket" %}
+                        on_event(Event::{{ func.return_type }}End { span: self.span() });
+                        {% endif %}
+                        {% elif func.expects_char %}
                         on_event(Event::Error { code: ParseErrorCode::Unclosed{{ func.return_type }}, span: self.span() });
                         {% elif return_type_info.kind == "bracket" %}
                         on_event(Event::{{ func.return_type }}End { span: self.span() });

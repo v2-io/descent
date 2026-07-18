@@ -156,6 +156,7 @@ fn function_to_value(func: &Function, ir: &ParserIR) -> Value {
         "entry_actions": filtered_entry_actions.iter().map(|c| command_to_value(c, None)).collect::<Vec<_>>(),
         "emits_events": func.emits_events,
         "expects_char": func.expects_char,
+        "delimited_code": func.delimited_code,
         "emits_content_on_close": func.emits_content_on_close,
         "prepend_values": prepend_values,
         "lineno": func.lineno,

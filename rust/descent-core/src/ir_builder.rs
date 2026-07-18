@@ -73,14 +73,38 @@ impl<'a> IRBuilder<'a> {
         // NOTE: Ruby calls transform_call_args_by_type here; deliberately
         // omitted (see module docs) — emit::rust does it at context time.
 
-        Ok(ParserIR {
+        let mut ir = ParserIR {
             name: self.ast.name.clone(),
             entry_point: self.ast.entry_point.clone(),
             types,
             functions,
             keywords,
             custom_error_codes,
-        })
+        };
+
+        // Positional/delimited classification post-pass: a function classified
+        // **delimited** that carries a return type and has no single-literal
+        // `expects_char` gets its `Unclosed<ReturnType>` warning code, so the
+        // generator can force-unwind it at EOF (param / multi-byte / depth /
+        // callee closers that `expects_char` cannot see — e.g. `quoted(:q)`).
+        // NOTE: `Unclosed<ReturnType>` is a first-cut derivation; it matches the
+        // hand codes for the regular constructs (StringValue/Interpolation/
+        // Array) but not the irregular ones (embed_content:Text→UnclosedEmbedded,
+        // freeform→UnterminatedFreeform), which keep their hand arms for now and
+        // want a construct-name convention (TODO-DESCENT "derive Unclosed<Name>").
+        let delimited: std::collections::HashSet<String> = crate::classify::classify(&ir)
+            .into_iter()
+            .filter(|c| c.kind == crate::classify::Kind::Delimited)
+            .map(|c| c.name)
+            .collect();
+        for f in ir.functions.iter_mut() {
+            if f.expects_char.is_none() && delimited.contains(&f.name) {
+                if let Some(rt) = &f.return_type {
+                    f.delimited_code = Some(format!("Unclosed{rt}"));
+                }
+            }
+        }
+        Ok(ir)
     }
 }
 
@@ -273,6 +297,7 @@ fn build_function(func: &ast::Function, types: &[TypeInfo]) -> Result<Function> 
         entry_actions,
         emits_events,
         expects_char,
+        delimited_code: None, // set by the classification post-pass in build()
         emits_content_on_close,
         prepend_values: vec![],
         lineno: func.lineno,

@@ -87,6 +87,13 @@ pub struct Function {
     pub emits_events: Option<bool>,
     /// Single char (as string) that must be seen to return.
     pub expects_char: Option<String>,
+    /// Full `Unclosed*` warning code when this function is classified
+    /// **delimited** (positional/delimited classification pass) and carries a
+    /// return type. Drives the generated force-unwind warning at EOF —
+    /// distinct from `expects_char`, which only sees single-literal closers.
+    /// `None` for positional functions and for delimited ones whose closer
+    /// `expects_char` already handles.
+    pub delimited_code: Option<String>,
     pub emits_content_on_close: bool,
     /// Param name -> sorted byte values passed at call sites (neutral,
     /// unescaped — Ruby stores these pre-Rust-escaped; see module docs).
