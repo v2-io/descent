@@ -22,6 +22,24 @@ generated code carries the benchmarking discipline in the README.
   consumers. Supersedes the aggregate-event sketch in udon's
   `design/eof-model-proposal-2026-07.md`.
 
+- [ ] **Derive `Unclosed<Name>` from the construct, not hand-injected** (from
+  UDON EOF work, 2026-07-18). A delimited function/type already names its
+  construct, so its unclosed-anomaly code should fall out of that name
+  (`Embedded` → `UnclosedEmbedded`) instead of being written per construct in
+  both grammar and spec. Rides the positional/delimited inference above
+  (soft-failure generation + entry site already know the frame's identity).
+  One fewer scattered place to keep in sync in every consumer.
+
+- [ ] **Emit a parser manifest — what the generator detected** (Joseph,
+  2026-07-18). Alongside the parser, output the parser's own inventory: the
+  warning/error codes it can issue, each function's positional/delimited
+  classification, entry sites — a machine-readable self-description that
+  doubles as a "pre-fixture" smoke test. Immediate UDON payoff: diff the
+  emitted warning-code list against the spec's declared vocabulary (Warning
+  codes / End of input) so the two can't silently drift — parser as source,
+  spec checked against it, instead of both hand-maintained. Feeds the
+  spec-DRY direction in `../../spec/TODO-SPEC-CORE.md`.
+
 - [ ] **State templates / a "self-terminating value" state property** (from
   UDON grammar refactor, 2026-07-16) — UDON's `typed_value` has ~15 number
   states that each repeat the same four terminator rows
