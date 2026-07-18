@@ -22,6 +22,7 @@ fn main() -> ExitCode {
             let trace = args.iter().skip(3).any(|s| s == "true");
             dump_context(path, trace, frontend)
         }
+        (Some("classify"), Some(path)) => classify(path, frontend),
         (Some("generate"), Some(path)) => {
             let trace = args.iter().skip(3).any(|s| s == "--trace" || s == "true");
             if let Some(bi) = args.iter().position(|s| s == "--backend") {
@@ -94,6 +95,26 @@ fn generate_pushdown(path: &str, args: &[String], frontend: Frontend) -> ExitCod
         }
     }
     print!("{}", descent_core::emit::rust_pushdown::generate(&ir, &opts));
+    ExitCode::SUCCESS
+}
+
+/// Report-only positional/delimited classification of each grammar function.
+fn classify(path: &str, frontend: Frontend) -> ExitCode {
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("{path}: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let ir = match descent_core::build_ir_with(&content, path, frontend) {
+        Ok(ir) => ir,
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    print!("{}", descent_core::classify::report(&ir));
     ExitCode::SUCCESS
 }
 

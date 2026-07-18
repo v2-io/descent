@@ -12,6 +12,7 @@
 
 pub mod ast;
 pub mod charclass;
+pub mod classify;
 pub mod dump;
 pub mod emit;
 pub mod ir;
