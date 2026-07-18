@@ -9,6 +9,19 @@ generated code carries the benchmarking discipline in the README.
 
 ## Open
 
+- [ ] **Generated EOF: infer positional vs delimited from exit structure**
+  (from UDON EOF framing, 2026-07-17 — design of record
+  `../../spec/TODO-EOF-refactor.md`, especially **Addendum A**). Prefer
+  **no author boolean**: classify function-exit edges (soft success /
+  hard success / soft failure); delimited ≈ EXPECTS unpaid on soft end;
+  positional ≈ soft success accepting. Extends this repo’s *Inferred
+  EXPECTS* sketch (`implementation-spec.md`). Generate soft-success
+  default end vs soft-failure unexpected-EOF + **entry site**; closer
+  language stays in the grammar. Static reject soft+hard success mix
+  without rare override. Deletes the bulk of hand `|eof` arms in
+  consumers. Supersedes the aggregate-event sketch in udon's
+  `design/eof-model-proposal-2026-07.md`.
+
 - [ ] **State templates / a "self-terminating value" state property** (from
   UDON grammar refactor, 2026-07-16) — UDON's `typed_value` has ~15 number
   states that each repeat the same four terminator rows
