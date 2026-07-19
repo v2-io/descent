@@ -29,9 +29,11 @@ generated code carries the benchmarking discipline in the README.
   inline comment/raw/directive callee-scanners) still carry a one-line hand `|eof`
   as an explicit delimited *declaration* — the clean form is the `|unclosed`
   directive (next item); (b) the **static reject** of a soft+hard-success mix is
-  not implemented; (c) **pushdown** backend not yet updated (recursive only);
-  (d) content-keeping at EOF for **accumulating BRACKETs** (`sameline_raw` still
-  drops its raw body, `sameline_dir_body` mislabels — UDON `TODO-CORE-PARSING`).
+  not implemented; (c) content-keeping at EOF for **accumulating BRACKETs**
+  (`sameline_raw` still drops its raw body, `sameline_dir_body` mislabels — UDON
+  `TODO-CORE-PARSING`). *(Backend parity is DONE: the pushdown backend now
+  generates the same EOF handling as the recursive one — the `eof_run` predicates
+  live in shared `ir.rs` — verified by `pushdown_differential`.)*
 
 - [ ] **Derive `Unclosed<Name>` from the construct, not hand-injected** (from
   UDON EOF work, 2026-07-18). A delimited function/type already names its
