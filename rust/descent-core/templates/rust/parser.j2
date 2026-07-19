@@ -693,6 +693,8 @@ impl<'a> Parser<'a> {
                     {% for cmd in func.eof_handler %}
                     {{ render_command(cmd, func, return_type_info) }}
                     {% endfor %}
+                    {% elif state.eof_run_default %}
+                    {% for kase in state.cases %}{% if kase.is_default %}{% for cmd in kase.commands %}{{ render_command(cmd, func, return_type_info) }}{% endfor %}{% endif %}{% endfor %}
                     {% else %}
                     {% if return_type_info.kind == "content" %}
                     on_event(Event::{{ func.return_type }} { content: self.term(), span: self.span_from_mark() });
@@ -729,6 +731,8 @@ impl<'a> Parser<'a> {
                 {% for cmd in func.eof_handler %}
                 {{ render_command(cmd, func, return_type_info) }}
                 {% endfor %}
+                {% elif state.eof_run_default %}
+                {% for kase in state.cases %}{% if kase.is_default %}{% for cmd in kase.commands %}{{ render_command(cmd, func, return_type_info) }}{% endfor %}{% endif %}{% endfor %}
                 {% else %}
                 {# Default EOF behavior based on return type #}
                 {% if return_type_info.kind == "content" %}
@@ -845,6 +849,8 @@ impl<'a> Parser<'a> {
                             {% for cmd in func.eof_handler %}
                             {{ render_command(cmd, func, return_type_info) }}
                             {% endfor %}
+                            {% elif state.eof_run_default %}
+                            {% for kase in state.cases %}{% if kase.is_default %}{% for cmd in kase.commands %}{{ render_command(cmd, func, return_type_info) }}{% endfor %}{% endif %}{% endfor %}
                             {% else %}
                             {% if return_type_info.kind == "content" %}
                             on_event(Event::{{ func.return_type }} { content: self.term(), span: self.span_from_mark() });
@@ -886,6 +892,8 @@ impl<'a> Parser<'a> {
                         {% for cmd in func.eof_handler %}
                         {{ render_command(cmd, func, return_type_info) }}
                         {% endfor %}
+                        {% elif state.eof_run_default %}
+                        {% for kase in state.cases %}{% if kase.is_default %}{% for cmd in kase.commands %}{{ render_command(cmd, func, return_type_info) }}{% endfor %}{% endif %}{% endfor %}
                         {% else %}
                         {% if return_type_info.kind == "content" %}
                         on_event(Event::{{ func.return_type }} { content: self.term(), span: self.span_from_mark() });

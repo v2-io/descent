@@ -252,8 +252,23 @@ fn state_to_value(state: &State, ir: &ParserIR) -> Value {
         .collect();
     scan_args.extend(state.scan_params.iter().cloned());
 
+    // EOF ≡ newline + maximal dedent: a positional state with no explicit
+    // `|eof` arm and no `\n` case, whose fall-through is a `default`, should
+    // run that `default` at EOF (chaining to the state that emits) rather than
+    // the type-default — which for INTERNAL functions is a bare return that
+    // silently drops accumulated content (the gap-9 fall-through drop). Guarded
+    // off self-looping defaults (they would spin at EOF). Delimited functions
+    // override this via `delimited_code`, so it only fires positionally.
+    let has_nl_case = state
+        .cases
+        .iter()
+        .any(|c| c.chars.as_deref().is_some_and(|cs| cs.iter().any(|x| x == "\n")));
+    let eof_run_default =
+        state.eof_handler.is_none() && !state.is_self_looping && !has_nl_case && state.has_default;
+
     json!({
         "name": state.name,
+        "eof_run_default": eof_run_default,
         "byte_independent": byte_independent,
         "scan_args": scan_args,
         "scan_arity": state.scan_arity(),
