@@ -11,7 +11,9 @@ generated code carries the benchmarking discipline in the README.
 
 - [ ] **Generated EOF: infer positional vs delimited from exit structure**
   (from UDON EOF framing, 2026-07-17 — design of record
-  `../../spec/TODO-EOF-refactor.md`, especially **Addendum A**). Prefer
+  `../../spec/TODO-EOF-refactor.md`, its "Grammar / descent direction" section
+  [formerly cited as "Addendum A"]; implemented shape in the UDON repo's
+  `design/eof-descent-classification.md`). Prefer
   **no author boolean**: classify function-exit edges (soft success /
   hard success / soft failure); delimited ≈ EXPECTS unpaid on soft end;
   positional ≈ soft success accepting. Extends this repo’s *Inferred
@@ -29,7 +31,15 @@ generated code carries the benchmarking discipline in the README.
   inline comment/raw/directive callee-scanners) still carry a one-line hand `|eof`
   as an explicit delimited *declaration* — the clean form is the `|unclosed`
   directive (next item); (b) the **static reject** of a soft+hard-success mix is
-  not implemented; (c) content-keeping at EOF for **accumulating BRACKETs**
+  not implemented — and NOTE (from building `classify`): a naive reject would
+  **false-positive**, because "closer" over-fires on consumed chars that are NOT
+  closers (suffix `?!*+`; sub-construct *openers* like `;`/`` ` ``/`{` on the
+  attr/value dispatchers). The reject needs the refined closer rule the classifier
+  uses: a `/call` on the edge = delegation (not a closer); a bracket whose warning
+  is function-level vs state-level distinguishes a whole delimited fn (freeform)
+  from a mixed machine (typed_value's `<…>` sub-region — the extract candidate).
+  See `design/eof-descent-classification.md`; (c) content-keeping at EOF for
+  **accumulating BRACKETs**
   (`sameline_raw` still drops its raw body, `sameline_dir_body` mislabels — UDON
   `TODO-CORE-PARSING`). *(Backend parity is DONE: the pushdown backend now
   generates the same EOF handling as the recursive one — the `eof_run` predicates
