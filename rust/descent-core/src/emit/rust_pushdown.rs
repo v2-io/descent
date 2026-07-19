@@ -518,9 +518,12 @@ impl<'i> Gen<'i> {
         b
     }
 
-    /// EOF behavior once `finish()`ed: explicit handlers, else the same
-    /// type-driven inference as the recursive template's None-arm (content
-    /// emit; Unclosed error for expects_char functions, End for brackets).
+    /// EOF behavior once `finish()`ed — mirrors the recursive backend's
+    /// None-arm so BOTH backends agree (verified by the pushdown differential):
+    /// explicit `|eof` handler wins; else EOF ≡ newline (reuse the state's own
+    /// returning `\n` arm, or its fall-through `default` for a lookahead state);
+    /// else the type-default with the delimited **force-unwind** (content +
+    /// `Warning(Unclosed<Construct>)` + End) for delimited functions.
     fn render_eof(&mut self, b: &mut String, state: &State, info: &FnInfo<'i>, p: &str, ind: usize, home: &str) {
         let handler: Option<&Vec<Command>> = state
             .eof_handler
@@ -532,6 +535,17 @@ impl<'i> Gen<'i> {
             self.render_seq(b, &cmds, info, p, ind, &SeqEnd::Redispatch, home);
             return;
         }
+        // EOF ≡ newline + maximal dedent: run the state's own `\n`/`default` arm.
+        if state.eof_run_newline() {
+            let cmds = state.newline_return_case().unwrap().commands.clone();
+            self.render_seq(b, &cmds, info, p, ind, &SeqEnd::Redispatch, home);
+            return;
+        }
+        if state.eof_run_default() {
+            let cmds = state.default_case().unwrap().commands.clone();
+            self.render_seq(b, &cmds, info, p, ind, &SeqEnd::Redispatch, home);
+            return;
+        }
         if info.kind == "content" {
             let t = info.func.return_type.as_deref().unwrap();
             let _ = writeln!(
@@ -540,9 +554,18 @@ impl<'i> Gen<'i> {
                 ""
             );
         }
-        if info.func.expects_char.is_some() {
-            // Void expects_char functions produce the bare `Unclosed` code,
-            // matching the recursive template's `Unclosed{return_type|dstr}`.
+        if let Some(code) = info.func.delimited_code.as_deref() {
+            // Delimited force-unwind: keep-content warning, then End for brackets.
+            let _ = writeln!(
+                b,
+                "{:ind$}on_event(StreamEvent::Warning {{ content: std::borrow::Cow::Borrowed(&b\"{code}\"[..]), span: self.gspan() }});",
+                ""
+            );
+            if info.kind == "bracket" {
+                let t = info.func.return_type.as_deref().unwrap();
+                let _ = writeln!(b, "{:ind$}on_event(StreamEvent::{t}End {{ span: self.gspan() }});", "");
+            }
+        } else if info.func.expects_char.is_some() {
             let t = info.func.return_type.as_deref().unwrap_or("");
             let _ = writeln!(
                 b,

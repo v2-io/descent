@@ -130,6 +130,15 @@ pub struct State {
     pub lineno: usize,
 }
 
+/// True if this command sequence returns (recursing into conditional clauses).
+/// Shared EOF-derivation helper — used by BOTH backends so they stay in lockstep.
+pub fn commands_return(cmds: &[Command]) -> bool {
+    cmds.iter().any(|c| {
+        c.ctype == "return"
+            || c.clauses.as_ref().is_some_and(|cl| cl.iter().any(|cl| commands_return(&cl.commands)))
+    })
+}
+
 impl State {
     pub fn scannable(&self) -> bool {
         self.scan_chars.as_ref().is_some_and(|c| !c.is_empty()) || !self.scan_params.is_empty()
@@ -138,6 +147,38 @@ impl State {
     /// Total scan arity: static chars + runtime byte params.
     pub fn scan_arity(&self) -> usize {
         self.scan_chars.as_ref().map_or(0, |c| c.len()) + self.scan_params.len()
+    }
+
+    fn has_newline_case(&self) -> bool {
+        self.cases.iter().any(|c| c.matches_newline())
+    }
+
+    /// The `\n` case that RETURNS (a leaf terminal) — the safe target for
+    /// "EOF reuses its newline arm". `None` for loop states (whose `\n`
+    /// continues) so they keep the clean dedent-return at EOF.
+    pub fn newline_return_case(&self) -> Option<&Case> {
+        self.cases.iter().find(|c| c.is_newline_return())
+    }
+
+    pub fn default_case(&self) -> Option<&Case> {
+        self.cases.iter().find(|c| c.is_default())
+    }
+
+    /// EOF ≡ newline: a state with no explicit `|eof` whose `\n` arm returns
+    /// runs that arm at EOF. (Both backends.)
+    pub fn eof_run_newline(&self) -> bool {
+        self.eof_handler.is_none() && self.newline_return_case().is_some()
+    }
+
+    /// EOF ≡ newline + dedent for a lookahead state: no `|eof`, no `\n` case,
+    /// a non-self-looping `default` — run that fall-through `default` at EOF
+    /// (chains to the state that emits) instead of the type-default that would
+    /// drop accumulated content. (Both backends.)
+    pub fn eof_run_default(&self) -> bool {
+        self.eof_handler.is_none()
+            && !self.is_self_looping
+            && !self.has_newline_case()
+            && self.has_default
     }
 }
 
@@ -166,6 +207,14 @@ impl Case {
     }
     pub fn is_conditional(&self) -> bool {
         self.condition.is_some()
+    }
+    /// Matches a `\n` (possibly among other chars).
+    pub fn matches_newline(&self) -> bool {
+        self.chars.as_deref().is_some_and(|cs| cs.iter().any(|x| x == "\n"))
+    }
+    /// A `\n` case whose commands RETURN — the EOF-reuse target (see State).
+    pub fn is_newline_return(&self) -> bool {
+        self.matches_newline() && commands_return(&self.commands)
     }
 }
 
