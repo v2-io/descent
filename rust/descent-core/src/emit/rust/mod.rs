@@ -265,10 +265,20 @@ fn state_to_value(state: &State, ir: &ParserIR) -> Value {
         .any(|c| c.chars.as_deref().is_some_and(|cs| cs.iter().any(|x| x == "\n")));
     let eof_run_default =
         state.eof_handler.is_none() && !state.is_self_looping && !has_nl_case && state.has_default;
+    // A leaf state (no `|eof` arm) whose `\n` arm RETURNS: EOF ≡ newline, so run
+    // that `\n` arm at EOF. This is what lets the ~55 redundant leaf `|eof` arms
+    // (each a verbatim twin of its `\n` arm) be deleted — terminal behavior
+    // expressed once. Guarded on the `\n` arm returning, so loop states (whose
+    // `\n` continues the loop) are excluded and keep the clean dedent-return.
+    let eof_run_newline = state.eof_handler.is_none()
+        && state.cases.iter().any(|c| {
+            c.chars.as_deref().is_some_and(|cs| cs.iter().any(|x| x == "\n")) && cmds_return(&c.commands)
+        });
 
     json!({
         "name": state.name,
         "eof_run_default": eof_run_default,
+        "eof_run_newline": eof_run_newline,
         "byte_independent": byte_independent,
         "scan_args": scan_args,
         "scan_arity": state.scan_arity(),
@@ -286,6 +296,14 @@ fn state_to_value(state: &State, ir: &ParserIR) -> Value {
     })
 }
 
+/// True if the command sequence returns (recursing into conditional clauses).
+fn cmds_return(cmds: &[Command]) -> bool {
+    cmds.iter().any(|c| {
+        c.ctype == "return"
+            || c.clauses.as_ref().is_some_and(|cl| cl.iter().any(|cl| cmds_return(&cl.commands)))
+    })
+}
+
 fn case_to_value(kase: &Case, ir: &ParserIR) -> Value {
     json!({
         "chars": kase.chars,
@@ -296,6 +314,12 @@ fn case_to_value(kase: &Case, ir: &ParserIR) -> Value {
         "substate": kase.substate,
         "commands": kase.commands.iter().map(|c| command_to_value(c, Some(ir))).collect::<Vec<_>>(),
         "is_default": kase.is_default(),
+        // `\n` case that RETURNS (a leaf terminal, not a loop-continuing \n) —
+        // the safe target for EOF-reuses-its-newline-arm. A \n arm that
+        // transitions (loop state) is NOT is_newline_return, so those keep the
+        // clean dedent-return at EOF.
+        "is_newline_return": kase.chars.as_deref().is_some_and(|cs| cs.iter().any(|x| x == "\n"))
+            && cmds_return(&kase.commands),
         "lineno": kase.lineno,
     })
 }

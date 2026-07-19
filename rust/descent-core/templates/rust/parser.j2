@@ -693,6 +693,8 @@ impl<'a> Parser<'a> {
                     {% for cmd in func.eof_handler %}
                     {{ render_command(cmd, func, return_type_info) }}
                     {% endfor %}
+                    {% elif state.eof_run_newline %}
+                    {% for kase in state.cases %}{% if kase.is_newline_return %}{% for cmd in kase.commands %}{{ render_command(cmd, func, return_type_info) }}{% endfor %}{% endif %}{% endfor %}
                     {% elif state.eof_run_default %}
                     {% for kase in state.cases %}{% if kase.is_default %}{% for cmd in kase.commands %}{{ render_command(cmd, func, return_type_info) }}{% endfor %}{% endif %}{% endfor %}
                     {% else %}
@@ -731,6 +733,8 @@ impl<'a> Parser<'a> {
                 {% for cmd in func.eof_handler %}
                 {{ render_command(cmd, func, return_type_info) }}
                 {% endfor %}
+                {% elif state.eof_run_newline %}
+                {% for kase in state.cases %}{% if kase.is_newline_return %}{% for cmd in kase.commands %}{{ render_command(cmd, func, return_type_info) }}{% endfor %}{% endif %}{% endfor %}
                 {% elif state.eof_run_default %}
                 {% for kase in state.cases %}{% if kase.is_default %}{% for cmd in kase.commands %}{{ render_command(cmd, func, return_type_info) }}{% endfor %}{% endif %}{% endfor %}
                 {% else %}
@@ -849,6 +853,8 @@ impl<'a> Parser<'a> {
                             {% for cmd in func.eof_handler %}
                             {{ render_command(cmd, func, return_type_info) }}
                             {% endfor %}
+                            {% elif state.eof_run_newline %}
+                            {% for kase in state.cases %}{% if kase.is_newline_return %}{% for cmd in kase.commands %}{{ render_command(cmd, func, return_type_info) }}{% endfor %}{% endif %}{% endfor %}
                             {% elif state.eof_run_default %}
                             {% for kase in state.cases %}{% if kase.is_default %}{% for cmd in kase.commands %}{{ render_command(cmd, func, return_type_info) }}{% endfor %}{% endif %}{% endfor %}
                             {% else %}
@@ -892,6 +898,8 @@ impl<'a> Parser<'a> {
                         {% for cmd in func.eof_handler %}
                         {{ render_command(cmd, func, return_type_info) }}
                         {% endfor %}
+                        {% elif state.eof_run_newline %}
+                        {% for kase in state.cases %}{% if kase.is_newline_return %}{% for cmd in kase.commands %}{{ render_command(cmd, func, return_type_info) }}{% endfor %}{% endif %}{% endfor %}
                         {% elif state.eof_run_default %}
                         {% for kase in state.cases %}{% if kase.is_default %}{% for cmd in kase.commands %}{{ render_command(cmd, func, return_type_info) }}{% endfor %}{% endif %}{% endfor %}
                         {% else %}
