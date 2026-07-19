@@ -21,6 +21,17 @@ generated code carries the benchmarking discipline in the README.
   without rare override. Deletes the bulk of hand `|eof` arms in
   consumers. Supersedes the aggregate-event sketch in udon's
   `design/eof-model-proposal-2026-07.md`.
+  **LARGELY LANDED (2026-07-18, recursive backend):** `classify` module +
+  `delimited_code` force-unwind (delimited) + `eof_run_newline`/`eof_run_default`
+  (positional EOF ≡ newline). ~34 hand arms deleted in UDON, gate 2→1, benchmark
+  flat. *Remaining:* (a) constructs whose closer is a **line-shape / callee-matched**
+  and thus invisible to the structural classifier (freeform's ` ``` ` fence; the
+  inline comment/raw/directive callee-scanners) still carry a one-line hand `|eof`
+  as an explicit delimited *declaration* — the clean form is the `|unclosed`
+  directive (next item); (b) the **static reject** of a soft+hard-success mix is
+  not implemented; (c) **pushdown** backend not yet updated (recursive only);
+  (d) content-keeping at EOF for **accumulating BRACKETs** (`sameline_raw` still
+  drops its raw body, `sameline_dir_body` mislabels — UDON `TODO-CORE-PARSING`).
 
 - [ ] **Derive `Unclosed<Name>` from the construct, not hand-injected** (from
   UDON EOF work, 2026-07-18). A delimited function/type already names its
@@ -29,6 +40,15 @@ generated code carries the benchmarking discipline in the README.
   both grammar and spec. Rides the positional/delimited inference above
   (soft-failure generation + entry site already know the frame's identity).
   One fewer scattered place to keep in sync in every consumer.
+  **PARTIAL (2026-07-18):** `Unclosed<ReturnType>` derivation landed and is
+  correct for the regular constructs (StringValue/Array/Embedded/Interpolation);
+  `UnterminatedFreeform` was normalized to `UnclosedFreeform`. NOT yet solved:
+  constructs whose construct-name ≠ return type (`embed_content:Text` →
+  `Embedded`; the inline forms `Directive`-typed but meaning InlineRaw/
+  InlineDirective). The clean primitive is a declarative **`|unclosed <Name>`**
+  function directive (delimited declaration + code in one line) that replaces
+  the hand `|eof` arms on those constructs and drives the force-unwind — the
+  next concrete piece.
 
 - [ ] **Emit a parser manifest — what the generator detected** (Joseph,
   2026-07-18). Alongside the parser, output the parser's own inventory: the
@@ -39,6 +59,10 @@ generated code carries the benchmarking discipline in the README.
   codes / End of input) so the two can't silently drift — parser as source,
   spec checked against it, instead of both hand-maintained. Feeds the
   spec-DRY direction in `../../spec/TODO-SPEC-CORE.md`.
+  **PARTIAL (2026-07-18):** `descent-rs classify <file>` emits the
+  positional/delimited classification (report-only). Still to add: the emitted
+  **warning-code list** and its diff against the spec's declared vocabulary
+  (the spec-drift guard).
 
 - [ ] **State templates / a "self-terminating value" state property** (from
   UDON grammar refactor, 2026-07-16) — UDON's `typed_value` has ~15 number
@@ -48,6 +72,11 @@ generated code carries the benchmarking discipline in the README.
   them without losing per-base digit validation. Merging digit classes is
   NOT an alternative (it changes behavior: `0o9` must fall through to
   BareValue).
+  **NOTE (2026-07-18):** the `eof` terminator row is now gone from all ~15 num
+  states — EOF is auto-handled by `eof_run_newline` (EOF ≡ the state's `\n`
+  arm). So a state-template need only DRY the remaining `\n`/`' '`/`:bracket`
+  terminator rows (per-base digit rows + the typed emit still differ). This is
+  the biggest remaining visible cruft in UDON's grammar.
 
   **Design options (2026-07-16 pass — none forced; needs a design call):**
   The states differ in TWO dimensions: the digit/continue rows AND the

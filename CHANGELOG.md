@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Generated EOF handling from positional/delimited classification**
+  (2026-07-18, descent-rs; recursive backend). descent now infers whether each
+  grammar function is **positional** (closes on geometry) or **delimited**
+  (closes on a printed end-sequence) and generates the EOF behavior, so
+  consumers stop hand-writing `|eof` arms (UDON: 90 → ~56 and dropping):
+  - **Delimited → force-unwind.** A delimited function with a return type gets
+    `delimited_code = Unclosed<ReturnType>` (`ir_builder` post-pass over the new
+    `classify` module); the EOF-default emits keep-content + `Warning(Unclosed…)`
+    + `End`. Covers closers the older single-literal `expects_char` inference
+    could not see — a param byte (`quoted(:q)`), multi-byte (`}}`), a bracket,
+    a callee-matched closer — and **retires the wrong `expects_char` `Error`+enum
+    EOF emission** in favour of the content-string `Warning`.
+  - **Positional → EOF ≡ newline + maximal dedent.** `eof_run_newline` (a leaf
+    state whose `\n` arm returns runs it at EOF) and `eof_run_default` (a
+    lookahead state with no `\n` arm runs its fall-through `default`). Fixes the
+    class of silent EOF content-drops where an INTERNAL function's bare-return
+    dropped accumulated content. Guarded off self-looping defaults.
+  - The generated unwind is strictly **per-frame / kind-agnostic** (call-stack
+    innermost-first), so nesting a positional frame inside a delimited one is
+    well-ordered.
+- **`classify` subcommand + `classify` module** (2026-07-18): `descent-rs
+  classify <file>` prints each function's positional/delimited/mixed
+  classification (report-only, no effect on generated code). A partial
+  realization of the "parser manifest" item — an independent check of the
+  classification the generation relies on.
+
+Benchmarking discipline (per README): UDON before/after criterion pair (base
+`parser.rs` vs generated) shows **no performance change** — parse hot path is
+untouched (EOF is O(1) cold-path per document). Consumer fixture gate improved
+(2 → 1 red; the EOF bugs it fixed: embed any-phase-drop, the number-state
+silent-drops).
+
 ### Changed
 - **Borrow-from-buffer streaming emission** (2026-07-16, descent-rs, both
   backends): `StreamEvent` gains a lifetime — content is now
