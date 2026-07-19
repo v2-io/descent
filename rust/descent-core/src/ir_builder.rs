@@ -97,8 +97,15 @@ impl<'a> IRBuilder<'a> {
             .filter(|c| c.kind == crate::classify::Kind::Delimited)
             .map(|c| c.name)
             .collect();
+        // ALL delimited functions with a return type get the Warning
+        // force-unwind — including those `infer_expects` also flagged
+        // (single-literal closers like interpolation's `}}`). The template
+        // prefers `delimited_code` over `expects_char`, so this also retires
+        // the old `expects_char` path's wrong `Error`+enum emission for them
+        // (the B-5 severity/order finding) in favour of the correct
+        // content-string `Warning`.
         for f in ir.functions.iter_mut() {
-            if f.expects_char.is_none() && delimited.contains(&f.name) {
+            if delimited.contains(&f.name) {
                 if let Some(rt) = &f.return_type {
                     f.delimited_code = Some(format!("Unclosed{rt}"));
                 }
